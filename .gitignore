@@ -1,0 +1,20 @@
+# deps / build
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# tauri
+src-tauri/target/
+src-tauri/gen/
+
+# svelte / vite
+.svelte-kit/
+vite.config.*.timestamp*
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

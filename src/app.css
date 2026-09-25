@@ -1,0 +1,293 @@
+@import 'tailwindcss';
+
+/* Registered so the accent can be *transitioned* when the album art changes.
+   Custom properties are not animatable by default; @property opts them in. */
+@property --color-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ff4d5e;
+}
+@property --color-accent2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ff8a5c;
+}
+
+@theme {
+  --font-sans: 'Zalando Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  /* Near-black base with a warm accent. The accent is replaced at runtime from
+     the current album art (see services/theme.ts).
+     NOTE: this token is deliberately NOT called `base`. In Tailwind v4 every
+     `--color-*` token generates matching colour utilities, so `--color-base`
+     produced a `text-base` colour class that overrode the font-size utility of
+     the same name — every `<i class="… text-base">` rendered near-black. */
+  --color-surface: #050506;
+  --color-panel: #0c0c0e;
+  --color-panel2: #141417;
+  --color-line: #1f1f24;
+  --color-accent: #ff4d5e;
+  --color-accent2: #ff8a5c;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  color: #f4f4f5;
+  font-family: var(--font-sans);
+  font-synthesis-weight: none;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Base is black; the red wash is applied per-shell so it sits behind the
+     translucent top bar and the floating player. */
+  background: var(--color-surface);
+}
+
+/* Red gradient from the top of the window, tinted by the album art colour.
+   `color-mix` keeps it derived from the animatable accent, so changing track
+   fades the whole wash rather than snapping. Defined once so the top bar can
+   paint the *identical* background (see `.cherry-topbar`). */
+:root {
+  --cherry-wash-image:
+    radial-gradient(
+      115% 60% at 50% -14%,
+      color-mix(in srgb, var(--color-accent) 46%, transparent) 0%,
+      color-mix(in srgb, var(--color-accent) 20%, transparent) 42%,
+      transparent 74%
+    ),
+    radial-gradient(
+      75% 45% at 88% -10%,
+      color-mix(in srgb, var(--color-accent2) 24%, transparent) 0%,
+      transparent 72%
+    ),
+    linear-gradient(180deg, #140910 0%, #08060a 55%, #050506 100%);
+}
+
+.cherry-wash {
+  background-image: var(--cherry-wash-image);
+}
+
+/* Full-window sign-in gate: the app's own background colour, made opaque so
+   nothing behind it shows through. Only the colour (not the `background`
+   shorthand) so it composes with `.cherry-wash`'s gradient rather than wiping
+   it — the gate is meant to keep the app's top gradient. */
+.cherry-gate {
+  background-color: var(--color-surface);
+}
+
+/* Top bar: instead of painting anything, the scrolling content is masked so it
+   fades out under the bar. The bar itself stays invisible — only the background
+   shows through — so it hides content without reading as a separate element. */
+.cherry-fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #fff 60px);
+  mask-image: linear-gradient(to bottom, transparent 0, #fff 60px);
+}
+
+/* Player bar: dark at the top fading into a subtle accent tint at the bottom. */
+.cherry-playerbar {
+  background: linear-gradient(
+    180deg,
+    #0b0b0d 0%,
+    #0c0c0e 45%,
+    color-mix(in srgb, var(--color-accent) 14%, #0e0e12) 100%
+  );
+}
+
+/* Animate the accent itself; everything derived from it follows along. */
+html {
+  transition:
+    --color-accent 700ms ease,
+    --color-accent2 700ms ease;
+}
+
+/* "Loading a track" equaliser inside the play button. */
+@keyframes cherry-eq-bar {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.cherry-eq > span {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+  animation: cherry-eq-bar 0.9s ease-in-out infinite;
+}
+.cherry-eq > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.cherry-eq > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Thin, sleek custom scrollbars: no arrow buttons, clean overlay thumb. */
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* A slight dark scrim behind a glyph so it stays readable even when the accent
+   (or any light surface) is used as the button background. */
+.cherry-btn-scrim {
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.18);
+}
+
+html {
+  /* WebView2/Edge draws native scrollbars and ignores *all* CSS scrollbar
+     styling (both ::-webkit-scrollbar and scrollbar-width/color), so these are
+     best-effort for other platforms only. The `OverlayScrollbar` browser flag
+     would give thin arrow-free bars, but it breaks secondary webviews (the
+     YouTube Music login window), which matters far more. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+/* Overlay scrollbars: WebView2 ignores all `::-webkit-scrollbar` styling, but
+   it *does* honour `scrollbar-width: none` when set on the scroll container, so
+   the native bar is hidden and `overlayScrollbar` paints a slim custom thumb
+   instead (see lib/ui/actions/overlayScrollbar.ts). */
+.cherry-overlay-scroll {
+  position: relative;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.cherry-sb-thumb {
+  position: absolute;
+  right: 2px;
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+.cherry-sb-thumb.is-visible {
+  opacity: 1;
+}
+
+/* Horizontal carousels: scrollable, no visible bar, snap-aligned. */
+.cherry-carousel {
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.cherry-carousel::-webkit-scrollbar {
+  display: none;
+}
+.cherry-carousel > * {
+  scroll-snap-align: start;
+}
+
+/* Native Windows caption glyphs (Segoe Fluent Icons on 11, MDL2 on 10).
+   Used for the window controls so they look like real system buttons. */
+.win-glyph {
+  font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', sans-serif;
+  font-size: 10px;
+  line-height: 1;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.cherry-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  /* The unfilled track must stay visible on a near-black bar, otherwise the
+     scrubber looks missing whenever playback is at position 0. */
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent2) var(--fill, 0%),
+    rgba(255, 255, 255, 0.14) var(--fill, 0%),
+    rgba(255, 255, 255, 0.14) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.cherry-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.cherry-range:hover::-webkit-slider-thumb,
+.cherry-range:active::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Respect the OS "reduce motion" preference: keep the app legible without the
+   animated wash, equaliser, pulses or hover transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Vertical variant, used by the volume popup. */
+.cherry-range-v {
+  -webkit-appearance: none;
+  appearance: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 4px;
+  height: 96px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to top,
+    var(--color-accent) 0%,
+    var(--color-accent2) var(--fill, 0%),
+    rgba(255, 255, 255, 0.14) var(--fill, 0%),
+    rgba(255, 255, 255, 0.14) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.cherry-range-v::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+}

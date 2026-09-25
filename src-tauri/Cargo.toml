@@ -1,0 +1,57 @@
+[package]
+name = "cherry"
+version = "1.0.3"
+description = "Lightweight YouTube Music desktop client"
+authors = ["Cherry"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
+tauri-plugin-store = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+reqwest = "0.12"
+base64 = "0.22"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+souvlaki = "0.8"
+discord-rich-presence = "0.2"
+# Safety net for platforms without an explicit backend below (compiles, uses
+# the mock store). Windows/macOS/Linux get the real store via [target.*].
+keyring = "3"
+
+# IMPORTANT: keyring 3.x has NO default features. Without a platform backend
+# it silently uses an in-memory mock store, so saved sessions vanish on
+# restart (symptom: "always guest"). Select the real backend per platform.
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+# WebView2 COM interface used to trim memory while the window is not in use
+# (see `webview_memory.rs`); version kept in step with Tauri's own webview2-com.
+webview2-com = "0.38"
+# Taskbar thumbnail toolbar (the media buttons in the window's taskbar preview),
+# which Windows requires the app to add itself.
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native-sync-persistent", "sync-secret-service", "crypto-rust"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
