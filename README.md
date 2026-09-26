@@ -7,6 +7,8 @@ Cherry is a custom UI over YouTube Music's internal *Innertube* API (via
 API, so it speaks the same endpoints the web player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
+![Cherry](https://inane.tools/screenshot.png)
+
 > ### Disclaimer
 > Cherry is an unofficial client and is **not affiliated with, endorsed by, or
 > associated with YouTube, Google or YouTube Music**. All trademarks and content
@@ -70,3 +72,7 @@ never leave `src/lib/infra/ytmusic/`.
 ## License
 
 [MIT](LICENSE) © 2026 inane.tools
+
+---
+
+Made with **DeepSeek V4.1 Flash**.
