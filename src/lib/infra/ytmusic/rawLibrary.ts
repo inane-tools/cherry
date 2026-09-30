@@ -168,3 +168,69 @@ export function scanLibrary(raw: Json): LibraryScan {
 
   return { playlists: [...playlists.values()], rendererCounts, continuation };
 }
+
+/**
+ * Playlists the signed-in user can add songs to, from the
+ * `playlist/get_add_to_playlist` menu.
+ *
+ * This is the authoritative "editable" set: the Music library
+ * (`FEmusic_liked_playlists`) also lists playlists the user only *saved*, and
+ * adding to one of those fails. Rather than trust a fixed list of renderer
+ * names (they differ between clients/versions, and a mismatch silently returned
+ * *no* playlists — which is why ownership looked unknown), we look for the shape
+ * of an option: a `*Renderer` node that carries a playlist id plus a title.
+ */
+function asPlaylistId(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  return value.startsWith('VL') ? value : `VL${value}`;
+}
+
+/** The playlist id on a node, from any of the shapes the menu uses. */
+function nodePlaylistId(node: Json): string | undefined {
+  const direct =
+    asPlaylistId(node?.playlistId) ??
+    asPlaylistId(node?.playlistEditEndpoint?.playlistId) ??
+    asPlaylistId(node?.serviceEndpoint?.playlistEditEndpoint?.playlistId) ??
+    asPlaylistId(node?.addToPlaylistServiceEndpoint?.playlistId);
+  if (direct) return direct;
+  const browse =
+    node?.browseEndpoint?.browseId ?? node?.navigationEndpoint?.browseEndpoint?.browseId;
+  if (typeof browse === 'string' && /^(VL|PL|RD)/.test(browse)) {
+    return browse.startsWith('VL') ? browse : `VL${browse}`;
+  }
+  return undefined;
+}
+
+export function scanAddablePlaylists(raw: Json): Playlist[] {
+  const found = new Map<string, Playlist>();
+  const pending: { node: Json; depth: number }[] = [{ node: raw, depth: 0 }];
+  let cursor = 0;
+  let visited = 0;
+
+  while (cursor < pending.length && visited < MAX_NODES) {
+    const { node, depth } = pending[cursor++];
+    visited++;
+    if (!node || typeof node !== 'object' || depth > MAX_DEPTH) continue;
+
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        if (child && typeof child === 'object') pending.push({ node: child, depth: depth + 1 });
+      }
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key.endsWith('Renderer') && value && typeof value === 'object') {
+        const option = value as Json;
+        const browseId = nodePlaylistId(option);
+        const title = textOf(option.title) ?? textOf(option.headline);
+        if (browseId && title && !found.has(browseId)) {
+          found.set(browseId, { browseId, title, thumbnails: thumbnailsOf(option) });
+        }
+      }
+      if (value && typeof value === 'object') pending.push({ node: value, depth: depth + 1 });
+    }
+  }
+
+  return [...found.values()];
+}

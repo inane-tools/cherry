@@ -16,16 +16,32 @@ import {
 import { notify, type ContextMenuItem } from './contextMenu';
 import { authStore } from './auth';
 import { announceSignInRequired } from './gate';
+import { getDefaultPlaylist, removeTrackFrom, saveTrack, setDefaultPlaylist } from './playlistEdit';
+import { isPlaylistOwned, isPlaylistSaved, ownershipKnown, savePlaylist, unsavePlaylist } from './playlistLibrary';
+import { openPlaylistEditor } from './playlistEditor';
+import { openPlaylistPicker } from './playlistPicker';
 
 async function copy(label: string, url: string): Promise<void> {
   const ok = await copyText(url);
   notify(ok ? `${label} copied` : 'Could not copy to the clipboard');
 }
 
-/** Menu for a single track. `list`/`index` let "Play" use the row's context. */
-export function trackMenu(track: Track, list?: Track[], index = 0): ContextMenuItem[] {
-  const canPlay = !!(get(authStore) && track.videoId);
-  return [
+/**
+ * Menu for a single track. `list`/`index` let "Play" use the row's context;
+ * `playlist` is passed when the row is shown on a playlist page, which adds the
+ * "remove from this playlist" action.
+ */
+export function trackMenu(
+  track: Track,
+  list?: Track[],
+  index = 0,
+  playlist?: Playlist,
+): ContextMenuItem[] {
+  const signedIn = !!get(authStore);
+  const canPlay = !!(signedIn && track.videoId);
+  const preferred = getDefaultPlaylist();
+
+  const items: ContextMenuItem[] = [
     {
       label: 'Play',
       icon: 'bx bx-play',
@@ -37,6 +53,32 @@ export function trackMenu(track: Track, list?: Track[], index = 0): ContextMenuI
         void playTracks(queue, at);
       },
     },
+  ];
+
+  if (signedIn) {
+    items.push({
+      label: preferred ? `Add to “${preferred.title}”` : 'Add to playlist…',
+      icon: 'bx bx-plus',
+      separatorBefore: true,
+      action: () => void saveTrack(track),
+    });
+    if (preferred) {
+      items.push({
+        label: 'Add to another playlist…',
+        icon: 'bx bx-list-plus',
+        action: () => openPlaylistPicker([track]),
+      });
+    }
+    if (playlist) {
+      items.push({
+        label: 'Remove from this playlist',
+        icon: 'bx bx-trash',
+        action: () => void removeTrackFrom(playlist, track),
+      });
+    }
+  }
+
+  items.push(
     {
       label: 'Copy link (YouTube Music)',
       icon: 'bx bx-link',
@@ -48,14 +90,21 @@ export function trackMenu(track: Track, list?: Track[], index = 0): ContextMenuI
       icon: 'bx bxl-youtube',
       action: () => copy('YouTube link', trackYouTubeUrl(track.videoId)),
     },
-  ];
+  );
+
+  return items;
 }
 
 /** Menu for a playlist. */
 export function playlistMenu(playlist: Playlist): ContextMenuItem[] {
-  const canPlay = !!get(authStore);
+  const signedIn = !!get(authStore);
+  const canPlay = signedIn;
   const pinned = isPinned(playlist.browseId);
-  return [
+  const isDefault = getDefaultPlaylist()?.browseId === playlist.browseId;
+  const owned = isPlaylistOwned(playlist.browseId);
+  const saved = isPlaylistSaved(playlist.browseId);
+
+  const items: ContextMenuItem[] = [
     {
       label: 'Play',
       icon: 'bx bx-play',
@@ -74,6 +123,32 @@ export function playlistMenu(playlist: Playlist): ContextMenuItem[] {
         void playPlaylist(playlist, true);
       },
     },
+  ];
+
+  if (signedIn) {
+    if (owned) {
+      items.push({
+        label: 'Edit details…',
+        icon: 'bx bx-pencil',
+        action: () => openPlaylistEditor(playlist),
+      });
+      items.push({
+        label: isDefault ? 'Clear default playlist' : 'Set as default playlist',
+        icon: isDefault ? 'bx bx-check-circle' : 'bx bx-target-lock',
+        action: () => void setDefaultPlaylist(isDefault ? null : playlist),
+      });
+    } else if (ownershipKnown()) {
+      // Not your playlist: the only library action is save / unsave. (Until the
+      // editable set loads we cannot tell, so no destructive action is offered.)
+      items.push({
+        label: saved ? 'Remove from library' : 'Save to library',
+        icon: saved ? 'bx bxs-bookmark' : 'bx bx-bookmark',
+        action: () => void (saved ? unsavePlaylist(playlist) : savePlaylist(playlist)),
+      });
+    }
+  }
+
+  items.push(
     {
       label: pinned ? 'Unpin playlist' : 'Pin playlist',
       icon: pinned ? 'bx bxs-pin' : 'bx bx-pin',
@@ -91,5 +166,7 @@ export function playlistMenu(playlist: Playlist): ContextMenuItem[] {
       icon: 'bx bxl-youtube',
       action: () => copy('YouTube link', playlistYouTubeUrl(playlist.browseId)),
     },
-  ];
+  );
+
+  return items;
 }

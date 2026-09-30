@@ -221,10 +221,67 @@ export function mapCardShelf(card: AnyNode): Track | null {
   };
 }
 
+export interface CardShelfResult {
+  track?: Track;
+  artist?: ArtistRef;
+  album?: Album;
+  playlist?: Playlist;
+}
+
+/**
+ * The "Top result" card can be *any* of the four kinds, not only a playable
+ * song: searching an artist name returns the **artist** as the top result, and
+ * mapping it as a track (which then fails for lack of a video id) silently
+ * dropped it — which is why an artist search could list "related" artists but
+ * never the one you typed. Detect the page type from the card's browse endpoint.
+ */
+export function mapCardShelfResult(card: AnyNode): CardShelfResult {
+  const track = mapCardShelf(card);
+  if (track) return { track };
+
+  const payload = card?.on_tap?.payload ?? {};
+  const browseId: unknown = payload.browseId;
+  const title = str(card?.title);
+  if (typeof browseId !== 'string' || !browseId || !title) return {};
+
+  const pageType: string | undefined =
+    payload?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType;
+  const art = thumbs(card);
+
+  if (pageType === 'MUSIC_PAGE_TYPE_ARTIST' || browseId.startsWith('UC')) {
+    return { artist: { name: String(title), browseId, thumbnails: art } };
+  }
+  if (pageType === 'MUSIC_PAGE_TYPE_ALBUM' || browseId.startsWith('MPR')) {
+    return { album: { browseId, title: String(title), artists: [], thumbnails: art } };
+  }
+  if (
+    pageType === 'MUSIC_PAGE_TYPE_PLAYLIST' ||
+    browseId.startsWith('VL') ||
+    browseId.startsWith('PL')
+  ) {
+    return {
+      playlist: {
+        browseId: browseId.startsWith('VL') ? browseId : `VL${browseId}`,
+        title: String(title),
+        thumbnails: art,
+      },
+    };
+  }
+  return {};
+}
+
 export function mapArtistRef(node: AnyNode): ArtistRef | null {
   if (!node || typeof node !== 'object') return null;
   const name = str(node.name) ?? str(node.title) ?? str(node.header?.title);
-  const browseId = node.id ?? node.browse_id ?? node.channel_id;
+  // The browse id is usually `id`/`browse_id`, but some rows only carry it on
+  // the navigation endpoint — missing it dropped the artist entirely.
+  const browseId =
+    node.id ??
+    node.browse_id ??
+    node.channel_id ??
+    node.endpoint?.payload?.browseId ??
+    node.on_tap?.payload?.browseId ??
+    node.navigation_endpoint?.payload?.browseId;
   if (!name) return null;
   // Search/chip rows carry the artist avatar; keep it so the UI can show a real
   // face instead of a generic placeholder icon.

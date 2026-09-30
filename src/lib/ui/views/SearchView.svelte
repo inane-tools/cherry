@@ -16,6 +16,7 @@
   import { openPlaylist } from '$lib/app/services/playlists';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { playlistMenu } from '$lib/app/services/menus';
+  import { parseYouTubeLink, openParsedLink } from '$lib/app/services/openLink';
   import { searchAll } from '$lib/infra/ytmusic/InnertubeClient';
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
@@ -37,6 +38,16 @@
   async function run(query: string, immediate = false) {
     const text = query.trim();
     if (!text) return;
+    // A pasted YouTube / YouTube Music link opens that song or playlist rather
+    // than searching for the URL text.
+    const link = parseYouTubeLink(text);
+    if (link) {
+      clearTimeout(debounce);
+      loading = false;
+      error = null;
+      void openParsedLink(link);
+      return;
+    }
     // Gate: anonymous Innertube results cannot be played (PO-token gated), so
     // searching without an account only produces dead results — block it with
     // a single clear message instead.
@@ -136,7 +147,7 @@
     }}
   >
     <div
-      class="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-[#262633] bg-[#17171f]/80 px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur focus-within:border-[var(--color-accent)]/60"
+      class="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-elevated)]/80 px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur focus-within:border-[var(--color-accent)]/60"
     >
       <input
         bind:value={q}
@@ -184,7 +195,7 @@
         {#each artists as artist}
           {@const avatar = artistAvatar(artist)}
           <button
-            class="flex items-center gap-2 rounded-full border border-[#262633] bg-[#17171f] py-1 pl-1 pr-3 text-[12px] text-zinc-300 transition-colors hover:border-[var(--color-accent)]/50 hover:bg-white/5 hover:text-white"
+            class="flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-[var(--color-elevated)] py-1 pl-1 pr-3 text-[12px] text-zinc-300 transition-colors hover:border-[var(--color-accent)]/50 hover:bg-white/5 hover:text-white"
             onclick={() => openArtist(artist)}
           >
             <!-- Fallback sits underneath: if the avatar URL expires the image

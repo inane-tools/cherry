@@ -46,6 +46,24 @@ export const upNext = derived([items, index, order, shuffleOn], ([$items, $index
   return seq.slice($index + 1, $index + 11);
 });
 
+/**
+ * Everything still to play, in play order (shuffle included). The "Up next"
+ * panel shows this — it is `upNext` without the 10-item cap.
+ */
+export const upNextQueue = derived([items, index, order, shuffleOn], ([$items, $index, $order, $sh]) => {
+  if ($items.length === 0) return [];
+  const seq = $sh ? $order.map((i) => $items[i]).filter(Boolean) : $items;
+  return seq.slice(Math.max(0, $index + 1));
+});
+
+/** Items in the order they will actually play (shuffle included). */
+function playSequence(list: QueueItem[]): QueueItem[] {
+  if (get(shuffleOn) !== true) return list;
+  return get(order)
+    .map((i) => list[i])
+    .filter((item): item is QueueItem => Boolean(item));
+}
+
 function rebuildOrder(n: number, keepFirst?: number): void {
   if (n === 0) {
     order.set([]);
@@ -107,6 +125,85 @@ export function moveTo(queueId: string): boolean {
     index.set(pos);
   }
   return true;
+}
+
+/**
+ * Make `queueId` the current track and drop everything before it (in play
+ * order).
+ *
+ * Selecting a song from "Up next" should not leave the ones that were skipped
+ * behind it — the chosen track becomes the head of the queue. The remaining
+ * order is kept; `order` is renormalised to the identity so indices stay simple.
+ */
+export function cutQueueTo(queueId: string): boolean {
+  const list = get(items);
+  if (list.length === 0) return false;
+  const seq = playSequence(list);
+  const at = seq.findIndex((item) => item.queueId === queueId);
+  if (at < 0) return false;
+  const remaining = seq.slice(at);
+  items.set(remaining);
+  order.set(remaining.map((_, i) => i));
+  index.set(0);
+  return true;
+}
+
+/**
+ * Drag-reorder: move `fromQueueId` to `upcomingGap`, a gap in the "upcoming"
+ * list (0..upcomingCount).
+ *
+ * `upcoming` is the play sequence *after* the current track, so the gap index is
+ * offset by the current play position before it is applied to the full sequence
+ * — without that, every drop landed near the track's original spot instead of
+ * the highlighted gap.
+ *
+ * There is exactly **one** drop slot per gap: dropping a row back into its own
+ * gap is a no-op, so "after the previous row" and "before the next row" are the
+ * same target rather than two. The queue is normalised to the new play order
+ * (so `order` becomes the identity) and the currently-playing track keeps
+ * playing.
+ */
+export function reorderQueueTo(fromQueueId: string, upcomingGap: number): boolean {
+  const list = get(items);
+  if (list.length === 0) return false;
+  const seq = playSequence(list);
+  const from = seq.findIndex((item) => item.queueId === fromQueueId);
+  if (from < 0) return false;
+
+  const offset = Math.max(0, get(index) + 1);
+  const toIndex = offset + Math.max(0, upcomingGap);
+  if (toIndex === from || toIndex === from + 1) return false;
+
+  const current = get(currentItem);
+  const next = [...seq];
+  const [moved] = next.splice(from, 1);
+  const insertAt = toIndex > from ? toIndex - 1 : toIndex;
+  next.splice(Math.max(0, Math.min(insertAt, next.length)), 0, moved);
+  items.set(next);
+  order.set(next.map((_, i) => i));
+  const pos = current ? next.findIndex((item) => item.queueId === current.queueId) : -1;
+  index.set(pos < 0 ? 0 : pos);
+  return true;
+}
+
+/** Remove a single upcoming track from the queue. */
+export function removeFromQueue(queueId: string): void {
+  const list = get(items);
+  if (list.length === 0) return;
+  const seq = playSequence(list);
+  const at = seq.findIndex((item) => item.queueId === queueId);
+  if (at < 0) return;
+
+  const current = get(currentItem);
+  const next = seq.filter((item) => item.queueId !== queueId);
+  items.set(next);
+  order.set(next.map((_, i) => i));
+  if (next.length === 0) {
+    index.set(-1);
+    return;
+  }
+  const pos = current ? next.findIndex((item) => item.queueId === current.queueId) : -1;
+  index.set(pos < 0 ? 0 : pos);
 }
 
 /**

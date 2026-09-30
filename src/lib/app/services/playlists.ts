@@ -1,11 +1,12 @@
 import { get, writable } from 'svelte/store';
 import type { Playlist, Track } from '$lib/core/models';
-import { getCollectionTracks, getHomeSections, getLibraryPlaylists } from '$lib/infra/ytmusic/InnertubeClient';
+import { getHomeSections, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
 import type { HomeSection } from '$lib/infra/ytmusic/rawHome';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
 import { initChannel } from './account';
 import { openPage } from './navigation';
+import { enqueue } from './queue';
 import { playTracks, playTracksShuffled } from './player';
 
 export const playlistStore = writable<Playlist[]>([]);
@@ -17,6 +18,7 @@ export const libraryError = writable<string | null>(null);
 // ── Currently open playlist ─────────────────────────────────────
 export const openPlaylistStore = writable<Playlist | null>(null);
 export const openPlaylistTracks = writable<Track[]>([]);
+export const openPlaylistDescription = writable<string | null>(null);
 export const openPlaylistLoading = writable(false);
 export const openPlaylistError = writable<string | null>(null);
 
@@ -146,10 +148,22 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
   if (!session) return;
   try {
     await initChannel();
-    const tracks = await getCollectionTracks(playlist.browseId, session);
-    if (tracks.length === 0) return;
-    if (shuffle) await playTracksShuffled(tracks);
-    else await playTracks(tracks, 0);
+    // Start on the first page (and enqueue the rest as it streams in) so a large
+    // playlist begins playing immediately instead of after every page is read.
+    let started = false;
+    let seen = 0;
+    await streamCollectionTracks(playlist.browseId, session, (partial) => {
+      const fresh = partial.slice(seen);
+      seen = partial.length;
+      if (fresh.length === 0) return;
+      if (!started) {
+        started = true;
+        if (shuffle) void playTracksShuffled(fresh);
+        else void playTracks(fresh, 0);
+      } else {
+        enqueue(fresh);
+      }
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('[cherry] could not play playlist:', e);
@@ -167,6 +181,7 @@ export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
   // Clear synchronously so the previous playlist's tracks can never flash under
   // the new header while this load is in flight.
   openPlaylistTracks.set([]);
+  openPlaylistDescription.set(null);
   openPlaylistError.set(null);
   const session = get(authStore);
   if (!session) {
@@ -177,7 +192,19 @@ export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
   openPlaylistLoading.set(true);
   try {
     await initChannel();
-    const tracks = await getCollectionTracks(playlist.browseId, session);
+    // Header metadata (description/art) is independent of the track stream, so
+    // fetch it alongside rather than serialising the two.
+    void getPlaylistMeta(playlist.browseId, session).then((meta) => {
+      if (id !== openSeq) return;
+      openPlaylistDescription.set(meta?.description ?? null);
+    });
+    const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done) => {
+      if (id !== openSeq) return;
+      openPlaylistTracks.set(partial);
+      // The first page is enough to render and play; drop the skeleton while
+      // the remaining pages keep streaming in.
+      if (!done) openPlaylistLoading.set(false);
+    });
     if (id !== openSeq) return;
     openPlaylistTracks.set(tracks);
     if (tracks.length === 0) {

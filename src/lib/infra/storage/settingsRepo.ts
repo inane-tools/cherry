@@ -21,7 +21,23 @@ export interface CherrySettings {
   /** Playlists pinned to the top bar. */
   pinnedPlaylists: PinnedPlaylist[];
   minimizeToTray: boolean;
-  dynamicAccent: boolean;
+  /** Appearance: follow the OS, or force light/dark. */
+  theme: 'system' | 'light' | 'dark';
+  /** Accent colour: follow the album art, or a fixed custom colour. */
+  accentSource: 'song' | 'custom';
+  /** Custom accent (hex), used when `accentSource === 'custom'`. */
+  accentColor: string;
+  /** Playlist that "Add to playlist" saves to without asking. Empty = ask. */
+  defaultPlaylistBrowseId: string;
+  defaultPlaylistTitle: string;
+  /** Reveal the Developer section's DevTools access (off by default). */
+  devToolsEnabled: boolean;
+  /** Last.fm scrobbling; the session key/username come from the auth flow. */
+  lastfmEnabled: boolean;
+  lastfmApiKey: string;
+  lastfmApiSecret: string;
+  lastfmSessionKey: string;
+  lastfmUsername: string;
 }
 
 export const DEFAULT_SETTINGS: CherrySettings = {
@@ -35,7 +51,17 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   channelPageId: '',
   pinnedPlaylists: [],
   minimizeToTray: true,
-  dynamicAccent: true,
+  theme: 'system',
+  accentSource: 'song',
+  accentColor: '#ff4d5e',
+  defaultPlaylistBrowseId: '',
+  defaultPlaylistTitle: '',
+  devToolsEnabled: false,
+  lastfmEnabled: false,
+  lastfmApiKey: '',
+  lastfmApiSecret: '',
+  lastfmSessionKey: '',
+  lastfmUsername: '',
 };
 
 const STORE_PATH = 'cherry-settings.json';

@@ -10,6 +10,9 @@
   import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startMemoryTrimming } from '$lib/app/services/memory';
+  import { startScrobbling } from '$lib/app/services/scrobble';
+  import { openDevTools } from '$lib/app/services/devtools';
+  import { startAppearance } from '$lib/app/services/appearance';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import logoUrl from '$lib/assets/logo.png';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
@@ -17,6 +20,8 @@
   import PlayerBar from '$lib/ui/chrome/PlayerBar.svelte';
   import AuthGate from '$lib/ui/components/AuthGate.svelte';
   import ContextMenu from '$lib/ui/components/ContextMenu.svelte';
+  import PlaylistPickerDialog from '$lib/ui/components/PlaylistPickerDialog.svelte';
+  import EditPlaylistDialog from '$lib/ui/components/EditPlaylistDialog.svelte';
   import HomeView from '$lib/ui/views/HomeView.svelte';
   import ExploreView from '$lib/ui/views/ExploreView.svelte';
   import SearchView from '$lib/ui/views/SearchView.svelte';
@@ -27,6 +32,10 @@
 
   let ready = false;
   let mainEl: HTMLElement | undefined;
+
+  // Apply the stored theme/accent as early as possible (defaults until settings
+  // load, then re-applied) so there is minimal theme flash on launch.
+  startAppearance();
 
   // Pages that are useless without a session (everything except Settings, where
   // the sign-in button lives). When signed out these show a full-window gate
@@ -58,6 +67,18 @@
       if (mainEl) mainEl.scrollTop = 0;
     });
     window.addEventListener('cherry:notice', onNotice);
+    // F12 / Ctrl+Shift+I opens the WebView DevTools when the Developer option is
+    // enabled (the Settings button is the primary route; this is a convenience).
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!get(settingsStore).devToolsEnabled) return;
+      const f12 = event.key === 'F12';
+      const inspect = event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'i';
+      if (f12 || inspect) {
+        event.preventDefault();
+        void openDevTools();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
     // WebView2 memory trimming is async to set up; hold the cleanup once ready.
     let stopMemory = () => {};
     void startMemoryTrimming().then((stop) => (stopMemory = stop));
@@ -65,6 +86,7 @@
       stopMouse();
       unsubscribe();
       window.removeEventListener('cherry:notice', onNotice);
+      window.removeEventListener('keydown', onKeyDown);
       stopMemory();
     };
   });
@@ -90,6 +112,7 @@
     // Restore the last queue + position (paused, no autoplay) once the session
     // is known — only a signed-in user has a queue worth resuming.
     if (get(authStore)) void restorePlayback();
+    startScrobbling();
     ready = true;
     // Channel context first: the home feed and library both depend on it.
     void initChannel().then(() => {
@@ -193,7 +216,7 @@
           out:fly={{ y: -12, duration: 160 }}
         >
           <div
-            class="flex max-w-lg items-center gap-2 rounded-lg border border-white/10 bg-[#17171f]/95 px-4 py-2 text-[12px] text-zinc-200 shadow-[0_12px_40px_rgba(0,0,0,0.5)] backdrop-blur"
+            class="flex max-w-lg items-center gap-2 rounded-lg border border-white/10 bg-[var(--color-elevated)]/95 px-4 py-2 text-[12px] text-zinc-200 shadow-[0_12px_40px_rgba(0,0,0,0.5)] backdrop-blur"
           >
             <i class="bx bx-info-circle text-base text-[var(--color-accent2)]"></i>
             <span>{notice}</span>
@@ -218,4 +241,8 @@
 
   <!-- Right-click context menu (one instance for the whole app). -->
   <ContextMenu />
+
+  <!-- Playlist add/create and edit dialogs (one instance each). -->
+  <PlaylistPickerDialog />
+  <EditPlaylistDialog />
 </div>

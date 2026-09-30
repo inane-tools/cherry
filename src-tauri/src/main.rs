@@ -1,11 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod auth_store;
+mod devtools;
 mod discord;
 mod http_proxy;
+mod lastfm;
 mod maintenance;
 mod media_controls;
 mod migrate;
+mod playlist_image;
 mod thumbar;
 mod webview_memory;
 mod ytm_login;
@@ -125,6 +128,13 @@ fn main() {
             discord::discord_status,
             discord::discord_set_presence,
             discord::discord_clear_presence,
+            devtools::open_devtools,
+            devtools::is_devtools_open,
+            lastfm::lastfm_get_token,
+            lastfm::lastfm_get_session,
+            lastfm::lastfm_now_playing,
+            lastfm::lastfm_scrobble,
+            playlist_image::upload_playlist_thumbnail,
             maintenance::cache_size,
             maintenance::clear_local_data,
             webview_memory::set_webview_memory_low,

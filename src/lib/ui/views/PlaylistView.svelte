@@ -2,14 +2,20 @@
   import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
   import {
     loadOpenPlaylist,
+    openPlaylistDescription,
     openPlaylistError,
     openPlaylistLoading,
     openPlaylistTracks,
+    playlistStore,
   } from '$lib/app/services/playlists';
   import { pageStore } from '$lib/app/services/navigation';
   import { playTracks, playTracksShuffled } from '$lib/app/services/player';
   import { shuffleMode } from '$lib/app/services/queue';
   import { pinnedStore, togglePin } from '$lib/app/services/pins';
+  import { authStore } from '$lib/app/services/auth';
+  import { openPlaylistEditor } from '$lib/app/services/playlistEditor';
+  import { addablePlaylistsStore } from '$lib/app/services/addablePlaylists';
+  import { savePlaylist, unsavePlaylist } from '$lib/app/services/playlistLibrary';
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
 
@@ -20,6 +26,14 @@
   $: totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds ?? 0), 0);
   $: totalLabel = fmtTotal(totalSeconds);
   $: pinned = !!playlist && $pinnedStore.some((p) => p.browseId === playlist.browseId);
+  // Reference the stores so these recompute when the library/editable sets land.
+  $: editableIds = $addablePlaylistsStore;
+  $: libraryIds = $playlistStore;
+  $: owned = !!playlist && editableIds.some((p) => p.browseId === playlist.browseId);
+  $: saved = !!playlist && libraryIds.some((p) => p.browseId === playlist.browseId);
+  // Until the editable set loads we cannot tell owned from saved, so offer
+  // neither action (never a destructive one).
+  $: ownershipLoaded = editableIds.length > 0;
 
   // Load once per playlist (Back restores the entity without a reload).
   let loadedId: string | null = null;
@@ -65,6 +79,14 @@
             {tracks.length} songs{totalLabel ? ` · ${totalLabel}` : ''}
           {/if}
         </div>
+        {#if $openPlaylistDescription}
+          <p
+            class="mt-3 line-clamp-3 max-w-3xl whitespace-pre-line text-[12px] leading-relaxed text-zinc-400"
+            title={$openPlaylistDescription}
+          >
+            {$openPlaylistDescription}
+          </p>
+        {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
             class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
@@ -95,6 +117,29 @@
           >
             <i class={pinned ? 'bx bxs-pin' : 'bx bx-pin'}></i>
           </button>
+          {#if $authStore}
+            {#if owned}
+              <button
+                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg text-zinc-200 hover:bg-white/10"
+                title="Edit playlist details"
+                aria-label="Edit playlist"
+                onclick={() => openPlaylistEditor(playlist)}
+              >
+                <i class="bx bx-pencil"></i>
+              </button>
+            {:else if ownershipLoaded}
+              <button
+                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg {saved
+                  ? 'text-[var(--color-accent2)]'
+                  : 'text-zinc-200'} hover:bg-white/10"
+                title={saved ? 'Remove from library' : 'Save to library'}
+                aria-label={saved ? 'Remove from library' : 'Save to library'}
+                onclick={() => (saved ? unsavePlaylist(playlist) : savePlaylist(playlist))}
+              >
+                <i class={saved ? 'bx bxs-bookmark' : 'bx bx-bookmark'}></i>
+              </button>
+            {/if}
+          {/if}
         </div>
       </div>
     </header>
@@ -113,7 +158,7 @@
       </div>
       <div class="mt-1 flex flex-col gap-0.5">
         {#each tracks as track, index (track.videoId + index)}
-          <TrackRow track={track} index={index} list={tracks} onPlay={(_t, i) => playTracks(tracks, i)} />
+          <TrackRow track={track} index={index} list={tracks} playlist={playlist} onPlay={(_t, i) => playTracks(tracks, i)} />
         {/each}
       </div>
       <p class="mt-4 px-2 text-[11px] text-zinc-600">

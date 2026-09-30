@@ -76,3 +76,16 @@ export function toHex({ r, g, b }: Rgb): string {
   const part = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
   return `#${part(r)}${part(g)}${part(b)}`;
 }
+
+/** Parse `#rgb` / `#rrggbb` into RGB, or `null` when it is not a hex colour. */
+export function fromHex(hex: string): Rgb | null {
+  const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+  let value = match[1];
+  if (value.length === 3) value = value.split('').map((c) => c + c).join('');
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16),
+  };
+}

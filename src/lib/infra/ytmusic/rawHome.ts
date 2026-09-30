@@ -55,16 +55,44 @@ const HEADER_RENDERERS = [
 export function scanPageHeader(raw: Json): PageHeader | null {
   const node = findFirst(raw, (value) => HEADER_RENDERERS.some((key) => value?.[key]));
   if (!node) return null;
-  const header = HEADER_RENDERERS.map((key) => node[key]).find(Boolean);
+  let header = HEADER_RENDERERS.map((key) => node[key]).find(Boolean);
   if (!header) return null;
-  const title = textOf(header.title);
-  if (!title) return null;
+  // A playlist you own has an *editable* header that wraps the real one
+  // (`musicEditablePlaylistDetailHeaderRenderer.header.musicResponsiveHeaderRenderer`).
+  // Without unwrapping, every field (including title) read as missing and the
+  // whole header was discarded.
+  const inner =
+    header?.header?.musicResponsiveHeaderRenderer ??
+    header?.header?.musicDetailHeaderRenderer ??
+    header?.header?.musicVisualHeaderRenderer;
+  if (inner) header = inner;
   return {
-    title,
-    subtitle: textOf(header.subtitle),
-    description: textOf(header.description),
+    title: textOf(header.title) ?? textOf(node.title) ?? '',
+    subtitle: textOf(header.subtitle) ?? textOf(node.subtitle),
+    description: descriptionOf(header) ?? descriptionFromPage(raw),
     thumbnails: thumbnailsOf(header),
   };
+}
+
+/**
+ * A playlist/album description is not plain text: it is wrapped in a
+ * `musicDescriptionShelfRenderer` (`description.musicDescriptionShelfRenderer
+ * .description.runs`), so `textOf(header.description)` alone found nothing.
+ */
+function descriptionOf(header: Json): string | undefined {
+  const direct = textOf(header?.description);
+  if (direct) return direct;
+  const shelf = header?.description?.musicDescriptionShelfRenderer ?? header?.musicDescriptionShelfRenderer;
+  if (!shelf) return undefined;
+  return textOf(shelf.description) ?? textOf(shelf);
+}
+
+/** Fallback: the description shelf can live outside the header (playlist pages). */
+function descriptionFromPage(raw: Json): string | undefined {
+  const node = findFirst(raw, (value) => value?.musicDescriptionShelfRenderer);
+  if (!node) return undefined;
+  const shelf = node.musicDescriptionShelfRenderer;
+  return textOf(shelf?.description) ?? textOf(shelf);
 }
 
 function textOf(value: Json): string | undefined {

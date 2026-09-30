@@ -36,7 +36,7 @@
       ? 'border-[var(--color-accent)]/25 bg-gradient-to-br from-[var(--color-accent)]/10 to-transparent'
       : tone === 'warn'
         ? 'border-amber-500/25 bg-amber-500/5'
-        : 'border-white/[0.06] bg-[#121217]';
+        : 'border-white/[0.06] bg-[var(--color-card)]';
 
   $: tile =
     tone === 'accent'

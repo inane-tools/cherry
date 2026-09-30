@@ -114,11 +114,7 @@
           title={st.status === 'playing' ? 'Pause' : 'Play'}
           aria-label={st.status === 'playing' ? 'Pause' : 'Play'}
         >
-          {#if st.status === 'loading'}
-            <span class="cherry-eq flex h-4 items-center gap-[3px]">
-              <span></span><span></span><span></span>
-            </span>
-          {:else if st.status === 'playing'}
+          {#if st.status === 'playing'}
             <i class="bx bx-pause"></i>
           {:else}
             <i class="bx bx-play"></i>
@@ -149,8 +145,8 @@
         <button
           data-upnext-toggle
           class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
-          title="Up next"
-          aria-label="Up next"
+          title="Queue"
+          aria-label="Queue"
           onclick={() => (upNextOpen = !upNextOpen)}
         >
           <i class="bx bx-list-ul"></i>
@@ -180,7 +176,7 @@
           <!-- Volume slider pops up above the icon, aligned to its right edge
                with uniform padding. -->
           <div
-            class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg border border-white/10 bg-[#0e0e12] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
+            class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg border border-white/10 bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
               ? 'pointer-events-auto opacity-100'
               : 'pointer-events-none opacity-0'}"
           >

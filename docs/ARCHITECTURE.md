@@ -93,8 +93,15 @@ cache); the migrated session is what keeps the user signed in.
   `rememberPosition` so quitting without pressing play does not lose it.
 - **Shuffle play** (`playTracksShuffled`) turns shuffle on *before* `setQueue`,
   so the first track is genuinely random; the playlist/album headers expose it
-  next to Play. The "Up next" panel lists the **entire** remaining queue (it
-  used to cap at the next 10) and reports the count.
+  next to Play. The **Queue** panel (formerly "Up next") lists the **entire**
+  remaining queue (it used to cap at the next 10) and reports the count. It is
+  shown in **play order** (`upNextQueue`), so shuffle actually reorders the
+  panel. Picking a row **cuts the queue to it** (`cutQueueTo`) — everything before
+  the chosen track is dropped, so skipped songs do not linger behind it. Rows are
+  **drag-reorderable** and individually **removable** (`reorderQueueTo` /
+  `removeFromQueue`). A drag targets a *gap* index, so there is exactly one drop
+  slot between two rows (dropping a row into its own gap is a no-op), and the
+  queue is normalised to the new play order with the current track still playing.
 
 ## Caching and request reduction
 
@@ -105,17 +112,37 @@ profile 5 requests → warm profile 1**. The savings come from two layers:
   IndexedDB). Session config and the multi-megabyte player JS are fetched once
   and reused across restarts.
 - **Response cache** (`infra/storage/cache.ts`): TTL + bounded memory tier, and
-  localStorage for payloads under 250 KB. `cached()` also coalesces concurrent
-  loads, so two views asking for the same playlist produce one request.
-  Lifetimes: playlist 30 min, home 3 min, search 2 min, channels 60 min.
-  Keys are channel-scoped; a non-reversible hash of the session is used instead
-  of the cookie. Cleared on sign-out.
+  localStorage for payloads under 3 MB (overall budget 4 MB). `cached()` also
+  coalesces concurrent loads, so two views asking for the same playlist produce
+  one request. Lifetimes: playlist 30 min, home 3 min, search 2 min, channels
+  60 min. Keys are channel-scoped; a non-reversible hash of the session is used
+  instead of the cookie. Cleared on sign-out. **Playlist header metadata
+  (`meta:`) and single-track lookups (`track:`) are cached too** — the header
+  was being refetched on every open, which is why a playlist's description
+  always lagged behind its (already-streamed) track list.
 
 Client reuse: Innertube clients are cached per `(cookie, channel, player)` in a
 small LRU map, so a browse-only client and a player-capable client coexist
 instead of evicting each other. **Listing endpoints pass
 `retrievePlayer: false`**, so the player JS is only ever fetched when a stream
 actually needs deciphering.
+
+### Staying responsive on large playlists and skips
+
+- **Playlist pages load progressively.** A playlist is one request per ~100
+  tracks and continuations are serial, so awaiting every page made a big playlist
+  look stuck. `streamCollectionTracks` emits the first page immediately (the
+  list and its Play button become usable) and then each following page; the
+  final list is cached exactly like the one-shot version, so re-opens are
+  instant. "Play playlist" starts on the first page and enqueues the rest as it
+  arrives.
+- **Streams are cached and the next track is prefetched.** `getAudioStream`
+  keeps a small TTL cache of resolved URLs, and the player warms the
+  immediately-next queue item's stream while the current one plays, so a skip is
+  instant. The post-error retry bypasses the cache with `{ refresh: true }`.
+- **The last working player client is remembered.** WEB is tried first by
+  default, but on accounts where it is bot-walled the client that worked
+  (YTMUSIC / TV / ANDROID) moves to the front, saving a round trip per track.
 
 ## Look and feel
 
@@ -130,7 +157,10 @@ actually needs deciphering.
   optional icon tile/description/trailing action, and a `tone` of
   default/accent/warn) and `Toggle.svelte` (a `role="switch"` button rather than
   a browser-default checkbox). Rows sit in a `divide-y divide-white/[0.06]`
-  group, and the page header matches the other views' hero heading.
+  group, and the page header matches the other views' hero heading. The page is
+  split into **tabs** — Profile (Account / Discord / Last.fm), Cherry (Playlists
+  / Application / Data & Cache / Developer), Appearance, and About (Cherry info
+  / Disclaimer / Open source).
 - **Font:** Zalando Sans, self-hosted via `@fontsource-variable/zalando-sans`
   (bundled by Vite, no runtime network).
 - **Theme:** near-black base with a red/amber wash from the top of the window
@@ -173,10 +203,15 @@ actually needs deciphering.
   property is not inherited, so setting it on `html` does nothing. The native
   bar is therefore hidden and a slim custom thumb is painted by the
   `overlayScrollbar` action (`lib/ui/actions/overlayScrollbar.ts`), revealed on
-  hover/scroll and dragged like an overlay bar. This deliberately avoids the
-  `OverlayScrollbar` browser flag, which gives the same look but **breaks the
-  login window** (see Auth). A slight dark scrim (`.cherry-btn-scrim`) keeps
-  glyphs readable on buttons even when the accent is light.
+  hover/scroll and dragged like an overlay bar. The thumb is a child of the
+  scroller (so it scrolls with the content), which is why it is positioned with
+  **`transform` only, updated synchronously in the `scroll` handler**: geometry
+  is measured on resize/mutation, never on scroll, so there is no per-frame
+  reflow and no one-frame lag behind the content (the old source of "jitter" on
+  long playlists). This deliberately avoids the `OverlayScrollbar` browser flag,
+  which gives the same look but **breaks the login window** (see Auth). A slight
+  dark scrim (`.cherry-btn-scrim`) keeps glyphs readable on buttons even when the
+  accent is light.
 - **State:** volume, mute, repeat and shuffle are persisted in settings and
   re-applied to the audio element at startup (`applyStoredPlaybackSettings`).
 - **Navigation:** a small history stack in `services/navigation.ts` with both a
@@ -553,3 +588,161 @@ too, but it did **not** fire for this undecorated window (verified by UI
 automation: dragging stopped working with the attribute alone), so Cherry owns the
 logic instead. The `data-tauri-drag-region` attributes must stay off, otherwise
 a real double-click could be toggled twice (once by each handler).
+
+**`dragDropEnabled` must stay `false`** on the main window. The Tauri default
+(`true`) makes Tauri intercept OS drag-and-drop, and on Windows that stops HTML5
+`dragstart`/`drop` events from firing in WebView2 altogether — which silently
+broke the Up next drag-to-reorder. Cherry needs no native file drops, so turning
+it off costs nothing. (Changing this is a config/Rust change: a frontend reload
+is not enough.)
+
+## Playlist editing
+
+The only **mutating** Innertube calls in the app. `client.playlist`
+(`PlaylistManager`) needs a logged-in session and throws otherwise, so every
+action goes through the same signed-in gate as playback and reports the real
+error (e.g. *"This playlist cannot be edited."*) rather than failing silently.
+
+- `createPlaylist` / `addTracksToPlaylist` / `removeTrackFromPlaylist` /
+  `renamePlaylist` / `setPlaylistDescription` live in `InnertubeClient` next to
+  the read paths — raw youtubei.js still never leaves `infra/ytmusic`.
+- A created id may come back `PL…`; it is normalised to the browse form `VL…`
+  so routing and links stay consistent.
+- **Browse ids and edit ids are different.** `browse/edit_playlist` takes the
+  playlist id **without** the `VL` prefix, while browsing takes it **with**.
+  Passing the browse form made every mutation fail with **HTTP 400** (the
+  original "add to playlist is broken" bug). `editPlaylistId()` strips `VL` for
+  the mutation calls; `getPlaylistMeta` (a browse) keeps it. Removal is subtle:
+  `PlaylistManager.removeVideos` browses the playlist internally (re-adding
+  `VL`) and uses the setVideoId it finds, but sends the edit with the id it was
+  given — so it must also be handed the stripped id.
+- Writes are **optimistic**. A full playlist refetch follows continuations (one
+  request per ~100 tracks) and YouTube's read-after-write can lag, so reloading
+  after every add was both slow and occasionally showed the old list.
+  `services/playlistEdit.ts` instead updates the open playlist's track store
+  immediately (append for add, drop the first match for remove, in-place title
+  for rename) and drops **only the changed playlist's** cache key
+  (`collection:<channel>:<browseId>`, plus `library:<channel>:` for renames and
+  creates), so the next open refetches fresh. Created playlists are inserted into
+  the rail optimistically; the real thumbnail/author appear on the next library
+  refresh.
+- Renaming only re-points the page when that playlist is the one open, so a
+  rename from the rail does not navigate away.
+- **The edit dialog reads the live description before writing it.** The rail row
+  has no description and `setDescription('')` erases it, so `getPlaylistMeta`
+  fetches the current header; if that read fails, the description is left
+  untouched (`updatePlaylistDetails(..., null)`). Losing a user's description to
+  a failed fetch would be worse than not editing it.
+- Renaming updates the open page **without a history entry**: `openPage` replaces
+  the entity when the page key (the browse id) is unchanged.
+- **Default save playlist** (`settingsRepo.defaultPlaylistBrowseId`): the track
+  menu's "Add to …" saves straight there; with none set it opens the picker and
+  asks. The picker (`PlaylistPickerDialog`) also creates playlists, as does the
+  `+` beside the sidebar search.
+- **Only editable playlists are offered.** The library
+  (`FEmusic_liked_playlists`) also lists playlists the user merely *saved*, which
+  reject writes. The add-to-playlist menu (`playlist/get_add_to_playlist` →
+  `getAddablePlaylists`, parsed by `scanAddablePlaylists`) returns the writable
+  set, and both the picker and the default-playlist setting read from it
+  (`services/addablePlaylists.ts`, cached per account/channel). The menu is
+  normally opened *for a video*, so a caller without one (the setting) passes the
+  current track or a probe — with no video ids the request comes back empty,
+  which is what made the setting list only some playlists. A stored default that
+  is not in that set is treated as unset, so Cherry asks instead of attempting a
+  write that would 400.
+
+## Last.fm scrobbling
+
+Uses the user's **own** Last.fm API key + secret (entered in Settings) — nothing
+is bundled, so the public repo carries no credentials. Auth is the desktop token
+flow: `auth.getToken` → the user approves in the browser → `auth.getSession`
+yields a long-lived session key stored in settings.
+
+- Signing (`api_sig = md5(sorted params + secret)`) and the HTTP POST happen in
+  **Rust** (`lastfm.rs`, `md5` crate), not the webview: no MD5 in JS, no CORS,
+  and the key/secret/session never leave the app's own transport. A unit test
+  pins the documented example signature.
+- `services/scrobble.ts` owns the accounting: a track longer than 30 s is
+  scrobbled after **half its length or 4 minutes, whichever is first**, measured
+  as wall time while the player reports `playing` (a seek does not count). The
+  scrobble timestamp is when the track started, not when the threshold was hit.
+- Failed scrobbles (offline / Last.fm down) are queued in `localStorage` and
+  retried, so a play is not lost. "Now playing" is sent on the transition into
+  playback and is best-effort (never queued).
+- `lastfmEnabled` gates everything; scrobbling is a no-op unless connected.
+
+## Developer tools
+
+`Settings → Developer` exposes the WebView inspector. `WebviewWindow::open_devtools`
+is only compiled in debug builds unless the `tauri` crate's **`devtools` feature**
+is enabled (it is, in `Cargo.toml`), so a packaged build can still reach it. A
+Rust command (`devtools.rs`) wraps it, which keeps the frontend off the
+`core:webview:allow-open-devtools` capability and lets a browser build no-op. The
+section is hidden behind `devToolsEnabled` (default off); when on, **F12 /
+Ctrl+Shift+I** opens it too.
+
+## Appearance (light/dark + accent)
+
+Settings → Appearance offers a three-way theme (System default, Light, Dark) and
+an accent source (album art, or a fixed custom colour).
+
+- **The theme is one class on `<html>`.** Every Tailwind colour utility resolves
+  to `var(--color-*)` (verified in the built CSS), so the whole UI flips by
+  overriding the neutral tokens under `html.light` in `app.css` — `text-white`
+  becomes dark ink and `bg-white/5` / `border-white/10` become subtle *dark*
+  overlays on light surfaces. A handful of previously hardcoded dark hexes
+  (cards, menus, fields, avatars, popovers) were promoted to semantic tokens
+  (`--color-card/elevated/field/avatar/art/popover`) so they flip too, with the
+  dark values left unchanged. Status colours (amber / rose / emerald / red) are
+  darkened on light so warnings and errors stay readable, and the white inane
+  wordmark SVG is inverted.
+- **`services/appearance.ts` is the only place that touches the DOM for this.**
+  It subscribes to settings, applies the class + accent, listens for OS
+  `prefers-color-scheme` changes while on System, and only writes when a
+  relevant field actually changed (the settings store also emits for volume, the
+  queue, …).
+- **Accent source** is `song` (default) or `custom`. `theme.ts` owns that choice:
+  artwork theming no-ops while the source is custom, and switching back
+  re-derives from the current track. A custom colour is parsed by
+  `themeColor.fromHex` and applied *without* `vividify` (the user picked it).
+
+## Search, pasted links and the library rail
+
+- **Search maps the "Top result" as any kind.** The top-result card can be a
+  song, artist, album or playlist; treating it as track-only dropped the artist
+  from an artist search (the artist *is* the top result), which is why searching
+  "Toby Fox" listed related artists but never him. `mapCardShelfResult` reads the
+  card's browse endpoint / page type and files it in the right bucket (artists
+  go first). `mapArtistRef` also reads the browse id from navigation endpoints,
+  not just `id`.
+- **Pasted links open.** `parseYouTubeLink` recognises `watch?v=`, `youtu.be/…`
+  and `playlist?list=…` URLs; the sidebar search box and the Search view open the
+  linked song (metadata resolved by `getTrack`) or playlist (`getPlaylistMeta`
+  for title + art) instead of searching for the URL text.
+- **Saved vs created playlists.** The editable set (`get_add_to_playlist`) tells
+  created from merely *saved* playlists. The rail lists your own playlists first,
+  then a single divider, then saved ones. `scanAddablePlaylists` detects an option by
+  its *shape* (a `*Renderer` with a playlist id + title) rather than a fixed
+  renderer-name list, because a name mismatch silently returned an empty set —
+  which made ownership look unknown (no rail grouping, and a "Remove from
+  library" action offered on your own playlists). The set is **per brand
+  channel**, and the first request runs before the channel is resolved (so it can
+  come back empty and only "fix itself" once something re-triggered a load);
+  `addablePlaylists.ts` now reloads on a channel change. Until the set has loaded,
+  ownership is treated as unknown and **no** library action is offered, and
+  `unsavePlaylist` refuses to remove a playlist you can edit. A playlist you did
+  not create offers **Save to library / Remove from library** (the `like/like`
+  endpoint via `addPlaylistToLibrary`), in the context menu and the page header;
+  your own playlists show **Edit details** instead.
+- **Custom playlist images are implemented.** `Settings`-free: the edit dialog's
+  **Change image** uploads a JPG/PNG. The upload endpoints are *not* Innertube
+  calls, so `playlist_image.rs` signs them with the browser `SAPISIDHASH` scheme
+  (SHA-1 of `<unix> <SAPISID> https://music.youtube.com`) and performs the
+  two-step resumable upload to `playlist_image_upload/playlist_custom_thumbnail`;
+  the returned encrypted blob id is attached through the normal edit endpoint
+  with `ACTION_SET_CUSTOM_THUMBNAIL`. The chosen image is applied to the rail and
+  page **immediately** (YouTube's own header can lag behind a new custom
+  thumbnail, and re-applying its old URL would visibly revert the change), then
+  swapped for the server URL once it differs. YT Music may require a verified
+  phone number on the account.
+

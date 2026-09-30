@@ -1,18 +1,32 @@
-// Album-art driven theming.
+// Accent theming.
 //
-// The accent and background wash follow the current track's artwork, the way
-// many music players do it. The image is fetched through the Rust relay
-// (`http_proxy_fetch_base64`) rather than assigned directly to an <img>,
-// because drawing a cross-origin image to a canvas taints it and makes
-// `getImageData` throw. The colour maths lives in `themeColor.ts`.
+// Two sources: the current track's artwork (the default, like many players) or
+// a fixed custom colour the user picks. The choice lives in settings and is
+// pushed here by `services/appearance.ts`; the player only themes from artwork
+// while the source is 'song'.
+//
+// The artwork image is fetched through the Rust relay (`http_proxy_fetch_base64`)
+// rather than assigned directly to an <img>, because drawing a cross-origin image
+// to a canvas taints it and makes `getImageData` throw. The colour maths lives in
+// `themeColor.ts`.
 
 import { isTauri } from './platform';
-import { dominantColour, toHex, vividify, type Rgb } from './themeColor';
+import { dominantColour, fromHex, toHex, vividify, type Rgb } from './themeColor';
 
 const DEFAULTS = {
   accent: '#ff4d5e',
   accent2: '#ff8a5c',
 };
+const DEFAULT_RGB: Rgb = { r: 255, g: 77, b: 94 };
+
+/**
+ * 'song' = follow the album art (default); 'custom' = a fixed colour set by the
+ * user. `setAccentSource` is called by `appearance.ts` when settings change.
+ */
+let accentSource: 'song' | 'custom' = 'song';
+export function setAccentSource(source: 'song' | 'custom'): void {
+  accentSource = source;
+}
 
 const cache = new Map<string, Rgb | null>();
 /** Bounded so a long listening session can't grow this without limit. */
@@ -27,35 +41,46 @@ function remember(artworkUrl: string, colour: Rgb | null): void {
   }
 }
 
-function applyTheme(accent: Rgb): void {
-  const vivid = vividify(accent);
+/** Set the accent (and its lighter companion) from an RGB colour. */
+function setAccent(colour: Rgb, vivid: boolean): void {
+  const base = vivid ? vividify(colour) : colour;
   const lighter: Rgb = {
-    r: Math.min(255, vivid.r * 1.25 + 30),
-    g: Math.min(255, vivid.g * 1.25 + 30),
-    b: Math.min(255, vivid.b * 1.25 + 30),
+    r: Math.min(255, base.r * 1.25 + 30),
+    g: Math.min(255, base.g * 1.25 + 30),
+    b: Math.min(255, base.b * 1.25 + 30),
   };
-  // Only colours are set: `--color-accent` is registered with @property so the
-  // change animates, and the wash derives from it via color-mix.
   const root = document.documentElement.style;
-  root.setProperty('--color-accent', toHex(vivid));
+  root.setProperty('--color-accent', toHex(base));
   root.setProperty('--color-accent2', toHex(lighter));
 }
 
-export function resetArtworkTheme(): void {
+function setAccentPair(accent: string, accent2: string): void {
   const root = document.documentElement.style;
-  root.setProperty('--color-accent', DEFAULTS.accent);
-  root.setProperty('--color-accent2', DEFAULTS.accent2);
+  root.setProperty('--color-accent', accent);
+  root.setProperty('--color-accent2', accent2);
+}
+
+/** Reset to the built-in accent (only meaningful while following the artwork). */
+export function resetArtworkTheme(): void {
+  if (accentSource !== 'song') return;
+  setAccentPair(DEFAULTS.accent, DEFAULTS.accent2);
+}
+
+/** Apply a fixed custom accent colour (hex). */
+export function applyCustomAccent(hex: string): void {
+  setAccent(fromHex(hex) ?? DEFAULT_RGB, false);
 }
 
 /** Adopt the dominant colour of `artworkUrl` as the app accent. */
 export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
+  if (accentSource !== 'song') return;
   if (!artworkUrl || !isTauri()) {
     resetArtworkTheme();
     return;
   }
   if (cache.has(artworkUrl)) {
     const cached = cache.get(artworkUrl);
-    if (cached) applyTheme(cached);
+    if (cached) setAccent(cached, true);
     else resetArtworkTheme();
     return;
   }
@@ -80,7 +105,7 @@ export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
 
     const colour = dominantColour(data);
     remember(artworkUrl, colour);
-    if (colour) applyTheme(colour);
+    if (colour) setAccent(colour, true);
     else resetArtworkTheme();
   } catch (e) {
     // Artwork may be unavailable or undecodable; the default theme still works.

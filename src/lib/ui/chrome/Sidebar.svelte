@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import type { Playlist } from '$lib/core/models';
   import { authStore } from '$lib/app/services/auth';
   import { openPlaylist, libraryError, libraryLoading, refreshLibrary, playlistStore } from '$lib/app/services/playlists';
   import { requestSearch } from '$lib/app/services/navigation';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { playlistMenu } from '$lib/app/services/menus';
+  import { openPlaylistPicker } from '$lib/app/services/playlistPicker';
+  import { addablePlaylistsStore, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
+  import { parseYouTubeLink, openParsedLink } from '$lib/app/services/openLink';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
 
   // Search lives here (above the playlists) and stays on top while the list
@@ -11,8 +16,26 @@
   let query = '';
   function submit(e: SubmitEvent) {
     e.preventDefault();
+    // A pasted YouTube / YouTube Music link opens that song or playlist.
+    const link = parseYouTubeLink(query);
+    if (link) {
+      void openParsedLink(link);
+      query = '';
+      return;
+    }
     requestSearch(query);
   }
+
+  // Split the library into playlists you created (editable) and ones you only
+  // saved, so the rail can separate them. Needs the editable set loaded.
+  onMount(() => {
+    void loadAddablePlaylists();
+  });
+  $: playlists = $playlistStore;
+  $: editableIds = new Set($addablePlaylistsStore.map((p) => p.browseId));
+  $: ownershipLoaded = $addablePlaylistsStore.length > 0;
+  $: created = playlists.filter((p) => editableIds.has(p.browseId));
+  $: saved = playlists.filter((p) => !editableIds.has(p.browseId));
 
   // Hide the bottom fade once the end of the list is reached. (The custom
   // scrollbar itself is handled by the `overlayScrollbar` action.)
@@ -36,11 +59,47 @@
   }
 </script>
 
+{#snippet playlistRow(playlist: Playlist)}
+  <div class="mx-2 flex items-center">
+    <button
+      class="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 text-left text-[12px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+      title={playlist.title}
+      onclick={() => openPlaylist(playlist)}
+      oncontextmenu={(e) => openContextMenu(e, playlistMenu(playlist))}
+    >
+      <span class="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-white/5">
+        {#if playlist.thumbnails[0]}
+          <img src={playlist.thumbnails[0].url} alt="" class="h-full w-full object-cover" loading="lazy" />
+        {:else}
+          <span class="flex h-full w-full items-center justify-center text-[11px] text-[var(--color-accent2)]">
+            <i class="bx bx-music"></i>
+          </span>
+        {/if}
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate leading-tight">{playlist.title}</span>
+        {#if playlist.author}
+          <span class="mt-0.5 block truncate text-[11px] leading-tight text-zinc-500">{playlist.author}</span>
+        {/if}
+      </span>
+    </button>
+  </div>
+{/snippet}
+
 <aside class="relative flex h-full w-60 shrink-0 flex-col border-r border-white/5 bg-black/20 pt-2 backdrop-blur-[2px]">
-  <!-- Search only; Back / Home / Explore live in the top bar. Horizontal
-       padding lives on the children so the custom scrollbar can sit right at
-       the rail's edge. -->
-  <div class="flex shrink-0 items-center px-2">
+  <!-- New-playlist button + search; Back / Home / Explore live in the top bar.
+       The button sits to the left of the field, and `gap-2` matches the top
+       bar's spacing between Back / Home / Explore. Horizontal padding lives on
+       the children so the custom scrollbar can sit right at the rail's edge. -->
+  <div class="flex shrink-0 items-center gap-2 px-2">
+    <button
+      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-lg text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+      title="New playlist"
+      aria-label="New playlist"
+      onclick={() => openPlaylistPicker()}
+    >
+      <i class="bx bx-plus"></i>
+    </button>
     <form class="min-w-0 flex-1" onsubmit={submit}>
       <label
         class="flex h-8 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-zinc-400 transition-colors focus-within:border-[var(--color-accent)]/60"
@@ -91,32 +150,20 @@
           </button>
         {/if}
       </div>
+    {:else if !ownershipLoaded}
+      {#each playlists as playlist (playlist.browseId)}
+        {@render playlistRow(playlist)}
+      {/each}
     {:else}
-      {#each $playlistStore as playlist (playlist.browseId)}
-        <div class="mx-2 flex items-center">
-          <button
-            class="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 text-left text-[12px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-            title={playlist.title}
-            onclick={() => openPlaylist(playlist)}
-            oncontextmenu={(e) => openContextMenu(e, playlistMenu(playlist))}
-          >
-            <span class="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-white/5">
-              {#if playlist.thumbnails[0]}
-                <img src={playlist.thumbnails[0].url} alt="" class="h-full w-full object-cover" loading="lazy" />
-              {:else}
-                <span class="flex h-full w-full items-center justify-center text-[11px] text-[var(--color-accent2)]">
-                  <i class="bx bx-music"></i>
-                </span>
-              {/if}
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate leading-tight">{playlist.title}</span>
-              {#if playlist.author}
-                <span class="mt-0.5 block truncate text-[11px] leading-tight text-zinc-500">{playlist.author}</span>
-              {/if}
-            </span>
-          </button>
-        </div>
+      {#each created as playlist (playlist.browseId)}
+        {@render playlistRow(playlist)}
+      {/each}
+      <!-- A single separator between your own playlists and saved ones. -->
+      {#if created.length > 0 && saved.length > 0}
+        <div class="mx-2 my-1.5 h-px shrink-0 bg-white/[0.14]"></div>
+      {/if}
+      {#each saved as playlist (playlist.browseId)}
+        {@render playlistRow(playlist)}
       {/each}
     {/if}
   </div>

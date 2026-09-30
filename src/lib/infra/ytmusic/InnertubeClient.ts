@@ -29,9 +29,9 @@ import type {
   Track,
 } from '$lib/core/models';
 import { CherryError } from '$lib/core/errors';
-import { cached } from '$lib/infra/storage/cache';
-import { mapAlbum, mapArtistRef, mapCardShelf, mapPlaylist, mapTrack } from './mappers';
-import { scanLibrary } from './rawLibrary';
+import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
+import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
+import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
 import { scanHome, scanPageHeader, type HomeSection } from './rawHome';
 import { innertubeFetch } from './tauriFetch';
 import { installEvaluator } from './evaluator';
@@ -190,17 +190,84 @@ export async function getInnertube(
  *  audio-only first, then known audio-bearing progressive itags. */
 const PROGRESSIVE_WITH_AUDIO = new Set([17, 18, 22, 36, 43]);
 
+interface AudioStreamResult {
+  track: { durationSeconds?: number };
+  stream: StreamInfo;
+}
+
+/**
+ * Recently resolved streams, so replaying a track and — more importantly —
+ * skipping to a prefetched one is instant. URLs are valid for hours; the TTL is
+ * a conservative memory bound, not an expiry check.
+ */
+const STREAM_TTL_MS = 20 * 60_000;
+const STREAM_CACHE_MAX = 24;
+const STREAMS = new Map<string, { result: AudioStreamResult; expires: number }>();
+
+function rememberStream(videoId: string, result: AudioStreamResult): void {
+  STREAMS.set(videoId, { result, expires: Date.now() + STREAM_TTL_MS });
+  while (STREAMS.size > STREAM_CACHE_MAX) {
+    const oldest = STREAMS.keys().next().value;
+    if (oldest === undefined) break;
+    STREAMS.delete(oldest);
+  }
+}
+
+/**
+ * Which player client worked last. Trying the known-good one first avoids a
+ * wasted round trip per track on accounts where WEB is bot-walled (the default
+ * attempt order is WEB, YTMUSIC, TV, ANDROID).
+ */
+let preferredPlayerClient: string | undefined;
+
+/**
+ * Caching wrapper around stream resolution (also the entry point used by the
+ * player's next-track prefetch). `refresh` bypasses the cache for the one retry
+ * after a URL is rejected.
+ */
 export async function getAudioStream(
   videoId: string,
   session?: AuthSession | null,
-): Promise<{ track: { durationSeconds?: number }; stream: StreamInfo }> {
+  options: { refresh?: boolean } = {},
+): Promise<AudioStreamResult> {
+  if (options.refresh) {
+    STREAMS.delete(videoId);
+  } else {
+    const hit = STREAMS.get(videoId);
+    if (hit && hit.expires > Date.now()) return hit.result;
+  }
+  const result = await resolveAudioStream(videoId, session);
+  rememberStream(videoId, result);
+  return result;
+}
+
+/**
+ * Warm the stream for a track we expect to play next. Best-effort: any failure
+ * is swallowed (the real load will report it if it matters).
+ */
+export async function prefetchAudioStream(
+  videoId: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const hit = STREAMS.get(videoId);
+  if (hit && hit.expires > Date.now()) return;
+  await getAudioStream(videoId, session).catch(() => undefined);
+}
+
+async function resolveAudioStream(
+  videoId: string,
+  session?: AuthSession | null,
+): Promise<AudioStreamResult> {
   // Playback is the one place the player JS is genuinely required, so this is
   // the only call that opts into fetching it.
   const client = await getInnertube(session, { retrievePlayer: true });
   let lastError: unknown;
   // `undefined` = default WEB client (authed when logged in). YTMUSIC is the
   // music.youtube.com client itself — best odds of audio URLs when authed.
-  const attempts: (string | undefined)[] = [undefined, 'YTMUSIC', 'TV', 'ANDROID'];
+  const base: (string | undefined)[] = [undefined, 'YTMUSIC', 'TV', 'ANDROID'];
+  const attempts: (string | undefined)[] = preferredPlayerClient
+    ? [preferredPlayerClient, ...base.filter((c) => c !== preferredPlayerClient)]
+    : base;
   for (const playerClient of attempts) {
     let info: AnyNode;
     try {
@@ -243,6 +310,8 @@ export async function getAudioStream(
       }
       if (!url && format.url) url = String(format.url);
       if (!url) continue;
+      // Remember the client that produced a usable stream.
+      preferredPlayerClient = playerClient;
       return {
         track: { durationSeconds: info.basic_info?.duration },
         stream: {
@@ -351,10 +420,22 @@ async function runSearch(q: string, session?: AuthSession | null): Promise<Searc
       if (!item || typeof item !== 'object') return;
       const kind = item.item_type as string | undefined;
       if (item.type === 'MusicCardShelf') {
-        const t = mapCardShelf(item);
-        if (t && !seenSongs.has(t.videoId)) {
-          seenSongs.add(t.videoId);
-          songs.unshift(t); // top result first
+        // The top result can be a song, artist, album or playlist. An artist
+        // search's top result is the artist itself, so it must land in
+        // `artists` (dropping it is why the artist you searched never showed).
+        const r = mapCardShelfResult(item);
+        if (r.track && !seenSongs.has(r.track.videoId)) {
+          seenSongs.add(r.track.videoId);
+          songs.unshift(r.track); // top result first
+        } else if (r.artist?.browseId && !seenRest.has(r.artist.browseId)) {
+          seenRest.add(r.artist.browseId);
+          artists.unshift(r.artist);
+        } else if (r.album && !seenRest.has(r.album.browseId)) {
+          seenRest.add(r.album.browseId);
+          albums.unshift(r.album);
+        } else if (r.playlist && !seenRest.has(r.playlist.browseId)) {
+          seenRest.add(r.playlist.browseId);
+          playlists.unshift(r.playlist);
         }
         return;
       }
@@ -823,6 +904,301 @@ async function runCollectionTracks(
     console.warn('[cherry] could not expand collection', browseId, e);
     return [];
   }
+}
+
+/**
+ * Progressive `getCollectionTracks` for the playlist page.
+ *
+ * A large playlist is one request per ~100 tracks and continuations are serial,
+ * so awaiting the whole thing made a big page look stuck. This emits the first
+ * page immediately and then each following page, so the list and its Play button
+ * are usable at once while the rest streams in. The final list is cached exactly
+ * like the one-shot version, so a second open is instant.
+ */
+export async function streamCollectionTracks(
+  browseId: string,
+  session: AuthSession | null | undefined,
+  onPage: (tracks: Track[], done: boolean) => void,
+): Promise<Track[]> {
+  const key = `collection:${getActiveChannel()}:${browseId}`;
+  const cachedTracks = cacheGet<Track[]>(key);
+  if (cachedTracks) {
+    onPage(cachedTracks, true);
+    return cachedTracks;
+  }
+
+  const client = await getInnertube(session, { retrievePlayer: false });
+  const isAlbum =
+    browseId.startsWith('MPR') || browseId.startsWith('FEmusic_library_privately_owned_release');
+  let container: AnyNode = isAlbum
+    ? await client.music.getAlbum(browseId)
+    : await client.music.getPlaylist(browseId);
+
+  const all: Track[] = [];
+  const addRows = (rows: AnyNode[]) => {
+    for (const row of rows) {
+      const track = mapTrack(row);
+      if (track) all.push(track);
+    }
+  };
+  const emit = (done: boolean) => onPage([...all], done);
+
+  addRows(container?.contents ?? container?.items ?? []);
+  emit(false);
+
+  for (let page = 0; page < 200 && container?.has_continuation; page++) {
+    try {
+      container = await container.getContinuation();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[cherry] playlist continuation failed; keeping loaded tracks', e);
+      break;
+    }
+    const next: AnyNode[] = container?.contents ?? container?.items ?? [];
+    if (next.length === 0) break;
+    addRows(next);
+    emit(false);
+  }
+
+  emit(true);
+  cacheSet(key, all, TTL.playlist);
+  return all;
+}
+
+/**
+ * Playlists the signed-in user can add songs to.
+ *
+ * The Music library also lists playlists the user merely *saved*, which cannot
+ * be edited; this menu returns only the ones that can. Cached per channel.
+ * Browse ids are `VL…`; the menu returns `PL…`, normalised on the way out.
+ */
+export async function getAddablePlaylists(
+  session?: AuthSession | null,
+  videoIds: string[] = [],
+): Promise<Playlist[]> {
+  // Never cache an empty/failed result: an empty menu is either a failed read
+  // or a brand-new account, neither of which should stick for 30 minutes.
+  return cached(
+    `addable:${getActiveChannel()}:${sessionKey(session)}`,
+    TTL.playlist,
+    async () => {
+      const client = await getInnertube(session, { retrievePlayer: false });
+      const response: AnyNode = await client.actions.execute('playlist/get_add_to_playlist', {
+        videoIds,
+        excludeWatchLater: true,
+        client: 'YTMUSIC',
+      });
+      return scanAddablePlaylists(response?.data);
+    },
+    { shouldCache: (value) => value.length > 0 },
+  );
+}
+
+// ── Playlist editing (authenticated writes) ────────────────────────
+// The only mutating Innertube calls in the app. youtubei.js throws if the
+// session is not logged in; failures propagate so the UI can explain them
+// (e.g. "This playlist cannot be edited.").
+
+/** A created playlist id may come back as `PL…`; browse ids are `VL…`. */
+function normalizePlaylistId(id: string): string {
+  return id.startsWith('PL') ? `VL${id}` : id;
+}
+
+/**
+ * Playlist **mutations** (`browse/edit_playlist`) take the id *without* the `VL`
+ * prefix, while browse endpoints take it *with*. Sending the browse form is why
+ * "add to playlist" came back as HTTP 400. Removal still browses internally
+ * (which re-adds `VL`), but the edit it sends uses the stripped id.
+ */
+function editPlaylistId(browseId: string): string {
+  return browseId.startsWith('VL') ? browseId.slice(2) : browseId;
+}
+
+export async function createPlaylist(
+  title: string,
+  videoIds: string[] = [],
+  session?: AuthSession | null,
+): Promise<string> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  const result = await client.playlist.create(title, videoIds);
+  if (!result.success || !result.playlist_id) {
+    throw new CherryError('internal', 'YouTube Music could not create the playlist.');
+  }
+  return normalizePlaylistId(String(result.playlist_id));
+}
+
+export async function addTracksToPlaylist(
+  playlistId: string,
+  videoIds: string[],
+  session?: AuthSession | null,
+): Promise<void> {
+  if (videoIds.length === 0) return;
+  const client = await getInnertube(session, { retrievePlayer: false });
+  await client.playlist.addVideos(editPlaylistId(playlistId), videoIds);
+}
+
+export async function removeTrackFromPlaylist(
+  playlistId: string,
+  videoId: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  await client.playlist.removeVideos(editPlaylistId(playlistId), [videoId]);
+}
+
+export async function renamePlaylist(
+  playlistId: string,
+  name: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  await client.playlist.setName(editPlaylistId(playlistId), name);
+}
+
+export async function setPlaylistDescription(
+  playlistId: string,
+  description: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  await client.playlist.setDescription(editPlaylistId(playlistId), description);
+}
+
+/**
+ * Attach a previously uploaded custom thumbnail (the encrypted blob id from
+ * `upload_playlist_thumbnail`) to a playlist.
+ */
+export async function setPlaylistCustomThumbnail(
+  browseId: string,
+  encryptedBlobId: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  const result: AnyNode = await client.actions.execute('browse/edit_playlist', {
+    playlistId: editPlaylistId(browseId),
+    actions: [
+      {
+        action: 'ACTION_SET_CUSTOM_THUMBNAIL',
+        addedCustomThumbnail: {
+          imageKey: {
+            type: 'PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL',
+            name: 'studio_square_thumbnail',
+          },
+          playlistScottyEncryptedBlobId: encryptedBlobId,
+        },
+      },
+    ],
+    client: 'YTMUSIC',
+  });
+  // Surface a rejection instead of silently leaving the old artwork.
+  if (!result?.success || (typeof result?.status_code === 'number' && result.status_code >= 400)) {
+    throw new CherryError('internal', `YouTube Music rejected the image (HTTP ${result?.status_code ?? '?'}).`);
+  }
+  const error = result?.data?.error;
+  if (error) {
+    const message = typeof error === 'string' ? error : (error.message ?? JSON.stringify(error));
+    throw new CherryError('internal', `YouTube Music rejected the image: ${message}`);
+  }
+}
+
+/** Add a playlist you do not own to your library (the "save" action). */
+export async function addPlaylistToLibrary(
+  browseId: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  await client.playlist.addToLibrary(editPlaylistId(browseId));
+}
+
+/** Remove a saved playlist from your library. */
+export async function removePlaylistFromLibrary(
+  browseId: string,
+  session?: AuthSession | null,
+): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  await client.playlist.removeFromLibrary(editPlaylistId(browseId));
+}
+
+/**
+ * Minimal track metadata for a bare video id (used when a song link is pasted
+ * into the search box, where there is no row to map from).
+ */
+export async function getTrack(
+  videoId: string,
+  session?: AuthSession | null,
+): Promise<Track | null> {
+  return cached(
+    `track:${getActiveChannel()}:${videoId}`,
+    TTL.playlist,
+    async () => {
+      const client = await getInnertube(session, { retrievePlayer: false });
+      try {
+        const info: AnyNode = await client.getInfo(videoId);
+        const basic: AnyNode = info?.basic_info ?? {};
+        const title = basic.title;
+        if (!title) return null;
+        const thumbnails = (basic.thumbnail ?? [])
+          .map((t: AnyNode) => ({ url: String(t?.url ?? ''), width: t?.width, height: t?.height }))
+          .filter((t: Thumbnail) => t.url.length > 0);
+        return {
+          videoId,
+          title: String(title),
+          artists: basic.author ? [{ name: String(basic.author) }] : [],
+          durationSeconds: typeof basic.duration === 'number' ? basic.duration : undefined,
+          thumbnails,
+        };
+      } catch {
+        return null;
+      }
+    },
+    { shouldCache: (value) => value !== null },
+  );
+}
+
+export interface PlaylistMeta {
+  title?: string;
+  description?: string;
+  thumbnails?: Thumbnail[];
+}
+
+/**
+ * Current title/description of a playlist, for the edit dialog.
+ *
+ * The list row does not carry the description, and `setDescription('')` would
+ * erase it, so the editor reads the live value before offering to change it.
+ * Returns `null` on failure so the caller can avoid writing a description it
+ * never managed to read.
+ */
+export async function getPlaylistMeta(
+  browseId: string,
+  session?: AuthSession | null,
+): Promise<PlaylistMeta | null> {
+  // Cached (and persisted). Opening a playlist used to refetch the header every
+  // time just to show its description/art, so the description always lagged
+  // behind the (already-streamed) track list; now a re-open shows it instantly.
+  return cached(
+    `meta:${getActiveChannel()}:${browseId}`,
+    TTL.playlist,
+    async () => {
+      try {
+        const client = await getInnertube(session, { retrievePlayer: false });
+        const response: AnyNode = await client.actions.execute('/browse', {
+          browseId,
+          client: 'YTMUSIC',
+        });
+        const header = scanPageHeader(response?.data);
+        if (!header) return null;
+        return {
+          title: header.title,
+          description: header.description,
+          thumbnails: header.thumbnails,
+        };
+      } catch {
+        return null;
+      }
+    },
+    { shouldCache: (value) => value !== null },
+  );
 }
 
 /** "Up next" autoplay recommendations for radio mode. */

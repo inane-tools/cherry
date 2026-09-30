@@ -9,9 +9,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
 import { toCherryError } from '$lib/core/errors';
-import { getAudioStream, getInnertube } from '$lib/infra/ytmusic/InnertubeClient';
+import { getAudioStream, getInnertube, prefetchAudioStream } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
-import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, moveTo } from './queue';
+import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
 import { invokeSafe, isTauri } from './platform';
 import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
@@ -284,7 +284,9 @@ export async function prev(): Promise<void> {
  */
 export async function playQueueItem(queueId: string): Promise<void> {
   const before = get(currentItem);
-  if (!moveTo(queueId)) return;
+  // Selecting a track from "Up next" drops everything before it, so the songs
+  // you skipped do not linger in the queue.
+  if (!cutQueueTo(queueId)) return;
   const after = get(currentItem);
   // Clicking the entry that is already playing should not restart it — but a
   // restored entry has no source yet, so it still needs loading.
@@ -420,6 +422,27 @@ export function applyStoredPlaybackSettings(): void {
   setShuffle(shuffle);
 }
 
+/**
+ * Warm the next track's stream while the current one plays, so a skip is
+ * instant. Only the immediately-next item is fetched (never the whole queue) and
+ * failures are ignored — it is purely an optimization.
+ */
+let prefetching = false;
+async function prefetchNext(): Promise<void> {
+  if (prefetching) return;
+  const next = get(upNext)[0];
+  const session = get(authStore);
+  if (!next || !session) return;
+  prefetching = true;
+  try {
+    await prefetchAudioStream(next.track.videoId, session);
+  } catch {
+    /* best-effort */
+  } finally {
+    prefetching = false;
+  }
+}
+
 async function loadCurrent(autoplay: boolean): Promise<void> {
   cancelPauseClear();
   const item = get(currentItem);
@@ -462,6 +485,8 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
       playerStore.update((p) => ({ ...p, durationSeconds: track.durationSeconds as number }));
     }
     if (autoplay) await el.play();
+    // Warm the next track so skipping is instant.
+    void prefetchNext();
   } catch (e) {
     const err = toCherryError(e);
     // If the stream URL expired (410-ish), retry once with a fresh client.
@@ -469,10 +494,11 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
       lastStreamVideoId = item.track.videoId + ':retry';
       try {
         const session = get(authStore);
-        const { stream } = await getAudioStream(item.track.videoId, session);
+        const { stream } = await getAudioStream(item.track.videoId, session, { refresh: true });
         el.src = stream.url;
         applyPendingResume(el, item.track.videoId);
         if (autoplay) await el.play().catch(() => undefined);
+        void prefetchNext();
         return;
       } catch {
         /* fall through to error state */

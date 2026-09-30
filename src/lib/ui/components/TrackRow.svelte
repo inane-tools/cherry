@@ -11,6 +11,8 @@
   export let onPlay: (t: Track, i: number) => void;
   /** The list this row belongs to, so "Play" starts the whole list here. */
   export let list: Track[] | undefined = undefined;
+  /** Set on a playlist page so the menu can offer "Remove from this playlist". */
+  export let playlist: import('$lib/core/models').Playlist | undefined = undefined;
 
   $: isCurrent = $playerStore.track?.videoId === track.videoId;
   $: playing = isCurrent && $playerStore.status === 'playing';
@@ -21,7 +23,7 @@
   }
 
   function onContext(event: MouseEvent): void {
-    openContextMenu(event, trackMenu(track, list, index));
+    openContextMenu(event, trackMenu(track, list, index, playlist));
   }
 
   // The row is a div (not a button) so the artist names inside it can be their
@@ -52,7 +54,7 @@
   {#if bestThumbnail(track.thumbnails, 96)}
     <img src={bestThumbnail(track.thumbnails, 96)} alt="" class="h-10 w-10 rounded-md object-cover" loading="lazy" />
   {:else}
-    <div class="flex h-10 w-10 items-center justify-center rounded-md bg-[#1a1a24] text-zinc-600">
+    <div class="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-art)] text-zinc-600">
       <i class="bx bx-music text-lg"></i>
     </div>
   {/if}

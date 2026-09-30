@@ -25,6 +25,14 @@
   --color-panel: #0c0c0e;
   --color-panel2: #141417;
   --color-line: #1f1f24;
+  /* Semantic surfaces used by components (exact dark values, overridden in
+     light mode). Keeping them as tokens is what lets `html.light` flip the UI. */
+  --color-card: #121217;
+  --color-elevated: #17171f;
+  --color-field: #191820;
+  --color-avatar: #242333;
+  --color-art: #1a1a24;
+  --color-popover: #0e0e12;
   --color-accent: #ff4d5e;
   --color-accent2: #ff8a5c;
 }
@@ -179,6 +187,7 @@ html {
 }
 .cherry-sb-thumb {
   position: absolute;
+  top: 0;
   right: 2px;
   width: 4px;
   border-radius: 999px;
@@ -187,6 +196,7 @@ html {
   transition: opacity 0.2s ease;
   pointer-events: none;
   z-index: 5;
+  will-change: transform;
 }
 .cherry-sb-thumb.is-visible {
   opacity: 1;
@@ -290,4 +300,109 @@ html {
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────
+   Every Tailwind colour utility resolves to `var(--color-*)`, so remapping the
+   neutral tokens under `html.light` flips the whole UI in one place (the class
+   is set by services/appearance.ts). */
+html.light {
+  --color-surface: #f4f4f5;
+  --color-panel: #ffffff;
+  --color-panel2: #ffffff;
+  --color-line: #e4e4e7;
+  --color-card: #ffffff;
+  --color-elevated: #ffffff;
+  --color-field: #ffffff;
+  --color-avatar: #e4e4e7;
+  --color-art: #ededf0;
+  --color-popover: #ffffff;
+
+  /* Invert the neutral ramp: `text-white` becomes dark ink, and `bg-white/5` /
+     `border-white/10` become subtle *dark* overlays on light surfaces. */
+  --color-white: #09090b;
+  --color-black: #ffffff;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #52525b;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #a1a1aa;
+  --color-zinc-700: #c4c4cb;
+
+  /* Status colours are tuned for a dark background; darken them so warnings,
+     success and error text stay readable on light surfaces. */
+  --color-amber-100: #7c2d12;
+  --color-amber-200: #92400e;
+  --color-rose-300: #be123c;
+  --color-emerald-300: #047857;
+  --color-red-400: #dc2626;
+
+  --cherry-wash-image:
+    radial-gradient(
+      115% 60% at 50% -14%,
+      color-mix(in srgb, var(--color-accent) 30%, transparent) 0%,
+      color-mix(in srgb, var(--color-accent) 12%, transparent) 42%,
+      transparent 74%
+    ),
+    radial-gradient(
+      75% 45% at 88% -10%,
+      color-mix(in srgb, var(--color-accent2) 18%, transparent) 0%,
+      transparent 72%
+    ),
+    linear-gradient(180deg, #fbf1f2 0%, #f4f4f5 55%, #f4f4f5 100%);
+}
+
+html.light body {
+  color: #18181b;
+}
+
+html.light .cherry-playerbar {
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #fafafa 45%,
+    color-mix(in srgb, var(--color-accent) 12%, #ffffff) 100%
+  );
+}
+
+/* Scrollbars and sliders paint their own colours (not tokens). */
+html.light {
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+}
+html.light .cherry-sb-thumb {
+  background: rgba(0, 0, 0, 0.28);
+}
+html.light *::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+}
+html.light *::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+html.light .cherry-range,
+html.light .cherry-range-v {
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent2) var(--fill, 0%),
+    rgba(0, 0, 0, 0.15) var(--fill, 0%),
+    rgba(0, 0, 0, 0.15) 100%
+  );
+}
+html.light .cherry-range-v {
+  background: linear-gradient(
+    to top,
+    var(--color-accent) 0%,
+    var(--color-accent2) var(--fill, 0%),
+    rgba(0, 0, 0, 0.15) var(--fill, 0%),
+    rgba(0, 0, 0, 0.15) 100%
+  );
+}
+html.light .cherry-btn-scrim {
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.1);
+}
+
+/* The inane wordmark is a white SVG; invert it on light surfaces. */
+html.light .inane-wordmark {
+  filter: invert(1);
 }

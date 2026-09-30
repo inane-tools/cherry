@@ -9,8 +9,11 @@
 // over the content.
 //
 // The thumb is an absolutely-positioned child of the scroller, so it scrolls
-// with the content; `top` is offset by `scrollTop` to keep it anchored to the
-// scrollport. Its extent never exceeds the content, so it adds no overflow.
+// with the content. On scroll we therefore position it purely with `transform`
+// (never `top`), which avoids a per-frame layout read/reflow and — because it is
+// written synchronously in the scroll handler, not deferred to an animation
+// frame — never lags a frame behind the content (the old source of "jitter" on
+// long playlists). Geometry is measured only when it can actually change.
 
 const MIN_THUMB = 28;
 const HIDE_AFTER_MS = 800;
@@ -21,74 +24,77 @@ export function overlayScrollbar(node: HTMLElement) {
   node.appendChild(thumb);
 
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let visible = false;
-  // Coalesce to one layout read/write per animation frame: `scroll` fires far
-  // faster than the display refreshes, and each `update()` forces a reflow.
   let frame = 0;
 
-  function schedule(): void {
+  // Cached geometry; refreshed on resize/mutation only (not on scroll).
+  let hasThumb = false;
+  let travel = 0; // thumb travel per pixel scrolled: (viewport - h) / (content - viewport)
+
+  function measure(): void {
+    const viewport = node.clientHeight;
+    const content = node.scrollHeight;
+    if (content <= viewport + 1) {
+      hasThumb = false;
+      thumb.style.display = 'none';
+      return;
+    }
+    hasThumb = true;
+    thumb.style.display = '';
+    const height = Math.max(MIN_THUMB, Math.round((viewport * viewport) / content));
+    travel = (viewport - height) / (content - viewport);
+    thumb.style.height = `${height}px`;
+  }
+
+  function paint(): void {
+    if (!hasThumb) return;
+    // The thumb scrolls with the content, so add the scroll offset back before
+    // applying the proportional travel: visual y = scrollTop * travel.
+    thumb.style.transform = `translateY(${node.scrollTop * (1 + travel)}px)`;
+  }
+
+  function scheduleMeasure(): void {
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      update();
+      measure();
+      paint();
     });
   }
 
-  function measure(): { h: number; top: number } | null {
-    const viewport = node.clientHeight;
-    const content = node.scrollHeight;
-    const scroll = node.scrollTop;
-    if (content <= viewport + 1) return null;
-    const h = Math.max(MIN_THUMB, Math.round((viewport * viewport) / content));
-    const top = (viewport - h) * (scroll / (content - viewport));
-    return { h, top };
-  }
-
-  function update(): void {
-    const size = measure();
-    if (!size) {
-      thumb.style.opacity = '0';
-      thumb.style.height = '0px';
-      return;
-    }
-    thumb.style.height = `${size.h}px`;
-    // Content scrolls up by scrollTop, so add it back to stay in place.
-    thumb.style.top = `${size.top + node.scrollTop}px`;
-    thumb.classList.toggle('is-visible', visible);
-    thumb.style.opacity = '';
+  function setVisible(value: boolean): void {
+    thumb.classList.toggle('is-visible', value);
   }
 
   function reveal(): void {
-    visible = true;
-    schedule();
+    setVisible(true);
+    paint();
     if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      visible = false;
-      schedule();
-    }, HIDE_AFTER_MS);
+    hideTimer = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
   }
 
   function onEnter(): void {
-    visible = true;
+    setVisible(true);
     if (hideTimer) clearTimeout(hideTimer);
-    schedule();
+    paint();
   }
 
   function onLeave(): void {
-    visible = false;
-    schedule();
+    setVisible(false);
   }
 
+  // No layout read here — just `scrollTop` and a transform write — so this can
+  // run synchronously on every scroll without reflowing or lagging.
   node.addEventListener('scroll', reveal, { passive: true });
   node.addEventListener('mouseenter', onEnter);
   node.addEventListener('mouseleave', onLeave);
 
-  const resize = new ResizeObserver(() => schedule());
+  const resize = new ResizeObserver(() => scheduleMeasure());
   resize.observe(node);
-  const mutate = new MutationObserver(() => schedule());
+  const mutate = new MutationObserver(() => scheduleMeasure());
   mutate.observe(node, { childList: true, subtree: true });
 
-  update();
+  measure();
+  paint();
 
   return {
     destroy() {

@@ -51,7 +51,7 @@
   <div
     bind:this={el}
     data-context-menu
-    class="fixed z-[60] min-w-[13rem] overflow-hidden rounded-lg border border-white/10 bg-[#17171f]/98 py-1 shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+    class="fixed z-[60] min-w-[13rem] overflow-hidden rounded-lg border border-white/10 bg-[var(--color-elevated)]/98 py-1 shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
     style="left: {x}px; top: {y}px;"
     role="menu"
   >
