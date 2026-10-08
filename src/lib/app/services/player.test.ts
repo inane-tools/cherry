@@ -35,7 +35,7 @@ vi.mock('./theme', () => ({
 
 const { authStore } = await import('./auth');
 const player = await import('./player');
-const { clearQueue, setShuffle } = await import('./queue');
+const { clearQueue, setShuffle, setRepeat, queueStore } = await import('./queue');
 
 function track(id: string): Track {
   return { videoId: id, title: id, artists: [{ name: 'artist' }], thumbnails: [] };
@@ -151,5 +151,53 @@ describe('loadCurrent', () => {
     authStore.set(null);
     await player.playTracks([track('a')]);
     expect(pending).toHaveLength(0);
+  });
+});
+
+describe('end of track', () => {
+  async function playToEnd(ids: string[]): Promise<HTMLAudioElement> {
+    const done = player.playTracks(ids.map(track));
+    await flush();
+    pending[0].resolve('https://media/0');
+    await done;
+    // The player owns a single <audio>; find it through a spy on play().
+    const el = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement;
+    return el;
+  }
+
+  it('stop-after-track cues the next song paused instead of playing it', async () => {
+    const el = await playToEnd(['a', 'b']);
+    player.stopAfterTrack.set(true);
+    el.dispatchEvent(new Event('ended'));
+    await flush();
+    const st = get(player.playerStore);
+    expect(st.track?.videoId).toBe('b');
+    expect(st.status).toBe('paused');
+    expect(pending).toHaveLength(1); // nothing new was resolved
+    expect(get(player.stopAfterTrack)).toBe(false);
+  });
+
+  it('without the flag the next track plays', async () => {
+    const el = await playToEnd(['a', 'b']);
+    el.dispatchEvent(new Event('ended'));
+    await flush();
+    expect(pending.map((p) => p.videoId)).toEqual(['a', 'b']);
+  });
+});
+
+describe('shuffle / repeat controls', () => {
+  it('cycles repeat off → all → one → off', () => {
+    setRepeat('off');
+    expect(player.cycleRepeat()).toBe('all');
+    expect(player.cycleRepeat()).toBe('one');
+    expect(player.cycleRepeat()).toBe('off');
+    expect(get(queueStore.repeat)).toBe('off');
+  });
+
+  it('toggles shuffle', () => {
+    player.toggleShuffle();
+    expect(get(queueStore.shuffle)).toBe(true);
+    player.toggleShuffle();
+    expect(get(queueStore.shuffle)).toBe(false);
   });
 });

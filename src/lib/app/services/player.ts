@@ -12,6 +12,7 @@ import { toCherryError } from '$lib/core/errors';
 import { getAudioStream, getInnertube, prefetchAudioStream } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
 import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
+import type { RepeatMode } from '$lib/core/models';
 import { invokeSafe, isTauri } from './platform';
 import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
@@ -151,7 +152,42 @@ function applyPendingResume(el: HTMLAudioElement, videoId: string): void {
   else el.addEventListener('loadedmetadata', seek, { once: true });
 }
 
+/**
+ * "Stop after this track" (the sleep timer's end-of-track mode). Checked when a
+ * track ends: the queue still advances, but the next track is only cued, not
+ * played.
+ */
+export const stopAfterTrack = writable(false);
+
+/**
+ * Show the current queue item as paused at 0:00 without resolving its stream
+ * (the same state as a restored queue: pressing play loads it).
+ */
+function cueCurrent(): void {
+  const item = get(currentItem);
+  const el = ensureAudio();
+  loadGeneration++;
+  el.removeAttribute('src');
+  el.load();
+  pendingResume = null;
+  playerStore.update((p) => ({
+    ...p,
+    status: item ? 'paused' : 'idle',
+    track: item?.track ?? null,
+    positionSeconds: 0,
+    durationSeconds: item?.track.durationSeconds ?? 0,
+  }));
+  if (!item) resetArtworkTheme();
+  void pushOsState();
+}
+
 async function onEnded(): Promise<void> {
+  if (get(stopAfterTrack)) {
+    stopAfterTrack.set(false);
+    if (step(1, true)) cueCurrent();
+    else await stopPlayback();
+    return;
+  }
   const repeat = get(queueStore.repeat);
   if (repeat === 'one') {
     const el = ensureAudio();
@@ -366,6 +402,61 @@ export async function restorePlayback(): Promise<void> {
   // Clear any stale OS presence from a previous run; the card is re-pushed when
   // playback actually starts.
   await pushOsState();
+}
+
+/** Toggle shuffle and remember the choice for the next start. */
+export function toggleShuffle(): void {
+  const on = !get(queueStore.shuffle);
+  setShuffle(on);
+  void updateSettings({ shuffle: on });
+}
+
+const REPEAT_CYCLE: RepeatMode[] = ['off', 'all', 'one'];
+
+/** Cycle repeat off → all → one → off, and remember it. */
+export function cycleRepeat(): RepeatMode {
+  const current = get(queueStore.repeat);
+  const next = REPEAT_CYCLE[(REPEAT_CYCLE.indexOf(current) + 1) % REPEAT_CYCLE.length];
+  setRepeat(next);
+  void updateSettings({ repeat: next });
+  return next;
+}
+
+/** Seek relative to the current position (keyboard shortcuts, media keys). */
+export function seekBy(deltaSeconds: number): void {
+  const st = get(playerStore);
+  const max = st.durationSeconds > 0 ? st.durationSeconds : Infinity;
+  seekTo(Math.min(max, Math.max(0, st.positionSeconds + deltaSeconds)));
+}
+
+/**
+ * Fade the volume to silence over `durationMs`, pause, then put the volume back
+ * (so the next play is at the user's level). Used by the sleep timer. An abort
+ * restores the volume immediately and keeps playing.
+ */
+export function fadeOutAndPause(durationMs: number, signal?: AbortSignal): Promise<void> {
+  const el = ensureAudio();
+  const start = el.volume;
+  const steps = Math.max(1, Math.round(durationMs / 100));
+  return new Promise((resolve) => {
+    let n = 0;
+    const timer = setInterval(() => {
+      if (signal?.aborted) {
+        clearInterval(timer);
+        el.volume = start;
+        resolve();
+        return;
+      }
+      n++;
+      el.volume = start * Math.max(0, 1 - n / steps);
+      if (n >= steps) {
+        clearInterval(timer);
+        el.pause();
+        el.volume = start;
+        resolve();
+      }
+    }, durationMs / steps);
+  });
 }
 
 export function setVolume(v: number): void {

@@ -11,6 +11,7 @@
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startMemoryTrimming } from '$lib/app/services/memory';
   import { startScrobbling } from '$lib/app/services/scrobble';
+  import { startShortcuts } from '$lib/app/services/shortcuts';
   import { openDevTools } from '$lib/app/services/devtools';
   import { startAppearance } from '$lib/app/services/appearance';
   import {
@@ -88,6 +89,8 @@
       }
     };
     window.addEventListener('keydown', onKeyDown);
+    // Player / navigation shortcuts (Space, arrows, Ctrl+F, …).
+    const stopShortcuts = startShortcuts();
     // WebView2 memory trimming is async to set up; hold the cleanup once ready.
     let stopMemory = () => {};
     void startMemoryTrimming().then((stop) => (stopMemory = stop));
@@ -97,6 +100,7 @@
       unsubscribe();
       window.removeEventListener('cherry:notice', onNotice);
       window.removeEventListener('keydown', onKeyDown);
+      stopShortcuts();
       stopMemory();
     };
   });
