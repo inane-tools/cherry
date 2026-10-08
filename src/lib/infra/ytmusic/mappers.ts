@@ -319,14 +319,32 @@ export function mapPlaylist(node: AnyNode): Playlist | null {
   const author =
     node.author?.name ??
     subtitleRuns.find((r) => r?.endpoint?.name === 'browseEndpoint')?.text;
-  const countText =
-    node.count?.text ?? subtitleRuns.map((r) => r?.text ?? '').join(' ');
-  const trackCount = Number(String(countText).replace(/[^\d]/g, '')) || undefined;
   return {
     browseId: String(browseId),
     title: String(title),
     author: author ? String(author).split('•')[0].trim() : undefined,
-    trackCount,
+    trackCount: trackCountOf(node.count?.text, subtitleRuns),
     thumbnails: thumbs(node),
   };
 }
+
+/**
+ * Song count from an explicit count (`"25 songs"`, `"1,234"`), or from the
+ * subtitle run that names songs/tracks/episodes. The subtitle as a whole must
+ * not be used: stripping every non-digit from "Playlist • Me • 2024 • 25 songs"
+ * produced a count of 202425.
+ */
+function trackCountOf(countText: unknown, runs: AnyNode[]): number | undefined {
+  const parse = (text: string) => {
+    const digits = text.replace(/[^\d]/g, '');
+    return digits ? Number(digits) : undefined;
+  };
+  if (typeof countText === 'string' && countText) return parse(countText);
+  for (const run of runs) {
+    const text = String(run?.text ?? '');
+    const match = text.match(/([\d][\d,.\s]*)\s*(songs?|tracks?|episodes?|videos?)\b/i);
+    if (match) return parse(match[1]);
+  }
+  return undefined;
+}
+
