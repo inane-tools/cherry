@@ -6,9 +6,6 @@
 // (they are PO-token gated), so instead of letting search appear to work and
 // then fail on play, both are blocked up front with a single clear message.
 
-import { get } from 'svelte/store';
-import { authStore } from './auth';
-
 export const SIGN_IN_REQUIRED = 'Sign in with YouTube Music in Settings to use Cherry.';
 
 /**
@@ -22,41 +19,9 @@ export const DISCLAIMER =
   'for how you use Cherry and for any consequences, including any effect on your account. ' +
   'The software is provided as is, without warranty of any kind.';
 
-/** True when a session is loaded (not merely "a cookie exists on disk"). */
-export function isSignedIn(): boolean {
-  return get(authStore) !== null;
-}
-
 /**
- * Run `action` only when signed in.
- *
- * Returns `false` (and takes no action) when signed out, so callers can pass
- * this straight into a click handler. `onBlocked` is how the UI surfaces the
- * reason without every caller re-implementing the message.
- */
-export function requireAuth(action: () => void, onBlocked?: (reason: string) => void): boolean {
-  if (isSignedIn()) {
-    action();
-    return true;
-  }
-  onBlocked?.(SIGN_IN_REQUIRED);
-  return false;
-}
-
-/** Take the user to Settings (where the sign-in button lives). */
-export async function goToSignIn(): Promise<void> {
-  // Imported lazily: navigation imports the auth store, and a static import
-  // here would make this module part of that cycle.
-  const { go } = await import('./navigation');
-  go('settings');
-}
-
-/**
- * Report a blocked action to the user.
- *
- * A Toast component is not part of the app yet, so the message is emitted on a
- * global event the chrome listens to; failing that it falls back to a
- * console warning so the gate is never *silent*.
+ * Report a blocked action to the user: emitted on a global event that the app
+ * chrome listens to and shows as a transient notice.
  */
 export function announceSignInRequired(): void {
   const detail = { message: SIGN_IN_REQUIRED };

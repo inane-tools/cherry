@@ -16,6 +16,11 @@ const LEGACY_IDENTIFIER: &str = "com.xylo.app";
 const NEW_IDENTIFIER: &str = "com.cherry.app";
 const LEGACY_STORE: &str = "xylo-settings.json";
 const NEW_STORE: &str = "cherry-settings.json";
+/// Records that the one-time carry-over has been decided. Without it, "Clear
+/// data" (which deletes `cherry-settings.json` but never touches the old xylo
+/// store) would let the next launch re-import the old settings, so clearing the
+/// app's data appeared not to work.
+const MIGRATION_MARKER: &str = ".migrated-from-xylo";
 
 /// The app-data directory Tauri resolves `BaseDirectory::AppData` to, which is
 /// where `tauri-plugin-store` keeps relative paths.
@@ -45,9 +50,19 @@ pub fn run() {
     else {
         return;
     };
+    // Already decided once — never look again (so a later clear sticks).
+    let marker = new_dir.join(MIGRATION_MARKER);
+    if marker.exists() {
+        return;
+    }
+
     let old_store = old_dir.join(LEGACY_STORE);
     let new_store = new_dir.join(NEW_STORE);
     if new_store.exists() || !old_store.exists() {
+        // Nothing to carry over; record the decision.
+        if std::fs::create_dir_all(&new_dir).is_ok() {
+            let _ = std::fs::write(&marker, b"1");
+        }
         return;
     }
     if let Err(e) = std::fs::create_dir_all(&new_dir) {
@@ -55,7 +70,10 @@ pub fn run() {
         return;
     }
     match std::fs::copy(&old_store, &new_store) {
-        Ok(_) => eprintln!("[cherry] migrated settings from the previous installation"),
+        Ok(_) => {
+            eprintln!("[cherry] migrated settings from the previous installation");
+            let _ = std::fs::write(&marker, b"1");
+        }
         Err(e) => eprintln!("[cherry] could not migrate settings: {e}"),
     }
 }

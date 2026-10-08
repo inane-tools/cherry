@@ -7,12 +7,23 @@
   import { authStore, initAuth } from '$lib/app/services/auth';
   import { initChannel } from '$lib/app/services/account';
   import { loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
-  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
+  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback, playerStore } from '$lib/app/services/player';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startMemoryTrimming } from '$lib/app/services/memory';
   import { startScrobbling } from '$lib/app/services/scrobble';
   import { openDevTools } from '$lib/app/services/devtools';
   import { startAppearance } from '$lib/app/services/appearance';
+  import {
+    narrowLayout,
+    sidebarDrawerOpen,
+    playerExpanded,
+    startLayoutTracking,
+    toggleSidebarDrawer,
+    closeSidebarDrawer,
+  } from '$lib/app/services/layout';
+  import { initFolders } from '$lib/app/services/folders';
+  import { isTauri } from '$lib/app/services/platform';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import logoUrl from '$lib/assets/logo.png';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
@@ -22,16 +33,27 @@
   import ContextMenu from '$lib/ui/components/ContextMenu.svelte';
   import PlaylistPickerDialog from '$lib/ui/components/PlaylistPickerDialog.svelte';
   import EditPlaylistDialog from '$lib/ui/components/EditPlaylistDialog.svelte';
+  import FolderDialog from '$lib/ui/components/FolderDialog.svelte';
+  import SettingsOverlay from '$lib/ui/components/SettingsOverlay.svelte';
+  import SearchOverlay from '$lib/ui/components/SearchOverlay.svelte';
   import HomeView from '$lib/ui/views/HomeView.svelte';
-  import ExploreView from '$lib/ui/views/ExploreView.svelte';
-  import SearchView from '$lib/ui/views/SearchView.svelte';
   import PlaylistView from '$lib/ui/views/PlaylistView.svelte';
   import ArtistView from '$lib/ui/views/ArtistView.svelte';
   import AlbumView from '$lib/ui/views/AlbumView.svelte';
-  import SettingsView from '$lib/ui/views/SettingsView.svelte';
 
   let ready = false;
   let mainEl: HTMLElement | undefined;
+
+  // The window title follows the current track.
+  onMount(() => {
+    let last = '';
+    return playerStore.subscribe((st) => {
+      const title = st.track?.title?.trim() || 'Cherry';
+      if (title === last) return;
+      last = title;
+      if (isTauri()) void getCurrentWindow().setTitle(title);
+    });
+  });
 
   // Apply the stored theme/accent as early as possible (defaults until settings
   // load, then re-applied) so there is minimal theme flash on launch.
@@ -41,7 +63,6 @@
   // the sign-in button lives). When signed out these show a full-window gate
   // instead of partial content.
   $: signedOut = ready && !$authStore;
-  $: gatedView = $pageStore.view !== 'settings';
 
   // Lightweight notice banner. The auth gate publishes `cherry:notice` when it
   // blocks an action (search / play) so the user learns *why* nothing happened
@@ -63,6 +84,7 @@
   // drive the same history stack.
   onMount(() => {
     const stopMouse = startMouseNavigation();
+    const stopLayout = startLayoutTracking();
     const unsubscribe = pageStore.subscribe(() => {
       if (mainEl) mainEl.scrollTop = 0;
     });
@@ -84,6 +106,7 @@
     void startMemoryTrimming().then((stop) => (stopMemory = stop));
     return () => {
       stopMouse();
+      stopLayout();
       unsubscribe();
       window.removeEventListener('cherry:notice', onNotice);
       window.removeEventListener('keydown', onKeyDown);
@@ -100,11 +123,14 @@
 
   onMount(async () => {
     await restoreSettings();
+    initFolders();
     // Volume / mute / repeat / shuffle must be applied before the first track.
     applyStoredPlaybackSettings();
+    // Media-key listeners are independent of the session; register them in the
+    // background so startup is not serialised behind several IPC round trips.
+    void startMediaKeyListener();
     await initAuth();
     warmup();
-    await startMediaKeyListener();
     // Apply the stored Discord app id immediately: without this, presence only
     // started working after the save button was pressed in Settings.
     void setDiscordAppId(get(settingsStore).discordAppId);
@@ -151,18 +177,20 @@
     <!-- Playlist rail: full window height, never covered by the top bar or player.
          Hidden while signed out — there is no library to show, and the welcome
          gate owns the whole page. -->
-    {#if ready && !signedOut}
+    {#if ready && !signedOut && !$narrowLayout}
       <Sidebar />
     {/if}
     <!-- Content column: owns the translucent top bar and the floating player. -->
     <div class="relative flex min-w-0 flex-1 flex-col">
       <!-- On the welcome screen only the native window controls remain; the bar
            itself stays draggable. -->
-      <Titlebar minimal={signedOut} />
+      <Titlebar minimal={signedOut} narrow={$narrowLayout} onMenu={toggleSidebarDrawer} />
       <main
         bind:this={mainEl}
-        use:overlayScrollbar
-        class="cherry-overlay-scroll cherry-fade-top min-w-0 flex-1 px-6 pb-28 pt-16"
+        use:overlayScrollbar={{ topInset: 48 }}
+        class="cherry-overlay-scroll cherry-fade-top min-w-0 flex-1 px-6 transition-[padding] duration-300 ease-out {$playerExpanded
+          ? 'pt-16 pb-24'
+          : 'pt-12 pb-40'}"
       >
         {#if !ready}
           <!-- Boot splash: the shell is up, but settings/auth are still being
@@ -182,20 +210,14 @@
           <div in:fade={{ duration: 260, delay: 40 }}>
             {#key $pageStore.view}
               <div in:fade={{ duration: 180 }}>
-                {#if $pageStore.view === 'home'}
-                  <HomeView />
-                {:else if $pageStore.view === 'explore'}
-                  <ExploreView />
-                {:else if $pageStore.view === 'search'}
-                  <SearchView />
-                {:else if $pageStore.view === 'playlist'}
+                {#if $pageStore.view === 'playlist'}
                   <PlaylistView />
                 {:else if $pageStore.view === 'artist'}
                   <ArtistView />
                 {:else if $pageStore.view === 'album'}
                   <AlbumView />
                 {:else}
-                  <SettingsView />
+                  <HomeView />
                 {/if}
               </div>
             {/key}
@@ -233,9 +255,28 @@
        its window controls; on the welcome screen it renders minimal chrome.
        Settings is the only view allowed through, since that is where sign-in
        lives. -->
-  {#if signedOut && gatedView}
+  {#if signedOut}
     <div class="cherry-wash cherry-gate absolute inset-0 z-30">
       <AuthGate title="Welcome to Cherry :3" />
+    </div>
+  {/if}
+
+  <!-- Narrow-mode sidebar drawer (the inline rail is hidden at this width). -->
+  {#if ready && !signedOut && $narrowLayout && $sidebarDrawerOpen}
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+    <div
+      class="absolute inset-0 z-30 bg-scrim/70 backdrop-blur-md"
+      role="presentation"
+      onclick={closeSidebarDrawer}
+      in:fade={{ duration: 150 }}
+      out:fade={{ duration: 120 }}
+    ></div>
+    <div
+      class="absolute inset-0 z-30 shadow-[0_0_60px_rgba(0,0,0,0.6)]"
+      in:fly={{ x: -280, duration: 220 }}
+      out:fly={{ x: -280, duration: 160 }}
+    >
+      <Sidebar forceFull />
     </div>
   {/if}
 
@@ -245,4 +286,9 @@
   <!-- Playlist add/create and edit dialogs (one instance each). -->
   <PlaylistPickerDialog />
   <EditPlaylistDialog />
+  <FolderDialog />
+
+  <!-- Floating Settings / Search panels (above the sign-in gate). -->
+  <SettingsOverlay />
+  <SearchOverlay />
 </div>

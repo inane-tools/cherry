@@ -21,18 +21,20 @@
      `--color-*` token generates matching colour utilities, so `--color-base`
      produced a `text-base` colour class that overrode the font-size utility of
      the same name — every `<i class="… text-base">` rendered near-black. */
-  --color-surface: #050506;
-  --color-panel: #0c0c0e;
-  --color-panel2: #141417;
-  --color-line: #1f1f24;
-  /* Semantic surfaces used by components (exact dark values, overridden in
-     light mode). Keeping them as tokens is what lets `html.light` flip the UI. */
-  --color-card: #121217;
-  --color-elevated: #17171f;
-  --color-field: #191820;
-  --color-avatar: #242333;
-  --color-art: #1a1a24;
-  --color-popover: #0e0e12;
+  --color-surface: #050505;
+  --color-line: #262626;
+  /* Semantic surfaces used by components (neutral dark grays — no blue/purple
+     tint — overridden in light mode). Tokens are what let `html.light` flip the
+     UI in one place. */
+  --color-card: #1c1c1c;
+  --color-elevated: #1a1a1a;
+  --color-field: #1a1a1a;
+  --color-avatar: #262626;
+  --color-art: #1c1c1c;
+  --color-popover: #101010;
+  /* Modal/overlay scrim: stays dark in *both* themes (unlike `--color-black`,
+     which is inverted for light mode and would turn overlays into a white wash). */
+  --color-scrim: #000000;
   --color-accent: #ff4d5e;
   --color-accent2: #ff8a5c;
 }
@@ -57,22 +59,21 @@ body {
 
 /* Red gradient from the top of the window, tinted by the album art colour.
    `color-mix` keeps it derived from the animatable accent, so changing track
-   fades the whole wash rather than snapping. Defined once so the top bar can
-   paint the *identical* background (see `.cherry-topbar`). */
+   fades the whole wash rather than snapping. */
 :root {
   --cherry-wash-image:
     radial-gradient(
       115% 60% at 50% -14%,
-      color-mix(in srgb, var(--color-accent) 46%, transparent) 0%,
-      color-mix(in srgb, var(--color-accent) 20%, transparent) 42%,
+      color-mix(in srgb, var(--color-accent) 58%, transparent) 0%,
+      color-mix(in srgb, var(--color-accent) 28%, transparent) 42%,
       transparent 74%
     ),
     radial-gradient(
       75% 45% at 88% -10%,
-      color-mix(in srgb, var(--color-accent2) 24%, transparent) 0%,
+      color-mix(in srgb, var(--color-accent2) 34%, transparent) 0%,
       transparent 72%
     ),
-    linear-gradient(180deg, #140910 0%, #08060a 55%, #050506 100%);
+    linear-gradient(180deg, #0a0a0a 0%, #060606 55%, #050505 100%);
 }
 
 .cherry-wash {
@@ -99,10 +100,26 @@ body {
 .cherry-playerbar {
   background: linear-gradient(
     180deg,
-    #0b0b0d 0%,
-    #0c0c0e 45%,
-    color-mix(in srgb, var(--color-accent) 14%, #0e0e12) 100%
+    #0b0b0b 0%,
+    #0c0c0c 24%,
+    color-mix(in srgb, var(--color-accent) 20%, #0e0e0e) 100%
   );
+}
+
+/* Optional (Settings → Appearance): flat solid surfaces instead of the accent
+   washes, for anyone who prefers no gradients. */
+html.no-gradients .cherry-wash {
+  background-image: none;
+}
+html.no-gradients .cherry-playerbar {
+  background: var(--color-popover);
+}
+
+/* Sidebar surface: the player bar's dark tone (flat, no gradient), a touch
+   translucent so the content wash blurs through behind it. */
+.cherry-sidebar {
+  background: color-mix(in srgb, var(--color-popover) 85%, transparent);
+  backdrop-filter: blur(6px);
 }
 
 /* Animate the accent itself; everything derived from it follows along. */
@@ -193,7 +210,11 @@ html {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.3);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  /* Height eases as content streams in; the transform must stay instant so the
+     thumb keeps up with scrolling. */
+  transition:
+    opacity 0.2s ease,
+    height 0.16s ease;
   pointer-events: none;
   z-index: 5;
   will-change: transform;
@@ -261,19 +282,6 @@ html {
   transform: scale(1);
 }
 
-/* Respect the OS "reduce motion" preference: keep the app legible without the
-   animated wash, equaliser, pulses or hover transitions. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
 /* Vertical variant, used by the volume popup. */
 .cherry-range-v {
   -webkit-appearance: none;
@@ -308,8 +316,6 @@ html {
    is set by services/appearance.ts). */
 html.light {
   --color-surface: #f4f4f5;
-  --color-panel: #ffffff;
-  --color-panel2: #ffffff;
   --color-line: #e4e4e7;
   --color-card: #ffffff;
   --color-elevated: #ffffff;
@@ -351,6 +357,14 @@ html.light {
       transparent 72%
     ),
     linear-gradient(180deg, #fbf1f2 0%, #f4f4f5 55%, #f4f4f5 100%);
+}
+
+/* Native form controls (selects, colour picker, scrollbars) follow the theme. */
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
 }
 
 html.light body {
@@ -405,4 +419,17 @@ html.light .cherry-btn-scrim {
 /* The inane wordmark is a white SVG; invert it on light surfaces. */
 html.light .inane-wordmark {
   filter: invert(1);
+}
+
+/* Respect the OS "reduce motion" setting: collapse every animation/transition so
+   the app never animates for users who asked it not to. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

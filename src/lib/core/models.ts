@@ -95,7 +95,14 @@ export interface PinnedPlaylist {
   thumbnail?: string;
 }
 
-export type AppView = 'home' | 'explore' | 'search' | 'playlist' | 'artist' | 'album' | 'settings';
+/** A user-created folder that groups playlists in the sidebar. */
+export interface PlaylistFolder {
+  id: string;
+  name: string;
+  playlistIds: BrowseId[];
+}
+
+export type AppView = 'home' | 'search' | 'playlist' | 'artist' | 'album' | 'settings';
 
 /** Signed-in YouTube identity (a brand channel, not the raw Google account). */
 export interface AccountProfile {
@@ -119,4 +126,23 @@ export function bestThumbnail(ts: Thumbnail[], size = 256): string {
   if (ts.length === 0) return '';
   const sorted = [...ts].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
   return (sorted.find((t) => (t.width ?? 0) >= size) ?? sorted[sorted.length - 1]).url;
+}
+
+/**
+ * Upgrade a YouTube / Google thumbnail URL to a larger size.
+ *
+ * Track artwork is usually fetched small (`hqdefault.jpg` or `=w226-h226`), which
+ * looks poor scaled up as the full-screen player background. YouTube still serves
+ * `maxresdefault.jpg`, and Google's CDN honours a larger `=w…-h…`, so rewrite to
+ * the big variant. Callers should keep the original as an `onerror` fallback: not
+ * every video has a `maxresdefault`.
+ */
+export function hiResThumbnail(url: string, size = 1080): string {
+  if (!url) return url;
+  // i.ytimg.com/vi/<id>/<name>.jpg  →  maxresdefault.jpg
+  const ytimg = url.match(/^(https?:\/\/i\.ytimg\.com\/(?:vi|vi_webp)\/[^/]+\/)[^/?#]+/);
+  if (ytimg) return `${ytimg[1]}maxresdefault.jpg${url.slice(ytimg[0].length)}`;
+  // Google CDN: =w544-h544-l90-rj  →  =w1080-h1080-l90-rj
+  if (/=w\d+-h\d+/.test(url)) return url.replace(/=w\d+-h\d+/, `=w${size}-h${size}`);
+  return url;
 }

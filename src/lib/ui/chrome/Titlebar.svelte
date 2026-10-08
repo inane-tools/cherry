@@ -3,15 +3,17 @@
   import { isTauri } from '$lib/app/services/platform';
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
-  import { pinnedStore, openPinned } from '$lib/app/services/pins';
   import { back, canGoBack, go } from '$lib/app/services/navigation';
 
   /**
    * Signed-out / welcome view: keep only the native window controls (and the
-   * draggable bar), hiding the nav icons, pins and account button, which have
-   * nothing to act on without a session.
+   * draggable bar), hiding the menu button, which has nothing to act on without
+   * a session.
    */
   export let minimal = false;
+  /** Narrow layout: show the hamburger that opens the sidebar drawer. */
+  export let narrow = false;
+  export let onMenu: () => void = () => {};
 
   let maximized = false;
 
@@ -64,66 +66,37 @@
   onmousedown={onBarMouseDown}
   class="absolute inset-x-0 top-0 z-40 flex h-12 items-center gap-2 pl-2"
 >
-  <!-- Left: back, home, explore, then pinned playlists. Hidden on the welcome
-       screen, where none of them have anything to act on. -->
+  <!-- Left: back + menu, shown only in the narrow layout (where the sidebar is a
+       drawer). Hidden on the welcome screen. -->
   {#if !minimal}
     <div class="flex min-w-0 items-center gap-2 overflow-hidden">
-    <button
-      class="cherry-btn-scrim flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg text-white backdrop-blur-md transition-colors hover:bg-white/10 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white/5"
-      title="Back"
-      aria-label="Back"
-      disabled={!$canGoBack}
-      onclick={back}
-    >
-      <i class="bx bx-chevron-left text-2xl"></i>
-    </button>
-    <button
-      class="cherry-btn-scrim flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg text-white backdrop-blur-md transition-colors hover:bg-white/10"
-      title="Home"
-      aria-label="Home"
-      onclick={() => go('home')}
-    >
-      <i class="bx bx-home-alt-2"></i>
-    </button>
-    <button
-      class="cherry-btn-scrim flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg text-white backdrop-blur-md transition-colors hover:bg-white/10"
-      title="Explore"
-      aria-label="Explore"
-      onclick={() => go('explore')}
-    >
-      <i class="bx bx-compass"></i>
-    </button>
-
-    {#each $pinnedStore as pin (pin.browseId)}
+    {#if narrow}
       <button
-        class="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5 transition-colors hover:border-[var(--color-accent)]/70"
-        title={pin.title}
-        aria-label={pin.title}
-        onclick={() => openPinned(pin)}
+        class="cherry-btn-scrim flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-lg text-white backdrop-blur-md transition-colors hover:bg-white/10 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white/5"
+        title="Back"
+        aria-label="Back"
+        disabled={!$canGoBack}
+        onclick={back}
       >
-        <!-- Fallback sits underneath: if the artwork URL has expired the image
-             hides itself and the icon shows through. -->
-        <span class="flex h-full w-full items-center justify-center text-sm text-[var(--color-accent2)]">
-          <i class="bx bx-music"></i>
-        </span>
-        {#if pin.thumbnail}
-          <img
-            src={pin.thumbnail}
-            alt=""
-            class="absolute inset-0 h-full w-full object-cover"
-            onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-          />
-        {/if}
+        <i class="bx bx-chevron-left text-2xl"></i>
       </button>
-    {/each}
+      <button
+        class="cherry-btn-scrim flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-white backdrop-blur-md transition-colors hover:bg-white/10"
+        title="Menu"
+        aria-label="Open menu"
+        onclick={onMenu}
+      >
+        <i class="bx bx-menu text-2xl"></i>
+      </button>
+    {/if}
     </div>
   {/if}
 
-  <!-- Right: account + native window controls -->
+  <!-- Right: account + native window controls. -->
   <div class="ml-auto flex h-full shrink-0 items-center justify-end gap-2">
     {#if !minimal}
       <button
-        class="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5 transition-colors hover:border-[var(--color-accent)]/70"
+        class="group relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--color-avatar)] transition-colors"
         title={accountName}
         aria-label="Account settings"
         onclick={() => go('settings')}
@@ -131,8 +104,13 @@
         {#if profile?.avatarUrl}
           <img src={profile.avatarUrl} alt="" class="h-full w-full object-cover" />
         {:else}
-          <span class="flex h-full w-full items-center justify-center bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent2)] text-[11px] font-bold text-[#181820]">{initial}</span>
+          <span class="flex h-full w-full items-center justify-center bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent2)] text-[11px] font-bold text-[#181818]">{initial}</span>
         {/if}
+        <span
+          class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          <i class="bx bx-cog text-base"></i>
+        </span>
       </button>
     {/if}
 

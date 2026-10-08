@@ -1,7 +1,7 @@
 // Shared context-menu item builders, so every surface (track rows, playlist
 // cards, the rail) offers the same actions.
 
-import type { Playlist, Track } from '$lib/core/models';
+import type { Playlist, PlaylistFolder, Track } from '$lib/core/models';
 import { get } from 'svelte/store';
 import { playTracks } from './player';
 import { playPlaylist } from './playlists';
@@ -18,6 +18,13 @@ import { authStore } from './auth';
 import { announceSignInRequired } from './gate';
 import { getDefaultPlaylist, removeTrackFrom, saveTrack, setDefaultPlaylist } from './playlistEdit';
 import { isPlaylistOwned, isPlaylistSaved, ownershipKnown, savePlaylist, unsavePlaylist } from './playlistLibrary';
+import {
+  deleteFolder,
+  folderFor,
+  foldersStore,
+  movePlaylistToFolder,
+} from './folders';
+import { openFolderDialog } from './folderDialog';
 import { openPlaylistEditor } from './playlistEditor';
 import { openPlaylistPicker } from './playlistPicker';
 
@@ -95,8 +102,8 @@ export function trackMenu(
   return items;
 }
 
-/** Menu for a playlist. */
-export function playlistMenu(playlist: Playlist): ContextMenuItem[] {
+/** Menu for a playlist. `opts.pin` adds the pin/unpin action (sidebar only). */
+export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): ContextMenuItem[] {
   const signedIn = !!get(authStore);
   const canPlay = signedIn;
   const pinned = isPinned(playlist.browseId);
@@ -148,13 +155,47 @@ export function playlistMenu(playlist: Playlist): ContextMenuItem[] {
     }
   }
 
-  items.push(
-    {
+  // Folder moves are hidden for pinned playlists, which can't be moved.
+  if (signedIn && !pinned) {
+    const folders = get(foldersStore);
+    const current = folderFor(playlist.browseId);
+    const folderItems: ContextMenuItem[] = [];
+    if (current) {
+      folderItems.push({
+        label: `Remove from “${current.name}”`,
+        icon: 'bx bx-folder-minus',
+        action: () => void movePlaylistToFolder(playlist.browseId, null),
+      });
+    }
+    for (const folder of folders) {
+      if (folder.id === current?.id) continue;
+      folderItems.push({
+        label: `Move to “${folder.name}”`,
+        icon: 'bx bx-folder',
+        action: () => void movePlaylistToFolder(playlist.browseId, folder.id),
+      });
+    }
+    folderItems.push({
+      label: 'New folder…',
+      icon: 'bx bx-folder-plus',
+      action: () => openFolderDialog(null),
+    });
+    folderItems[0].separatorBefore = true;
+    items.push(...folderItems);
+  }
+
+  // Pin/unpin shows only in the sidebar menu, and never for folder members —
+  // except a pinned one, which still needs a way to be unpinned.
+  if (opts.pin && (pinned || !folderFor(playlist.browseId))) {
+    items.push({
       label: pinned ? 'Unpin playlist' : 'Pin playlist',
       icon: pinned ? 'bx bxs-pin' : 'bx bx-pin',
       separatorBefore: true,
       action: () => void togglePin(playlist),
-    },
+    });
+  }
+
+  items.push(
     {
       label: 'Copy link (YouTube Music)',
       icon: 'bx bx-link',
@@ -169,4 +210,21 @@ export function playlistMenu(playlist: Playlist): ContextMenuItem[] {
   );
 
   return items;
+}
+
+/** Menu for a folder header in the sidebar. */
+export function folderMenu(folder: PlaylistFolder): ContextMenuItem[] {
+  return [
+    {
+      label: 'Rename folder…',
+      icon: 'bx bx-pencil',
+      action: () => openFolderDialog(folder),
+    },
+    {
+      label: 'Delete folder',
+      icon: 'bx bx-trash',
+      separatorBefore: true,
+      action: () => void deleteFolder(folder.id),
+    },
+  ];
 }

@@ -16,7 +16,6 @@
 // - All raw-API access stays in this file + mappers.ts. Services/UI only
 //   see stable core models.
 
-import { Innertube, Platform } from 'youtubei.js';
 import type {
   AccountProfile,
   Album,
@@ -32,7 +31,7 @@ import { CherryError } from '$lib/core/errors';
 import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
-import { scanHome, scanPageHeader, type HomeSection } from './rawHome';
+import { scanHome, scanPageHeader, isNoiseSegment, type HomeSection } from './rawHome';
 import { innertubeFetch } from './tauriFetch';
 import { installEvaluator } from './evaluator';
 
@@ -40,6 +39,18 @@ import { installEvaluator } from './evaluator';
 type AnyInnertube = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNode = any;
+
+/**
+ * `youtubei.js` is a large dependency. Load it on first use (the first API call)
+ * rather than at module load, so the initial bundle the app shell parses stays
+ * small and the window paints sooner. The promise is memoised, so concurrent
+ * callers share one load.
+ */
+type YtModule = typeof import('youtubei.js');
+let ytModule: Promise<YtModule> | null = null;
+function loadYt(): Promise<YtModule> {
+  return (ytModule ??= import('youtubei.js'));
+}
 
 /** Cache lifetimes (ms). Playlists change rarely; feeds and search don't. */
 const TTL = {
@@ -59,7 +70,7 @@ const TTL = {
 let ytCache: unknown | null = null;
 let ytCacheResolved = false;
 
-function getYtCache(): unknown | undefined {
+function getYtCache(Platform: YtModule['Platform']): unknown | undefined {
   if (ytCacheResolved) return ytCache ?? undefined;
   ytCacheResolved = true;
   try {
@@ -140,7 +151,8 @@ export async function getInnertube(
 
   const promise = (async () => {
     try {
-      installEvaluator();
+      const { Innertube, Platform } = await loadYt();
+      installEvaluator(Platform);
       // `cookie` authenticates every request (incl. SAPISIDHASH). Empty =
       // anonymous. `on_behalf_of_user` selects the brand channel to act as.
       const client = (await Innertube.create({
@@ -152,7 +164,7 @@ export async function getInnertube(
         // In Tauri, direct fetch() to Google is CORS-blocked in the webview;
         // relay through Rust (reqwest). No-op outside Tauri.
         fetch: innertubeFetch(),
-        cache: getYtCache(),
+        cache: getYtCache(Platform),
       } as never)) as AnyInnertube;
       return client;
     } catch (e) {
@@ -511,10 +523,6 @@ async function runSearch(q: string, session?: AuthSession | null): Promise<Searc
   }
 }
 
-export async function searchSongs(query: string, session?: AuthSession | null): Promise<Track[]> {
-  return (await searchAll(query, session)).songs;
-}
-
 /** Load the signed-in user's playlists for the left navigation rail.
  *
  *  Two things matter here:
@@ -820,6 +828,14 @@ export async function getAlbumPage(
       .map((s) => s.trim())
       .filter(Boolean);
     const albumYear = year ?? meta.find((s) => /^(19|20)\d{2}$/.test(s));
+
+    // The typed header's `author` is the reliable artist; the header subtitle
+    // ("Artist • Single • 2026") is the fallback when it is missing, so an album
+    // never loses its artist.
+    if (!artist) {
+      const derived = meta.find((s) => !isNoiseSegment(s));
+      if (derived) artist = { name: derived };
+    }
 
     // Individual album tracks carry neither artwork nor artists: borrow both.
     const filled = tracks.map((track) => {
@@ -1199,24 +1215,6 @@ export async function getPlaylistMeta(
     },
     { shouldCache: (value) => value !== null },
   );
-}
-
-/** "Up next" autoplay recommendations for radio mode. */
-export async function getUpNext(videoId: string, session?: AuthSession | null): Promise<Track[]> {
-  const client = await getInnertube(session);
-  try {
-    const info = await client.getInfo(videoId);
-    const results = info.watch_next_feed ?? info.watch_next?.contents ?? [];
-    const out: Track[] = [];
-    for (const item of results) {
-      const t = mapTrack(item);
-      if (t && t.videoId !== videoId) out.push(t);
-      if (out.length >= 25) break;
-    }
-    return out;
-  } catch {
-    return [];
-  }
 }
 
 /** Home feed (quick picks) for logged-in users; empty anonymously. */

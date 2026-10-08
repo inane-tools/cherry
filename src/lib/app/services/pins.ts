@@ -1,13 +1,14 @@
-// Pinned playlists for the top bar.
+// Pinned playlists for the sidebar.
 //
 // Pins are stored in settings (so they survive restarts) and mirrored in a
-// store so the top bar and the playlist rail stay in sync.
+// store so the sidebar can float the pinned playlists to the top of the rail.
+// Pinning is offered only from the sidebar's right-click menu.
 
 import { get, writable } from 'svelte/store';
 import type { PinnedPlaylist, Playlist } from '$lib/core/models';
 import { bestThumbnail } from '$lib/core/models';
 import { settingsStore, updateSettings } from './settings';
-import { openPlaylist, playlistStore } from './playlists';
+import { playlistStore } from './playlists';
 
 export const pinnedStore = writable<PinnedPlaylist[]>([]);
 
@@ -17,9 +18,8 @@ export function initPins(): void {
 
 /**
  * Keep pins fresh. Playlist artwork URLs can expire (and auto-generated
- * playlists change theirs), which is why a pinned playlist that isn't yours
- * would eventually lose its icon — so re-sync title/thumbnail from the loaded
- * library whenever it lands.
+ * playlists change theirs), so re-sync title/thumbnail from the loaded library
+ * whenever it lands.
  */
 export async function syncPins(playlists: Playlist[]): Promise<void> {
   const pins = get(pinnedStore);
@@ -63,17 +63,7 @@ export async function togglePin(playlist: Playlist): Promise<void> {
           title: playlist.title,
           thumbnail: bestThumbnail(playlist.thumbnails, 96) || undefined,
         },
-      ].slice(0, 8); // keep the top bar from overflowing
+      ];
   pinnedStore.set(next);
   await updateSettings({ pinnedPlaylists: next });
-}
-
-/** Open a pinned playlist from the top bar. */
-export function openPinned(pin: PinnedPlaylist): void {
-  const playlist: Playlist = {
-    browseId: pin.browseId,
-    title: pin.title,
-    thumbnails: pin.thumbnail ? [{ url: pin.thumbnail }] : [],
-  };
-  void openPlaylist(playlist);
 }

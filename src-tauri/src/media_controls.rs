@@ -2,21 +2,21 @@
 //! via the `souvlaki` crate. Key presses are forwarded to the frontend as
 //! `media-key://…` events; the frontend pushes track metadata back down.
 //!
-//! ## On the Windows "unknown app" entry
+//! ## On the Windows media cards
 //!
 //! SMTC sessions are owned by the *process*, and the name/icon Windows shows
 //! come from the app's **AppUserModelID registration** (i.e. the installed
 //! shortcut / `AppUserModelId` on the window), not from anything souvlaki can
 //! set. A debug build launched straight from `target\debug` has no registered
-//! identity, so Windows labels the session "Unknown app". Two entries appear
-//! because there are genuinely two SMTC sessions for this process: the one we
-//! create in `setup` (correct metadata/controls) and a second, earlier one the
-//! WebView2 runtime creates for its own audio — Windows surfaces both.
+//! identity, so Windows labels the session "Unknown app".
 //!
-//! The fix is therefore an **app-identity** fix, applied here:
-//!  - the window's `AppUserModelID` is set to the bundle identifier, and
-//!  - the SMTC display updater is told the app name explicitly.
-//! The installed build (NSIS/MSI) registers the shortcut identity, so a
+//! WebView2/Chromium would otherwise open a *second* SMTC session for the
+//! page's own audio (surfaced with no controls). The window is therefore
+//! launched with `--disable-features=…,MediaSessionService,HardwareMediaKeyHandling`
+//! (see `tauri.conf.json`), leaving only the session created here with the
+//! correct metadata/controls.
+//!
+//! The window's `AppUserModelID` is also set to the bundle identifier, so a
 //! packaged Cherry shows as "Cherry" with the Cherry icon.
 
 use serde::Deserialize;

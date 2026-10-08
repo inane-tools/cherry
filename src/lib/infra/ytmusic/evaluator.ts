@@ -11,11 +11,14 @@
 // (pure string shuffling, no DOM access). Proven byte-for-byte via range
 // requests during development.
 
-import { Platform } from 'youtubei.js';
+// `youtubei.js` is imported lazily (see InnertubeClient) so the app shell can
+// paint before the large player/client code is parsed. Only the type is needed
+// here, which TypeScript erases at build time.
+type Platform = typeof import('youtubei.js')['Platform'];
 
 let installed = false;
 
-export function installEvaluator(): void {
+export function installEvaluator(Platform: Platform): void {
   if (installed) return;
   installed = true;
   const shim = Platform.shim as unknown as Record<string, unknown>;

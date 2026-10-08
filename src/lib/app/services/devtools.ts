@@ -14,11 +14,6 @@ export async function openDevTools(): Promise<boolean> {
   return true;
 }
 
-export async function isDevToolsOpen(): Promise<boolean> {
-  if (!isTauri()) return false;
-  return (await invokeSafe<boolean>('is_devtools_open')) ?? false;
-}
-
 /** Reload the frontend (handy while poking at DevTools). */
 export function reloadFrontend(): void {
   window.location.reload();

@@ -11,7 +11,7 @@ import type { CherrySettings } from '$lib/infra/storage/settingsRepo';
 import { bestThumbnail } from '$lib/core/models';
 import { playerStore } from './player';
 import { settingsStore } from './settings';
-import { applyArtworkTheme, applyCustomAccent, resetArtworkTheme, setAccentSource } from './theme';
+import { applyArtworkTheme, applyCustomAccent, resetArtworkTheme, setAccentSource, setLightMode } from './theme';
 
 const media =
   typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -31,6 +31,7 @@ function applyThemeClass(theme: 'light' | 'dark'): void {
 let lastTheme: 'light' | 'dark' | null = null;
 let lastSource: CherrySettings['accentSource'] | null = null;
 let lastColour: string | null = null;
+let lastGradients: boolean | null = null;
 
 function apply(settings: CherrySettings): void {
   if (typeof document === 'undefined') return;
@@ -38,12 +39,21 @@ function apply(settings: CherrySettings): void {
   const theme = effectiveTheme(settings);
   if (theme !== lastTheme) {
     applyThemeClass(theme);
+    // Accents are lightened in light mode (theme.ts), so it needs to know.
+    setLightMode(theme === 'light');
     lastTheme = theme;
+  }
+
+  if (settings.gradientsEnabled !== lastGradients) {
+    document.documentElement.classList.toggle('no-gradients', !settings.gradientsEnabled);
+    lastGradients = settings.gradientsEnabled;
   }
 
   if (settings.accentSource === 'custom') {
     setAccentSource('custom');
-    if (settings.accentColor !== lastColour) {
+    // Re-apply when returning from 'song' too: the artwork accent may have
+    // overwritten the fixed colour even though the hex string is unchanged.
+    if (settings.accentColor !== lastColour || lastSource !== 'custom') {
       applyCustomAccent(settings.accentColor);
       lastColour = settings.accentColor;
     }

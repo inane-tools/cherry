@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fly, fade } from 'svelte/transition';
   import type { Playlist } from '$lib/core/models';
   import { bestThumbnail } from '$lib/core/models';
   import { addablePlaylistsStore, addablePlaylistsLoading, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
@@ -51,21 +52,23 @@
 {#if state.open}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]"
+    class="fixed inset-0 z-[70] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]"
     role="presentation"
     onclick={closePlaylistPicker}
+    in:fade={{ duration: 150 }}
+    out:fade={{ duration: 120 }}
   >
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div
-      class="flex max-h-[82vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[var(--color-elevated)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
+      class="flex max-h-[82vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
       role="dialog"
       aria-modal="true"
       aria-label={adding ? 'Add to playlist' : 'New playlist'}
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
+      in:fly={{ y: -12, duration: 180 }}
+      out:fade={{ duration: 120 }}
     >
-      <div class="h-1 w-full bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-accent2)]"></div>
-
       <header class="flex items-center gap-3 px-5 py-4">
         <span
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/15 text-lg text-[var(--color-accent2)]"

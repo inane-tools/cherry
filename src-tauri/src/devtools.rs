@@ -17,10 +17,3 @@ pub fn open_devtools(app: tauri::AppHandle) {
         window.open_devtools();
     }
 }
-
-#[tauri::command]
-pub fn is_devtools_open(app: tauri::AppHandle) -> bool {
-    app.get_webview_window("main")
-        .map(|window| window.is_devtools_open())
-        .unwrap_or(false)
-}

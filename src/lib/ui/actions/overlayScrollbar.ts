@@ -13,26 +13,56 @@
 // (never `top`), which avoids a per-frame layout read/reflow and — because it is
 // written synchronously in the scroll handler, not deferred to an animation
 // frame — never lags a frame behind the content (the old source of "jitter" on
-// long playlists). Geometry is measured only when it can actually change.
+// long playlists).
 
 const MIN_THUMB = 28;
 const HIDE_AFTER_MS = 800;
+/**
+ * Content can stream in (playlist pages, home feed) which changes `scrollHeight`
+ * many times a second. Measuring on every mutation forces a layout read + write
+ * each frame and makes the thumb jump around, so growth is coalesced instead.
+ */
+const MEASURE_DEBOUNCE_MS = 120;
 
-export function overlayScrollbar(node: HTMLElement) {
+export interface OverlayScrollbarOptions {
+  /** Hide the thumb entirely (e.g. the compact sidebar). */
+  enabled?: boolean;
+  /**
+   * Pixels at the top of the scroller the thumb must stay below. Used when the
+   * scroller runs under an overlaid title bar, so the bar does not sit behind it.
+   */
+  topInset?: number;
+}
+
+export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOptions = {}) {
   const thumb = document.createElement('div');
   thumb.className = 'cherry-sb-thumb';
   node.appendChild(thumb);
 
+  let enabled = options.enabled !== false;
+  let topInset = Math.max(0, options.topInset ?? 0);
+
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let measureTimer: ReturnType<typeof setTimeout> | null = null;
   let frame = 0;
 
   // Cached geometry; refreshed on resize/mutation only (not on scroll).
   let hasThumb = false;
-  let travel = 0; // thumb travel per pixel scrolled: (viewport - h) / (content - viewport)
+  let travel = 0; // thumb travel per pixel scrolled: (available - h) / (content - viewport)
+  let lastContent = -1;
+  let lastViewport = -1;
 
   function measure(): void {
+    if (!enabled) {
+      hasThumb = false;
+      thumb.style.display = 'none';
+      return;
+    }
     const viewport = node.clientHeight;
     const content = node.scrollHeight;
+    if (content === lastContent && viewport === lastViewport) return;
+    lastContent = content;
+    lastViewport = viewport;
     if (content <= viewport + 1) {
       hasThumb = false;
       thumb.style.display = 'none';
@@ -40,16 +70,19 @@ export function overlayScrollbar(node: HTMLElement) {
     }
     hasThumb = true;
     thumb.style.display = '';
-    const height = Math.max(MIN_THUMB, Math.round((viewport * viewport) / content));
-    travel = (viewport - height) / (content - viewport);
+    // The track is only as long as the visible content area (below the inset).
+    const available = Math.max(0, viewport - topInset);
+    const height = Math.max(MIN_THUMB, Math.round((available * viewport) / content));
+    travel = content - viewport > 0 ? (available - height) / (content - viewport) : 0;
     thumb.style.height = `${height}px`;
   }
 
   function paint(): void {
     if (!hasThumb) return;
     // The thumb scrolls with the content, so add the scroll offset back before
-    // applying the proportional travel: visual y = scrollTop * travel.
-    thumb.style.transform = `translateY(${node.scrollTop * (1 + travel)}px)`;
+    // applying the proportional travel, then offset below the inset:
+    // visual y = topInset + scrollTop * travel.
+    thumb.style.transform = `translateY(${topInset + node.scrollTop * (1 + travel)}px)`;
   }
 
   function scheduleMeasure(): void {
@@ -61,11 +94,20 @@ export function overlayScrollbar(node: HTMLElement) {
     });
   }
 
+  function scheduleMeasureDebounced(): void {
+    if (measureTimer) clearTimeout(measureTimer);
+    measureTimer = setTimeout(() => {
+      measureTimer = null;
+      scheduleMeasure();
+    }, MEASURE_DEBOUNCE_MS);
+  }
+
   function setVisible(value: boolean): void {
     thumb.classList.toggle('is-visible', value);
   }
 
   function reveal(): void {
+    if (!enabled) return;
     setVisible(true);
     paint();
     if (hideTimer) clearTimeout(hideTimer);
@@ -73,6 +115,7 @@ export function overlayScrollbar(node: HTMLElement) {
   }
 
   function onEnter(): void {
+    if (!enabled) return;
     setVisible(true);
     if (hideTimer) clearTimeout(hideTimer);
     paint();
@@ -90,13 +133,24 @@ export function overlayScrollbar(node: HTMLElement) {
 
   const resize = new ResizeObserver(() => scheduleMeasure());
   resize.observe(node);
-  const mutate = new MutationObserver(() => scheduleMeasure());
+  const mutate = new MutationObserver(() => scheduleMeasureDebounced());
   mutate.observe(node, { childList: true, subtree: true });
 
   measure();
   paint();
 
   return {
+    update(next: OverlayScrollbarOptions = {}): void {
+      const nextEnabled = next.enabled !== false;
+      const nextInset = Math.max(0, next.topInset ?? 0);
+      if (nextEnabled === enabled && nextInset === topInset) return;
+      enabled = nextEnabled;
+      topInset = nextInset;
+      lastContent = -1;
+      lastViewport = -1;
+      if (!enabled) setVisible(false);
+      scheduleMeasure();
+    },
     destroy() {
       node.removeEventListener('scroll', reveal);
       node.removeEventListener('mouseenter', onEnter);
@@ -104,6 +158,7 @@ export function overlayScrollbar(node: HTMLElement) {
       resize.disconnect();
       mutate.disconnect();
       if (hideTimer) clearTimeout(hideTimer);
+      if (measureTimer) clearTimeout(measureTimer);
       if (frame) cancelAnimationFrame(frame);
       thumb.remove();
     },

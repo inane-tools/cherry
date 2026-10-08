@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fly, fade } from 'svelte/transition';
   import type { Thumbnail } from '$lib/core/models';
   import { bestThumbnail } from '$lib/core/models';
   import { getPlaylistMeta } from '$lib/infra/ytmusic/InnertubeClient';
@@ -104,21 +105,23 @@
 {#if state.open && playlist}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+    class="fixed inset-0 z-[70] flex items-center justify-center bg-scrim/55 p-4 backdrop-blur-sm"
     role="presentation"
     onclick={closePlaylistEditor}
+    in:fade={{ duration: 150 }}
+    out:fade={{ duration: 120 }}
   >
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div
-      class="flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[var(--color-elevated)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
+      class="flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
       role="dialog"
       aria-modal="true"
       aria-label="Edit playlist"
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
+      in:fly={{ y: -12, duration: 180 }}
+      out:fade={{ duration: 120 }}
     >
-      <div class="h-1 w-full bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-accent2)]"></div>
-
       <header class="flex items-center gap-3 px-5 py-4">
         <span
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/15 text-lg text-[var(--color-accent2)]"
@@ -139,9 +142,11 @@
       </header>
 
       <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5">
-        <div class="flex items-center gap-4">
-          <span
-            class="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-[var(--color-art)] shadow-[0_10px_30px_rgba(0,0,0,0.4)]"
+        <!-- The cover image is itself the upload target (hover reveals the
+             action) and sits inline with the title field. -->
+        <div class="flex items-start gap-4">
+          <label
+            class="group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-xl bg-[var(--color-art)] shadow-[0_10px_30px_rgba(0,0,0,0.4)]"
           >
             {#if cover}
               <img src={cover} alt="" class="h-full w-full object-cover" />
@@ -150,36 +155,34 @@
                 <i class="bx bx-music text-3xl"></i>
               </span>
             {/if}
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="text-[11px] font-medium text-zinc-300">Cover image</div>
-            <label
-              class="mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-zinc-200 transition-colors hover:bg-white/10 hover:text-white"
+            <span
+              class="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100"
             >
-              <i class="bx bx-image"></i>
-              {pendingImage ? 'Choose another' : 'Choose image'}
-              <input
-                type="file"
-                accept="image/png,image/jpeg"
-                class="hidden"
-                onchange={onPickImage}
-              />
-            </label>
-            <p class="mt-2 text-[10px] leading-relaxed text-zinc-600">
-              {pendingImage ? 'Applies when you press Save. ' : 'JPG or PNG. '}YouTube may require a
-              verified phone number.
-            </p>
-          </div>
+              <i class="bx bx-upload text-xl"></i>
+              <span class="text-[9px] font-medium">Upload</span>
+            </span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              class="hidden"
+              onchange={onPickImage}
+            />
+          </label>
+          <label class="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span class="text-[11px] font-medium text-zinc-400">Title</span>
+            <input
+              bind:value={title}
+              disabled={loading}
+              class="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60 disabled:opacity-50"
+            />
+            <span class="text-[10px] leading-relaxed text-zinc-600">
+              {pendingImage
+                ? 'New cover applies when you press Save.'
+                : 'Hover the cover to change it. JPG or PNG.'}
+            </span>
+          </label>
         </div>
 
-        <label class="flex flex-col gap-1.5">
-          <span class="text-[11px] font-medium text-zinc-400">Title</span>
-          <input
-            bind:value={title}
-            disabled={loading}
-            class="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60 disabled:opacity-50"
-          />
-        </label>
         <label class="flex flex-col gap-1.5">
           <span class="text-[11px] font-medium text-zinc-400">Description</span>
           <textarea

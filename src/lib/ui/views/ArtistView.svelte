@@ -25,11 +25,11 @@
   }
 </script>
 
-<div class="mx-auto max-w-[100rem] pb-6">
+<div class="mx-auto max-w-[100rem] py-6">
   {#if !artist}
     <p class="text-[13px] text-zinc-500">No artist selected.</p>
   {:else}
-    <header class="mb-8 flex flex-col items-start gap-5 sm:flex-row sm:items-end">
+    <header class="mb-8 flex flex-col items-start gap-5 sm:flex-row sm:items-start">
       <div class="h-40 w-40 shrink-0 overflow-hidden rounded-full bg-white/5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
         {#if avatar}
           <img src={avatar} alt="" class="h-full w-full object-cover" />

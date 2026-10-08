@@ -7,7 +7,7 @@ Cherry is a custom UI over YouTube Music's internal *Innertube* API (via
 API, so it speaks the same endpoints the web player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
-> **Latest release: v1.1.0** — see the [changelog](CHANGELOG.md) for what's new.
+> **Latest release: v1.2.1** — see the [changelog](CHANGELOG.md) for what's new.
 
 ![Cherry](https://inane.tools/screenshot.png)
 
@@ -21,9 +21,15 @@ API, so it speaks the same endpoints the web player does. Built with
 
 ## Features
 
-- **Fully custom UI** — home feed, Explore, search, playlists, artists, albums,
-  a floating player bar and a full **Queue** panel. No embedded web view of
-  YouTube.
+- **Fully custom UI** — a home feed with a time-based greeting, search, playlist,
+  artist and album pages, a floating player bar and a full-screen now-playing
+  view. No embedded web view of YouTube.
+- **Rebuilt sidebar** — one user-organised list of playlists and folders. Drag to
+  reorder, drop a playlist onto a folder to file it, **pin** favourites to the
+  top, resize the rail, or switch to a compact icon-only mode. Below ~820px it
+  collapses into a slide-in drawer.
+- **Full-screen player** — click the album art to expand into a now-playing card
+  with a next-up chip and the queue shown inline.
 - **Sign in in-app** — loads music.youtube.com and captures the session from the
   native cookie store; the session lives in the **OS keychain**, never in
   localStorage.
@@ -39,11 +45,13 @@ API, so it speaks the same endpoints the web player does. Built with
 - **OS media integration** — SMTC / MPRIS / Now Playing, taskbar preview
   buttons, hardware media keys, and album-art-driven theming.
 - **Light & dark themes** — follow the system or pick one, with the accent taken
-  from the album art or a custom colour.
+  from the album art or a custom colour and optional background gradients. The
+  window title follows the current track.
 - **Last.fm scrobbling** — optional, using your own Last.fm API key.
 - **Discord Rich Presence** — optional "Listening to …" activity.
-- **Built to feel fast** — progressive playlist loading, next-track prefetching
-  and a persistent response cache so re-opens are instant.
+- **Built to feel fast** — the shell paints before the player code loads,
+  playlists stream in progressively, the next track is prefetched, and a
+  persistent response cache makes re-opens instant.
 - **Dev tools when you need them** — open the WebView inspector from Settings
   (F12).
 
@@ -87,8 +95,10 @@ never leave `src/lib/infra/ytmusic/`.
 
 ## Changelog
 
-**v1.1.0** is the latest release. See [CHANGELOG.md](CHANGELOG.md) for the full
-history.
+**v1.2.1** is the latest release — the layout-and-polish 1.2 line (rebuilt
+sidebar with folders and drag-to-reorder, a full-screen player, floating
+Settings/Search panels) plus sign-in and data-clearing fixes. See
+[CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## License
 

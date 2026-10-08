@@ -25,35 +25,25 @@ export async function startMediaKeyListener(): Promise<void> {
     'media-key://prev': () => prev(),
     'media-key://stop': () => toggle(),
   };
-  for (const [event, handler] of Object.entries(routes)) {
-    try {
-      await listen(event, () => void handler());
-    } catch {
-      /* plugin/event unavailable — ignore */
-    }
-  }
+  // Register every listener at once: each `listen` is an IPC round trip, and
+  // awaiting them one by one serialised startup behind a dozen of them.
+  await Promise.all(
+    Object.entries(routes).map(([event, handler]) =>
+      listen(event, () => void handler()).catch(() => undefined),
+    ),
+  );
 
   // Events that carry a payload (the media card's scrubber and volume).
-  try {
-    await listen<{ positionSecs: number }>('media-key://seek', (event) => {
+  await Promise.all([
+    listen<{ positionSecs: number }>('media-key://seek', (event) => {
       seekTo(event.payload.positionSecs);
-    });
-  } catch {
-    /* ignore */
-  }
-  try {
-    await listen<{ deltaSecs: number }>('media-key://seek-by', (event) => {
+    }).catch(() => undefined),
+    listen<{ deltaSecs: number }>('media-key://seek-by', (event) => {
       const st = get(playerStore);
       seekTo(Math.max(0, st.positionSeconds + event.payload.deltaSecs));
-    });
-  } catch {
-    /* ignore */
-  }
-  try {
-    await listen<{ volume: number }>('media-key://volume', (event) => {
+    }).catch(() => undefined),
+    listen<{ volume: number }>('media-key://volume', (event) => {
       setVolume(event.payload.volume);
-    });
-  } catch {
-    /* ignore */
-  }
+    }).catch(() => undefined),
+  ]);
 }

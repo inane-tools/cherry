@@ -114,19 +114,6 @@ export function clearQueue(): void {
   order.set([]);
 }
 
-export function moveTo(queueId: string): boolean {
-  const list = get(items);
-  const pos = list.findIndex((i) => i.queueId === queueId);
-  if (pos < 0) return false;
-  if (get(shuffleOn)) {
-    const o = get(order);
-    index.set(o.indexOf(pos));
-  } else {
-    index.set(pos);
-  }
-  return true;
-}
-
 /**
  * Make `queueId` the current track and drop everything before it (in play
  * order).

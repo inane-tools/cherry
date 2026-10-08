@@ -11,7 +11,6 @@
   import { pageStore } from '$lib/app/services/navigation';
   import { playTracks, playTracksShuffled } from '$lib/app/services/player';
   import { shuffleMode } from '$lib/app/services/queue';
-  import { pinnedStore, togglePin } from '$lib/app/services/pins';
   import { authStore } from '$lib/app/services/auth';
   import { openPlaylistEditor } from '$lib/app/services/playlistEditor';
   import { addablePlaylistsStore } from '$lib/app/services/addablePlaylists';
@@ -25,7 +24,6 @@
   $: cover = playlist ? bestThumbnail(playlist.thumbnails, 512) : '';
   $: totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds ?? 0), 0);
   $: totalLabel = fmtTotal(totalSeconds);
-  $: pinned = !!playlist && $pinnedStore.some((p) => p.browseId === playlist.browseId);
   // Reference the stores so these recompute when the library/editable sets land.
   $: editableIds = $addablePlaylistsStore;
   $: libraryIds = $playlistStore;
@@ -50,11 +48,11 @@
   }
 </script>
 
-<div class="mx-auto max-w-[80rem] pb-6">
+<div class="mx-auto max-w-[80rem] py-6">
   {#if !playlist}
     <p class="text-[13px] text-zinc-500">No playlist selected.</p>
   {:else}
-    <header class="mb-6 flex flex-col gap-5 sm:flex-row sm:items-end">
+    <header class="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start">
       <div class="h-44 w-44 shrink-0 overflow-hidden rounded-lg bg-white/5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
         {#if cover}
           <img src={cover} alt="" class="h-full w-full object-cover" />
@@ -65,20 +63,25 @@
         {/if}
       </div>
       <div class="min-w-0">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Playlist</div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-zinc-300">Playlist</span>
+          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+            {#if $openPlaylistLoading && tracks.length === 0}
+              <span class="inline-block h-2.5 w-9 animate-pulse rounded bg-white/10 align-middle"></span>
+            {:else}
+              {tracks.length} songs
+            {/if}
+          </span>
+          {#if totalLabel}
+            <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400">{totalLabel}</span>
+          {/if}
+        </div>
         <h1 class="mt-2 line-clamp-2 text-2xl font-extrabold tracking-tight text-white sm:text-4xl">
           {playlist.title}
         </h1>
         {#if playlist.author}
           <div class="mt-1.5 text-[12px] text-zinc-400">{playlist.author}</div>
         {/if}
-        <div class="mt-2 text-[12px] text-zinc-400">
-          {#if $openPlaylistLoading && tracks.length === 0}
-            <span class="inline-block h-3 w-24 animate-pulse rounded bg-white/5 align-middle"></span>
-          {:else}
-            {tracks.length} songs{totalLabel ? ` · ${totalLabel}` : ''}
-          {/if}
-        </div>
         {#if $openPlaylistDescription}
           <p
             class="mt-3 line-clamp-3 max-w-3xl whitespace-pre-line text-[12px] leading-relaxed text-zinc-400"
@@ -89,54 +92,44 @@
         {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
             disabled={tracks.length === 0}
             onclick={() => playTracks(tracks, 0)}
           >
-            <i class="bx bx-play text-xl"></i>
+            <i class="bx bx-play text-xl leading-none"></i>
             Play
           </button>
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-[13px] font-semibold {$shuffleMode
+            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
               ? 'text-[var(--color-accent2)]'
               : 'text-zinc-200'} hover:bg-white/10 disabled:opacity-40"
             disabled={tracks.length === 0}
             title="Shuffle play"
             onclick={() => playTracksShuffled(tracks)}
           >
-            <i class="bx bx-shuffle text-lg"></i>
+            <i class="bx bx-shuffle text-xl leading-none"></i>
             Shuffle
-          </button>
-          <button
-            class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg {pinned
-              ? 'text-[var(--color-accent2)]'
-              : 'text-zinc-200'} hover:bg-white/10"
-            title={pinned ? 'Unpin from top bar' : 'Pin to top bar'}
-            aria-label="Pin playlist"
-            onclick={() => togglePin(playlist)}
-          >
-            <i class={pinned ? 'bx bxs-pin' : 'bx bx-pin'}></i>
           </button>
           {#if $authStore}
             {#if owned}
               <button
-                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg text-zinc-200 hover:bg-white/10"
+                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-full bg-white/5 text-lg text-zinc-200 hover:bg-white/10"
                 title="Edit playlist details"
                 aria-label="Edit playlist"
                 onclick={() => openPlaylistEditor(playlist)}
               >
-                <i class="bx bx-pencil"></i>
+                <i class="bx bx-pencil leading-none"></i>
               </button>
             {:else if ownershipLoaded}
               <button
-                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg {saved
+                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-full bg-white/5 text-lg {saved
                   ? 'text-[var(--color-accent2)]'
                   : 'text-zinc-200'} hover:bg-white/10"
                 title={saved ? 'Remove from library' : 'Save to library'}
                 aria-label={saved ? 'Remove from library' : 'Save to library'}
                 onclick={() => (saved ? unsavePlaylist(playlist) : savePlaylist(playlist))}
               >
-                <i class={saved ? 'bx bxs-bookmark' : 'bx bx-bookmark'}></i>
+                <i class="{saved ? 'bx bxs-bookmark' : 'bx bx-bookmark'} leading-none"></i>
               </button>
             {/if}
           {/if}

@@ -9,7 +9,7 @@ src/
   lib/core/          pure domain: models.ts, errors.ts (no Tauri/DOM/Innertube)
   lib/infra/ytmusic/ InnertubeClient.ts + mappers.ts (only place touching youtubei.js)
   lib/infra/storage/ settingsRepo.ts (tauri-plugin-store, localStorage fallback)
-  lib/app/services/  player.ts, queue.ts, auth.ts, settings.ts, mediaKeys.ts, navigation.ts
+  lib/app/services/  player.ts, queue.ts, folders.ts, pins.ts, auth.ts, settings.ts, navigation.ts
   lib/ui/            chrome/ (Titlebar/Sidebar/PlayerBar) components/ views/
   App.svelte main.ts app.css
 src-tauri/src/
@@ -171,32 +171,32 @@ actually needs deciphering.
   to transparent), so content disappears under the bar while the bar itself
   stays invisible against the background. `main` carries a matching top padding
   so the first row is not hidden, plus bottom padding for the floating player.
-  The queue ("Up next") is a popup anchored to the player bar
-  (`UpNextPanel.svelte`), not a page — there is no Library page.
+  The queue is a popup anchored to the player bar (`UpNextPanel.svelte`) in the
+  collapsed-bar layout; in the full-screen player it is shown **inline** in the
+  middle of the card instead (both render the shared `QueueList.svelte`). There
+  is no Library page.
 - **Home carousels:** plain horizontal scrollers (no edge fades) that bleed to
   the right window edge (`-mr-6`); the left edge stays on the content padding.
   Navigation arrows appear on hover.
-- **Player bar:** a floating card (`inset-x-3 bottom-3`, rounded, bordered) over
-  a black-to-transparent gradient fade, with `.cherry-playerbar` — dark at the top
-  fading into a subtle accent tint at the bottom. Uniform `p-3` inside. Layout
-  is a single row: 64px art on the left, then title/artist + the scrub bar
-  (which ends next to the art) stretching across, then prev/play/next followed
-  by shuffle, up-next and a volume icon whose slider **pops up vertically on
-  hover** (`.cherry-range-v`, bottom = min), aligned to the icon's right edge. The
-  scrub shows only the current position, on its right; the full length is a
-  hover tooltip. All control icons are the same size (`text-2xl`); only the play
-  button is larger (h-10).
-- **One 8px gutter:** the rail's home button and playlist rows both start at the
-  rail's `px-2` (no extra inner padding); the top bar's pins use the same
-  `pl-2` / `gap-2`. Playlist thumbnails match the 32px home button. The gap
-  between the rail's top row and the list also matches that gutter. There is no
-  rail header (refresh lives in Settings); the rail fades its list into black at
-  the bottom, and the fade hides once the end of the list is reached. The pin
-  button is a dark pill overlay that appears only on hover, so titles get full
-  width. Playlist rows are two-line (title + author, extracted from the library
-  row's subtitle), the top-bar avatar is a square matching the pins, and the
-  playlist page shows the author under the title with a play button sharing the
-  album art's corner radius.
+- **Player bar:** a floating card (`inset-x-3 bottom-0`, rounded top, borderless)
+  over a black-to-transparent gradient fade, with `.cherry-playerbar` — dark at
+  the top fading into an accent tint at the bottom. Padding is a uniform `p-3`.
+  The album art doubles as the "expand player" button (a chevron fades in on
+  hover). At `sm` and up it is a single row: art, title/artist + scrub, then
+  prev/play/next, shuffle, queue, and a volume icon whose slider **pops up on
+  hover** (`.cherry-range-v`). Below `sm` the controls wrap to a second row
+  (shuffle left, transport centred, queue + volume right). The full-screen card
+  (same component, `playerExpanded`) shows a "Next up" chip on the left with the
+  next track's art.
+- **One 8px gutter:** the rail's nav rows and playlist rows both start at the
+  rail's `px-2`; the compact rail centres 40px icon buttons that match the
+  playlist covers. Playlist rows are two-line (title + author, from the library
+  row's subtitle). The rail fades its list into black at the bottom, and the fade
+  hides once the end of the list is reached. Pinned playlists float to the top of
+  the rail with a small pin badge. The expanded rail is user-resizable by
+  dragging its right edge (width persisted in `sidebarWidth`). The playlist page
+  shows the author under the title with a play button sharing the album art's
+  corner radius.
 - **Scrollbars:** WebView2/Edge draws native scrollbars and ignores
   `::-webkit-scrollbar` and `scrollbar-color`. It *does* honour
   `scrollbar-width: none` **when set on the scroll container itself** — the
@@ -219,19 +219,20 @@ actually needs deciphering.
   (entity pages carry their Playlist/Artist/Album so Back restores the exact
   one), clears the forward stack, and ignores re-opens of the same page so Back
   never lands on an identical page. Every navigation resets the content scroll
-  to the top. The top bar's Back button pops it, and the **mouse Back/Forward
-  (X1/X2) buttons** are wired to the same stack (`startMouseNavigation`,
-  `mouseup` with `button` 3/4). The top bar holds Back, Home, Explore and the
-  pinned playlists (all plain white, with a backdrop blur); the rail is just the
-  search field.
+  to the top. The rail (and, in the narrow layout, the top bar) holds the Back
+  button that pops it, and the **mouse Back/Forward (X1/X2) buttons** are wired
+  to the same stack (`startMouseNavigation`, `mouseup` with `button` 3/4).
+  Navigation (Back, Home, Search, New) lives in the sidebar; the top bar only
+  carries the narrow-mode menu button and the account button.
 - **Album pages** fall back to the album cover for tracks that have no artwork
   of their own, take the artist/year from the detail header, and borrow the
   album artist for tracks that don't list one.
 - **Icons:** Boxicons everywhere (`bx`/`bxs`/`bxl`). The only exception is the
   native window caption glyphs in the title bar, which stay Segoe Fluent Icons
   to look like real Windows controls.
-- **Pages:** Home, Explore (the `FEmusic_explore` shelves — moods & genres,
-  new albums & singles, top songs), Search, Playlist, Artist
+- **Pages:** Home (the `FEmusic_home` feed; the `FEmusic_explore` shelves —
+  moods & genres, new albums & singles, top songs — are appended beneath it, so
+  Explore is *not* a separate page), Search, Playlist, Artist
   (`FEmusic`/`UC…` browse + `scanPageHeader`) and Album (`MPR…`) — the artist
   and album pages share the playlist page's header/track-list layout, with
   circular artist art and a clickable artist link on albums. Cards in every
@@ -240,8 +241,9 @@ actually needs deciphering.
   cards and song rows are normalised into one `CarouselEntry` shape, so a
   section always scrolls as a carousel regardless of which renderer YouTube
   used for it. "Listen again" is the hero row. The "Listen together"
-  (24/7 stations) shelf is filtered out via `HIDDEN_SECTIONS`, and a grid of
-  every playlist from the rail is appended at the bottom of the page.
+  (24/7 stations) shelf is filtered out via `HIDDEN_SECTIONS`, and the Explore
+  shelves (`FEmusic_explore`) are appended beneath the home feed, so Explore is
+  not a separate page.
 
 Note for anyone verifying visually on a scaled display: the WebView surface is
 larger than the OS window when `devicePixelRatio > 1` (e.g. 1.25), so
@@ -450,12 +452,35 @@ correct, and the app-identity fix is what stops the label reading "Unknown app".
 
 ## Pinned playlists
 
-Pins live in settings (`pins.ts`) and are mirrored in a store. Their artwork
-URLs can expire — and auto-generated playlists change theirs — so a pinned
-playlist that isn't the user's own would eventually lose its icon. Two guards:
-`syncPins` re-reads title/thumbnail from the loaded library whenever it lands,
-and the top-bar button renders a music-icon fallback *underneath* the image, so
-a broken URL degrades to the icon instead of a broken image.
+Pins live in settings (`pins.ts`) and are mirrored in a store. A pinned playlist
+floats to the top of the sidebar rail (in the order it was pinned). Pinning is
+offered only from the rail's right-click menu and is not available for playlists
+inside a folder; pinned rows cannot be dragged. Their artwork URLs can expire —
+and auto-generated playlists change theirs — so `syncPins` re-reads
+title/thumbnail from the loaded library whenever it lands.
+
+## Sidebar organisation
+
+The rail is one flat, user-ordered list of top-level entries — playlists and
+folders mixed — persisted as `sidebarOrder` (ids in order). Ids missing from the
+order are appended in library order, so a new playlist shows up without any
+bookkeeping. `services/folders.ts` owns the mutations:
+
+- **Folders** live in `playlistFolders` and hold their members in order
+  (`playlistIds`); a playlist belongs to at most one folder.
+- **Drag to organise** uses one delegated `dragover`/`drop` handler on the list,
+  keyed off `data-top-*` / `data-folder-header` / `data-child-*` attributes (so
+  compact and expanded layouts behave identically). It reorders top-level
+  entries, drops a playlist on a folder header to add it, drops it between an
+  open folder's children to place it precisely, and reorders folders.
+  Indicators are compared inline in the markup because the component uses legacy
+  reactivity (a helper function's closure state is not tracked by the compiler).
+- **Pinned playlists** float to the top in pin order and cannot be dragged;
+  pinning is offered only from the rail's context menu and never for folder
+  members.
+- The **compact** rail (`w-14`) shows icon-only buttons + covers with hover
+  tooltips; the **expanded** rail shows labels and is user-resizable by dragging
+  its right edge (width persisted in `sidebarWidth`).
 
 ## HTTP transport (CORS proxy)
 
@@ -570,9 +595,8 @@ Innertube's `VL` prefix — and `copyText` falls back to a hidden textarea when 
 async Clipboard API is unavailable. "Play playlist" resolves the collection in
 the background and does not navigate away.
 
-Pinning lives in the **playlist page header** (a pin button beside Play /
-Shuffle), not the rail: an icon that only appears on hover was easy to miss and
-competed with the row's own click target.
+Pinning is offered only from the rail's right-click menu (never on the playlist
+page or other surfaces), and pinned playlists float to the top of the rail.
 
 ## Window chrome
 
@@ -592,7 +616,7 @@ a real double-click could be toggled twice (once by each handler).
 **`dragDropEnabled` must stay `false`** on the main window. The Tauri default
 (`true`) makes Tauri intercept OS drag-and-drop, and on Windows that stops HTML5
 `dragstart`/`drop` events from firing in WebView2 altogether — which silently
-broke the Up next drag-to-reorder. Cherry needs no native file drops, so turning
+broke the queue's drag-to-reorder. Cherry needs no native file drops, so turning
 it off costs nothing. (Changing this is a config/Rust change: a frontend reload
 is not enough.)
 
@@ -716,12 +740,13 @@ an accent source (album art, or a fixed custom colour).
   go first). `mapArtistRef` also reads the browse id from navigation endpoints,
   not just `id`.
 - **Pasted links open.** `parseYouTubeLink` recognises `watch?v=`, `youtu.be/…`
-  and `playlist?list=…` URLs; the sidebar search box and the Search view open the
-  linked song (metadata resolved by `getTrack`) or playlist (`getPlaylistMeta`
-  for title + art) instead of searching for the URL text.
+  and `playlist?list=…` URLs; the Search popup opens the linked song (metadata
+  resolved by `getTrack`) or playlist (`getPlaylistMeta` for title + art) instead
+  of searching for the URL text.
 - **Saved vs created playlists.** The editable set (`get_add_to_playlist`) tells
-  created from merely *saved* playlists. The rail lists your own playlists first,
-  then a single divider, then saved ones. `scanAddablePlaylists` detects an option by
+  created from merely *saved* playlists. This only decides which context-menu
+  actions appear (Edit details vs Save/Remove), not the rail's order — the rail
+  is one flat, user-ordered list. `scanAddablePlaylists` detects an option by
   its *shape* (a `*Renderer` with a playlist id + title) rather than a fixed
   renderer-name list, because a name mismatch silently returned an empty set —
   which made ownership look unknown (no rail grouping, and a "Remove from

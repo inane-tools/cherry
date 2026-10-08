@@ -167,7 +167,7 @@ const MEDIA_TYPE_LABELS = new Set([
   'music video',
 ]);
 
-function isNoiseSegment(segment: string): boolean {
+export function isNoiseSegment(segment: string): boolean {
   const s = segment.trim();
   if (!s) return true;
   if (MEDIA_TYPE_LABELS.has(s.toLowerCase())) return true;

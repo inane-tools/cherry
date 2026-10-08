@@ -1,5 +1,6 @@
-import { derived, get, writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { Album, AppView, ArtistRef, Playlist, SearchResults } from '$lib/core/models';
+import { openSearch, openSettings } from './overlays';
 
 /**
  * A navigable page. Entity pages (playlist/artist/album) carry the entity that
@@ -8,7 +9,6 @@ import type { Album, AppView, ArtistRef, Playlist, SearchResults } from '$lib/co
  */
 export type Page =
   | { view: 'home' }
-  | { view: 'explore' }
   | { view: 'search' }
   | { view: 'settings' }
   | { view: 'playlist'; entity: Playlist }
@@ -16,8 +16,6 @@ export type Page =
   | { view: 'album'; entity: Album };
 
 export const pageStore = writable<Page>({ view: 'home' });
-/** Kept for callers that only care *which* view is showing. */
-export const viewStore = derived(pageStore, (page) => page.view);
 export const canGoBack = writable(false);
 export const canGoForward = writable(false);
 
@@ -51,6 +49,10 @@ export function openPage(page: Page): void {
   // broken: one press just returns to the identical page).
   if (pageKey(page) === pageKey(current)) {
     pageStore.set(page);
+    // Re-opening the current page is still a navigation: the forward stack no
+    // longer leads anywhere the user would expect (browser semantics).
+    future = [];
+    syncHistoryFlags();
     return;
   }
   history = [...history, current].slice(-MAX_HISTORY);
@@ -60,8 +62,11 @@ export function openPage(page: Page): void {
   syncHistoryFlags();
 }
 
-/** Simple view navigation (home / explore / search / settings). */
-export function go(view: Extract<AppView, 'home' | 'explore' | 'search' | 'settings'>): void {
+/** Simple view navigation (home / overlay search / settings). */
+export function go(view: Extract<AppView, 'home' | 'search' | 'settings'>): void {
+  // Settings and Search are floating overlays, not pages.
+  if (view === 'settings') return openSettings();
+  if (view === 'search') return openSearch();
   openPage({ view });
 }
 
@@ -81,10 +86,6 @@ export function forward(): void {
   history = [...history, get(pageStore)].slice(-MAX_HISTORY);
   pageStore.set(next);
   syncHistoryFlags();
-}
-
-export function canGoBackNow(): boolean {
-  return history.length > 0;
 }
 
 /**
@@ -120,11 +121,11 @@ export const searchResultsStore = writable<SearchResults | null>(null);
 
 let requestId = 0;
 
-/** Commit a search from anywhere (top bar, shortcut) and open the view. */
+/** Commit a search from anywhere (top bar, shortcut) and open the popup. */
 export function requestSearch(query: string): void {
   const q = query.trim();
   if (!q) return;
   searchQuery.set(q);
   searchRequest.set({ query: q, id: ++requestId });
-  openPage({ view: 'search' });
+  openSearch();
 }

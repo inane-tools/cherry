@@ -102,6 +102,16 @@ async function clearInPageCaches(): Promise<void> {
 }
 
 /**
+ * Drop the cached playlist/library data (and the Innertube client that reads
+ * it), leaving settings, the signed-in session and the WebView profile intact.
+ */
+export async function clearCache(): Promise<ClearResult> {
+  cacheClear();
+  resetInnertubeClient();
+  return { removed: ['playlist cache'], locked: [] };
+}
+
+/**
  * Clear everything Cherry stores locally.
  *
  * The in-page caches are dropped first so the running app stops reading them

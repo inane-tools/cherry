@@ -16,15 +16,6 @@ async function invokeStrict<T>(cmd: string, args?: Record<string, unknown>): Pro
   return invoke<T>(cmd, args);
 }
 
-export function lastfmConfigured(): boolean {
-  const s = get(settingsStore);
-  return Boolean(s.lastfmApiKey && s.lastfmApiSecret);
-}
-
-export function lastfmConnected(): boolean {
-  return Boolean(get(settingsStore).lastfmSessionKey);
-}
-
 /** True when scrobbling should actually be sent. */
 export function lastfmActive(): boolean {
   const s = get(settingsStore);

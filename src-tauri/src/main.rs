@@ -75,11 +75,29 @@ fn append_webview2_args(extra: &str) {
 }
 
 fn main() {
-    // Chromium registers its own media session for the <audio> element, which
-    // Windows surfaces in the media flyout as a second, metadata-less "Cherry"
-    // entry beside the one we drive through souvlaki. Disabling Chromium's Media
-    // Session API removes it, leaving only our session. Playback is unaffected.
-    append_webview2_args("--disable-media-session-api");
+    // Browser arguments for every WebView2 webview.
+    //
+    // These MUST go through the environment variable, not the window config's
+    // `additionalBrowserArgs`: that field sets the shared WebView2 environment
+    // (so it leaks into the login window) and breaks it — see the warning at the
+    // top of `ytm_login.rs`. The env var is applied before any webview exists and
+    // is the path the working sign-in relied on.
+    //
+    // - `--disable-media-session-api` / `MediaSessionService`: Chromium registers
+    //   its own media session for the <audio> element, which Windows surfaces in
+    //   the media flyout as a second, metadata-less "Cherry" entry beside the one
+    //   we drive through souvlaki. Disabling it leaves only our session.
+    // - `HardwareMediaKeyHandling`: let the global-shortcut handler own the media
+    //   keys instead of the webview swallowing them.
+    // - `msWebOOUI` / `msPdfOOUI` / `msSmartScreenProtection`: drop Edge's
+    //   Office/PDF/SmartScreen UI from an app that renders none of it.
+    // - `--autoplay-policy=no-user-gesture-required`: resume playback without a
+    //   click after a restart.
+    append_webview2_args(
+        "--disable-media-session-api \
+         --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,MediaSessionService,HardwareMediaKeyHandling \
+         --autoplay-policy=no-user-gesture-required",
+    );
 
     // Before anything reads (or creates) app data: carry over anything stored
     // under the app's previous identity, and finish any clear the running app
@@ -129,7 +147,6 @@ fn main() {
             discord::discord_set_presence,
             discord::discord_clear_presence,
             devtools::open_devtools,
-            devtools::is_devtools_open,
             lastfm::lastfm_get_token,
             lastfm::lastfm_get_session,
             lastfm::lastfm_now_playing,

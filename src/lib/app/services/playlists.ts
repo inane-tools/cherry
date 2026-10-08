@@ -124,9 +124,6 @@ export async function refreshLibrary(): Promise<void> {
   await Promise.all([loadLibrary(), loadHome()]);
 }
 
-/** Kept for the previous call sites. */
-export const loadPlaylists = loadLibrary;
-
 /**
  * Open a playlist (from the rail, a home card or search): navigate to the
  * playlist page. The view calls `loadOpenPlaylist` once it is mounted, so Back

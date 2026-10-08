@@ -4,7 +4,7 @@
 
 import { Store } from '@tauri-apps/plugin-store';
 import { isTauri } from '$lib/app/services/platform';
-import type { PinnedPlaylist } from '$lib/core/models';
+import type { PinnedPlaylist, PlaylistFolder } from '$lib/core/models';
 
 export interface CherrySettings {
   volume: number;
@@ -20,6 +20,22 @@ export interface CherrySettings {
   channelPageId: string;
   /** Playlists pinned to the top bar. */
   pinnedPlaylists: PinnedPlaylist[];
+  /** Playlists grouped into folders in the sidebar. */
+  playlistFolders: PlaylistFolder[];
+  /**
+   * Order of the sidebar's top-level entries — playlist ids and folder ids
+   * mixed in one user-organised list. Items not present here are appended in
+   * library order, so new playlists still show up.
+   */
+  sidebarOrder: string[];
+  /** Ids of sidebar folders the user collapsed (folders default to open). */
+  collapsedFolders: string[];
+  /** Slim the playlist rail (covers only, search as a button). */
+  compactSidebar: boolean;
+  /** Width of the expanded sidebar in pixels (user-resizable by dragging). */
+  sidebarWidth: number;
+  /** Show the accent gradient washes (content background + player bar). */
+  gradientsEnabled: boolean;
   minimizeToTray: boolean;
   /** Appearance: follow the OS, or force light/dark. */
   theme: 'system' | 'light' | 'dark';
@@ -50,6 +66,12 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   discordStatusDisplay: 'details',
   channelPageId: '',
   pinnedPlaylists: [],
+  playlistFolders: [],
+  sidebarOrder: [],
+  collapsedFolders: [],
+  compactSidebar: false,
+  sidebarWidth: 240,
+  gradientsEnabled: true,
   minimizeToTray: true,
   theme: 'system',
   accentSource: 'song',
@@ -69,6 +91,21 @@ const LS_KEY = 'cherry.settings.v1';
 
 let store: Store | null = null;
 
+/**
+ * Last known settings, kept in memory so `saveSettings` can merge a patch
+ * against the current state instead of re-reading the store each call. Without
+ * this, two overlapping writes both read the same base and the later one
+ * silently dropped the earlier patch (e.g. a folder reorder racing a collapse
+ * toggle).
+ */
+let cached: CherrySettings | null = null;
+
+/**
+ * Writes are serialised through this chain so concurrent `updateSettings` calls
+ * cannot interleave their read-modify-write steps.
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
+
 async function getStore(): Promise<Store | null> {
   if (!isTauri()) return null;
   if (!store) store = await Store.load(STORE_PATH);
@@ -76,41 +113,56 @@ async function getStore(): Promise<Store | null> {
 }
 
 export async function loadSettings(): Promise<CherrySettings> {
+  let loaded: CherrySettings | null = null;
   try {
     const s = await getStore();
     if (s) {
       const raw = await s.get<Partial<CherrySettings>>('settings');
-      return { ...DEFAULT_SETTINGS, ...(raw ?? {}) };
+      loaded = { ...DEFAULT_SETTINGS, ...(raw ?? {}) };
     }
   } catch {
     // fall through to localStorage
   }
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    /* ignore */
+  if (!loaded) {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) loaded = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch {
+      /* ignore */
+    }
   }
-  return { ...DEFAULT_SETTINGS };
+  const result = loaded ?? { ...DEFAULT_SETTINGS };
+  cached = result;
+  return result;
 }
 
-export async function saveSettings(patch: Partial<CherrySettings>): Promise<CherrySettings> {
-  const current = await loadSettings();
-  const next = { ...current, ...patch };
-  try {
-    const s = await getStore();
-    if (s) {
-      await s.set('settings', next);
-      await s.save();
-      return next;
+export function saveSettings(patch: Partial<CherrySettings>): Promise<CherrySettings> {
+  const task = writeChain.then(async () => {
+    const current = cached ?? (await loadSettings());
+    const next = { ...current, ...patch };
+    cached = next;
+    try {
+      const s = await getStore();
+      if (s) {
+        await s.set('settings', next);
+        await s.save();
+        return next;
+      }
+    } catch {
+      /* fall through */
     }
-  } catch {
-    /* fall through */
-  }
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore */
-  }
-  return next;
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+    return next;
+  });
+  // Keep the chain alive even if this write fails, so one failure never blocks
+  // every later write.
+  writeChain = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
 }

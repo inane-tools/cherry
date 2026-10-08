@@ -21,6 +21,9 @@
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
 
+  /** When provided, a close button is rendered inline with the search bar. */
+  export let onClose: (() => void) | undefined = undefined;
+
   let q = get(searchQuery);
   $: results = $searchResultsStore;
   let loading = false;
@@ -101,6 +104,9 @@
 
   // Typing in this view refines live.
   function onType() {
+    // Keep the shared query in sync so re-opening the popup restores the *last*
+    // thing typed, not just the last committed search.
+    searchQuery.set(q);
     const text = q;
     if (!text.trim()) return;
     requestSearchSilently(text);
@@ -147,12 +153,12 @@
     }}
   >
     <div
-      class="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-elevated)]/80 px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur focus-within:border-[var(--color-accent)]/60"
+      class="flex h-[46px] min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-elevated)]/80 px-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur focus-within:border-[var(--color-accent)]/60"
     >
       <input
         bind:value={q}
         oninput={onType}
-        placeholder="Songs, albums, artists, playlists…"
+        placeholder="What do you want to listen to?"
         class="min-w-0 flex-1 bg-transparent text-[15px] text-zinc-100 outline-none placeholder:text-zinc-600"
       />
       {#if q}
@@ -162,6 +168,7 @@
           aria-label="Clear"
           onclick={() => {
             q = '';
+            searchQuery.set('');
             searchResultsStore.set(null);
             error = null;
           }}
@@ -178,6 +185,16 @@
     >
       <i class="bx bx-search"></i>
     </button>
+    {#if onClose}
+      <button
+        type="button"
+        class="cherry-btn-scrim flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Close search"
+        onclick={onClose}
+      >
+        <i class="bx bx-x text-2xl"></i>
+      </button>
+    {/if}
   </form>
 
   {#if loading}
@@ -295,11 +312,6 @@
         {/each}
       </div>
     {/if}
-  {:else}
-    <div class="mt-10 flex flex-col items-center justify-center gap-2 text-center">
-      <i class="bx bx-search-alt text-4xl text-zinc-700"></i>
-      <p class="text-[13px] text-zinc-600">Type to search YouTube Music.</p>
-    </div>
   {/if}
   {/if}
 </div>
