@@ -30,7 +30,6 @@ export const playerStore = writable<PlaybackState>({
 let audio: HTMLAudioElement | null = null;
 let sessionUnsub: (() => void) | null = null;
 let queueUnsub: (() => void) | null = null;
-let lastStreamVideoId: string | null = null;
 /**
  * Position to seek to once the restored track's stream loads. Scoped to the
  * track it belongs to (and cleared on any load) so it can never be applied to a
@@ -443,8 +442,26 @@ async function prefetchNext(): Promise<void> {
   }
 }
 
+/**
+ * Incremented on every `loadCurrent`. Each load captures its own value and
+ * checks it after every `await`, so a load that was overtaken (the user skipped
+ * while its stream was resolving) can never touch the audio element.
+ *
+ * Without this, rapid skipping played the wrong song: track A's `el.play()`
+ * rejected with an AbortError when track B's load replaced the source, A's
+ * catch block treated that as an expired URL, re-resolved A and set it as the
+ * source again — so A played while the UI showed B.
+ */
+let loadGeneration = 0;
+
+function isAbort(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
 async function loadCurrent(autoplay: boolean): Promise<void> {
   cancelPauseClear();
+  const generation = ++loadGeneration;
+  const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
   const el = ensureAudio();
   if (!item) {
@@ -466,43 +483,55 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
   // Theme the app from the new track's artwork (fire and forget).
   void applyArtworkTheme(bestThumbnail(item.track.thumbnails, 256));
   await pushOsState();
-  try {
-    // Gate again here: autoplay can advance into this after a sign-out.
-    if (!get(authStore)) {
-      playerStore.update((p) => ({ ...p, status: 'idle', track: null }));
-      await pushOsState();
-      announceSignInRequired();
-      return;
-    }
-    const session = get(authStore);
-    const { track, stream } = await getAudioStream(item.track.videoId, session);
-    // Guard: user skipped while we were resolving.
-    if (get(currentItem)?.track.videoId !== item.track.videoId) return;
-    lastStreamVideoId = item.track.videoId;
+  if (stale()) return;
+
+  // Gate again here: autoplay can advance into this after a sign-out.
+  const session = get(authStore);
+  if (!session) {
+    playerStore.update((p) => ({ ...p, status: 'idle', track: null }));
+    await pushOsState();
+    announceSignInRequired();
+    return;
+  }
+
+  const videoId = item.track.videoId;
+  const start = async (refresh: boolean): Promise<void> => {
+    const { track, stream } = await getAudioStream(videoId, session, { refresh });
+    if (stale()) return;
     el.src = stream.url;
-    applyPendingResume(el, item.track.videoId);
+    applyPendingResume(el, videoId);
     if (track.durationSeconds) {
       playerStore.update((p) => ({ ...p, durationSeconds: track.durationSeconds as number }));
     }
-    if (autoplay) await el.play();
+    if (autoplay) {
+      try {
+        await el.play();
+      } catch (e) {
+        // Blocked by an autoplay policy: the source is fine, so leave the track
+        // loaded and paused instead of re-resolving it as if the URL had failed.
+        if (!(e instanceof DOMException && e.name === 'NotAllowedError')) throw e;
+        if (!stale()) playerStore.update((p) => ({ ...p, status: 'paused' }));
+      }
+    }
+    if (stale()) return;
     // Warm the next track so skipping is instant.
     void prefetchNext();
+  };
+
+  try {
+    await start(false);
   } catch (e) {
+    // An overtaken load, or a play() interrupted by a newer source, is not a
+    // failure of this track — there is nothing to retry or report.
+    if (stale() || isAbort(e)) return;
     const err = toCherryError(e);
-    // If the stream URL expired (410-ish), retry once with a fresh client.
-    if (lastStreamVideoId !== item.track.videoId + ':retry') {
-      lastStreamVideoId = item.track.videoId + ':retry';
-      try {
-        const session = get(authStore);
-        const { stream } = await getAudioStream(item.track.videoId, session, { refresh: true });
-        el.src = stream.url;
-        applyPendingResume(el, item.track.videoId);
-        if (autoplay) await el.play().catch(() => undefined);
-        void prefetchNext();
-        return;
-      } catch {
-        /* fall through to error state */
-      }
+    // The cached stream URL may have expired: retry once per load, bypassing
+    // the cache.
+    try {
+      await start(true);
+      return;
+    } catch (retryError) {
+      if (stale() || isAbort(retryError)) return;
     }
     playerStore.update((p) => ({ ...p, status: 'error', error: err.message }));
     await pushOsState();

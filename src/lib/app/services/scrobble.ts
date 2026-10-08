@@ -53,17 +53,41 @@ function enqueue(item: PendingScrobble): void {
   saveQueue(queue);
 }
 
-/** Retry anything queued while offline. Called periodically and at startup. */
-export async function flushScrobbleQueue(): Promise<void> {
-  if (!lastfmActive()) return;
-  const queue = loadQueue();
-  if (queue.length === 0) return;
-  const remaining: PendingScrobble[] = [];
-  for (const item of queue) {
-    const ok = await scrobble(item.fields, item.timestamp);
-    if (!ok) remaining.push(item);
-  }
-  saveQueue(remaining);
+function sameScrobble(a: PendingScrobble, b: PendingScrobble): boolean {
+  return (
+    a.timestamp === b.timestamp &&
+    a.fields.artist === b.fields.artist &&
+    a.fields.track === b.fields.track
+  );
+}
+
+let flushing: Promise<void> | null = null;
+
+/**
+ * Retry anything queued while offline. Called periodically and at startup.
+ *
+ * Concurrency: the periodic flush and the startup flush can overlap, and a new
+ * failed scrobble can be enqueued while a flush is awaiting Last.fm. So only
+ * one flush runs at a time, and on completion it removes exactly the items it
+ * sent from the *current* stored queue — overwriting the queue with the list it
+ * read at the start used to silently drop anything enqueued meanwhile.
+ */
+export function flushScrobbleQueue(): Promise<void> {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    if (!lastfmActive()) return;
+    const snapshot = loadQueue();
+    if (snapshot.length === 0) return;
+    const sent: PendingScrobble[] = [];
+    for (const item of snapshot) {
+      if (await scrobble(item.fields, item.timestamp)) sent.push(item);
+    }
+    if (sent.length === 0) return;
+    saveQueue(loadQueue().filter((item) => !sent.some((done) => sameScrobble(done, item))));
+  })().finally(() => {
+    flushing = null;
+  });
+  return flushing;
 }
 
 let currentVideoId: string | null = null;
@@ -71,6 +95,7 @@ let startedAt = 0;
 let listenedSeconds = 0;
 let scrobbled = false;
 let wasPlaying = false;
+let lastPosition = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 let tickCount = 0;
 
@@ -88,12 +113,19 @@ function onState(state: PlaybackState): void {
   const track = state.track;
   if (!track) {
     currentVideoId = null;
+    lastPosition = 0;
     wasPlaying = false;
     return;
   }
-  if (track.videoId !== currentVideoId) {
+  // A new track — or the same track starting over after it was already
+  // scrobbled (repeat-one, or replaying it), which Last.fm counts as a new play.
+  // Seeking back before the scrobble point does not reset the listened time.
+  const position = state.positionSeconds || 0;
+  const restarted = scrobbled && position < 3 && lastPosition - position > 10;
+  if (track.videoId !== currentVideoId || restarted) {
     beginTrack(track, state);
   }
+  lastPosition = position;
   const playing = state.status === 'playing';
   // Send "now playing" on the transition into playing (and on a fresh track).
   if (playing && !wasPlaying) void nowPlaying(track);
@@ -121,6 +153,19 @@ function maybeScrobble(track: Track, duration: number): void {
     if (!ok) enqueue({ fields, timestamp: startedAt });
   });
 }
+
+/** Test hook: reset the per-track accounting. */
+export function resetScrobbleState(): void {
+  currentVideoId = null;
+  startedAt = 0;
+  listenedSeconds = 0;
+  scrobbled = false;
+  wasPlaying = false;
+  lastPosition = 0;
+}
+
+/** Exposed for tests: feed one player state / one second of wall time. */
+export const __test = { onState, tick };
 
 /** Start accounting. Safe to call once at startup. */
 export function startScrobbling(): void {

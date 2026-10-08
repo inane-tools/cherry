@@ -7,7 +7,7 @@
   import { authStore, initAuth } from '$lib/app/services/auth';
   import { initChannel } from '$lib/app/services/account';
   import { loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
-  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback, playerStore } from '$lib/app/services/player';
+  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startMemoryTrimming } from '$lib/app/services/memory';
   import { startScrobbling } from '$lib/app/services/scrobble';
@@ -22,8 +22,6 @@
     closeSidebarDrawer,
   } from '$lib/app/services/layout';
   import { initFolders } from '$lib/app/services/folders';
-  import { isTauri } from '$lib/app/services/platform';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import logoUrl from '$lib/assets/logo.png';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
@@ -43,17 +41,6 @@
 
   let ready = false;
   let mainEl: HTMLElement | undefined;
-
-  // The window title follows the current track.
-  onMount(() => {
-    let last = '';
-    return playerStore.subscribe((st) => {
-      const title = st.track?.title?.trim() || 'Cherry';
-      if (title === last) return;
-      last = title;
-      if (isTauri()) void getCurrentWindow().setTitle(title);
-    });
-  });
 
   // Apply the stored theme/accent as early as possible (defaults until settings
   // load, then re-applied) so there is minimal theme flash on launch.

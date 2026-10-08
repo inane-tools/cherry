@@ -6,7 +6,7 @@
 
 import { writable } from 'svelte/store';
 import type { AuthSession } from '$lib/core/models';
-import { getInnertube, resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
+import { clearStreamCache, getInnertube, resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { clearQueue } from './queue';
 import { clearStoredQueue } from './queuePersistence';
@@ -149,6 +149,7 @@ export async function signInWithCookie(rawCookie: string, accountLabel?: string)
 
 export async function signOut(): Promise<void> {
   resetInnertubeClient();
+  clearStreamCache();
   // Everything cached belongs to the account that is being removed.
   cacheClear();
   // The queue is per-account session state; drop it (and its persisted copy)

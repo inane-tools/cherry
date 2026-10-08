@@ -9,6 +9,7 @@ mod maintenance;
 mod media_controls;
 mod migrate;
 mod playlist_image;
+mod secrets;
 mod thumbar;
 mod webview_memory;
 mod ytm_login;
@@ -154,6 +155,8 @@ fn main() {
             playlist_image::upload_playlist_thumbnail,
             maintenance::cache_size,
             maintenance::clear_local_data,
+            secrets::secret_save,
+            secrets::secret_load,
             webview_memory::set_webview_memory_low,
         ])
         .on_window_event(|window, event| {

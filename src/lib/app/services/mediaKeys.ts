@@ -23,7 +23,11 @@ export async function startMediaKeyListener(): Promise<void> {
     },
     'media-key://next': () => next(),
     'media-key://prev': () => prev(),
-    'media-key://stop': () => toggle(),
+    // Stop must never *start* playback (it used to toggle, so pressing Stop
+    // while paused resumed the music).
+    'media-key://stop': async () => {
+      if (get(playerStore).status === 'playing') await toggle();
+    },
   };
   // Register every listener at once: each `listen` is an IPC round trip, and
   // awaiting them one by one serialised startup behind a dozen of them.
