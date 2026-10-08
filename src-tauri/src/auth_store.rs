@@ -243,13 +243,33 @@ pub(crate) fn save_session(session: &AuthSession) -> Result<(), String> {
     save_to(&Store::main(), session)
 }
 
-#[tauri::command]
-pub fn auth_save(session: AuthSession) -> Result<(), String> {
-    save_session(&session)
+/// Run keychain work off the main thread.
+///
+/// Synchronous Tauri commands execute on the main (UI) thread, so the retry
+/// sleeps below — and any keychain unlock prompt or slow Secret Service — used
+/// to freeze the window. These commands are async and hop to a blocking worker.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn auth_load() -> Result<Option<AuthSession>, String> {
+pub async fn auth_save(session: AuthSession) -> Result<(), String> {
+    blocking(move || save_session(&session)).await
+}
+
+#[tauri::command]
+pub async fn auth_load() -> Result<Option<AuthSession>, String> {
+    blocking(load_session).await
+}
+
+#[tauri::command]
+pub async fn auth_clear() -> Result<(), String> {
+    blocking(clear_session).await
+}
+
+fn load_session() -> Result<Option<AuthSession>, String> {
     // The Windows Credential Manager occasionally fails a read right after a
     // write ("No matching entry found in secure storage"). Retry before
     // concluding the user is signed out — otherwise a hiccup looks like a
@@ -267,8 +287,7 @@ pub fn auth_load() -> Result<Option<AuthSession>, String> {
     Err(last)
 }
 
-#[tauri::command]
-pub fn auth_clear() -> Result<(), String> {
+fn clear_session() -> Result<(), String> {
     Store::main().delete_all()?;
     // Drop the pre-rename entry too: otherwise the next load would migrate it
     // straight back and signing out would look like it did nothing.

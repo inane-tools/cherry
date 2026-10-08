@@ -149,7 +149,9 @@ export async function getInnertube(
     return existing;
   }
 
-  const promise = (async () => {
+  // Declared first so the failure handler can compare against it.
+  let promise: Promise<AnyInnertube> | undefined;
+  promise = (async () => {
     try {
       const { Innertube, Platform } = await loadYt();
       installEvaluator(Platform);
@@ -168,7 +170,9 @@ export async function getInnertube(
       } as never)) as AnyInnertube;
       return client;
     } catch (e) {
-      CLIENTS.delete(key);
+      // Only drop *this* attempt: if it was evicted and a newer client was
+      // created under the same key meanwhile, that one must survive.
+      if (CLIENTS.get(key) === promise) CLIENTS.delete(key);
       if (e instanceof CherryError) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       // eslint-disable-next-line no-console
@@ -223,6 +227,12 @@ function rememberStream(videoId: string, result: AudioStreamResult): void {
     if (oldest === undefined) break;
     STREAMS.delete(oldest);
   }
+}
+
+/** Forget resolved streams (sign-out: the URLs were minted for that session). */
+export function clearStreamCache(): void {
+  STREAMS.clear();
+  preferredPlayerClient = undefined;
 }
 
 /**
@@ -893,8 +903,13 @@ export async function getCollectionTracks(
 ): Promise<Track[]> {
   // Playlists are the expensive ones (one request per ~100 tracks), so they get
   // the longest TTL and are persisted for instant re-opens.
-  return cached(`collection:${getActiveChannel()}:${browseId}`, TTL.playlist, () =>
-    runCollectionTracks(browseId, session),
+  // `runCollectionTracks` turns a failure into `[]`; caching (and persisting)
+  // that made a playlist look empty for half an hour after one network blip.
+  return cached(
+    `collection:${getActiveChannel()}:${browseId}`,
+    TTL.playlist,
+    () => runCollectionTracks(browseId, session),
+    { shouldCache: (tracks) => tracks.length > 0 },
   );
 }
 

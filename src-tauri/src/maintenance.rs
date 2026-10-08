@@ -186,6 +186,8 @@ pub fn clear_local_data(app: AppHandle) -> Result<Vec<String>, String> {
         .ok();
 
     let report = clear_disk(&dir, app_cache.as_deref());
+    // The Last.fm secrets live in the keychain, not on disk.
+    crate::secrets::clear_all();
     let mut removed = report.removed;
     if !report.skipped.is_empty() {
         removed.push(format!("locked: {}", report.skipped.join(", ")));

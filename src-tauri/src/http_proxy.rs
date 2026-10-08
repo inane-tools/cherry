@@ -6,8 +6,11 @@
 //! player JS, Innertube API, OAuth) flows through this command, which uses
 //! reqwest — no origin checks server-side.
 //!
-//! Only http(s) is allowed. No cookie jar: auth travels in explicit headers
-//! (OAuth bearer), so there is nothing to leak between requests.
+//! Only http(s) to Google / YouTube hosts is allowed (`allowed_host`): the
+//! relay ignores CORS by design, so without a host allowlist any script that
+//! ran in the webview could use it to reach `localhost` or the LAN. No cookie
+//! jar: auth travels in explicit headers, so there is nothing to leak between
+//! requests.
 
 use std::collections::HashMap;
 use serde::Serialize;
@@ -26,6 +29,18 @@ fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .timeout(std::time::Duration::from_secs(30))
+        // Redirects are re-checked against the allowlist, otherwise an allowed
+        // URL could bounce the request to a refused host.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let allowed = attempt.url().host_str().is_some_and(allowed_host);
+            if !allowed {
+                attempt.error("redirect to a refused host")
+            } else if attempt.previous().len() >= 10 {
+                attempt.error("too many redirects")
+            } else {
+                attempt.follow()
+            }
+        }))
         .build()
         .expect("reqwest client")
 }
@@ -49,17 +64,46 @@ fn needs_origin(host: &str) -> bool {
     SUFFIXES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
 }
 
+/// Hosts the relay will talk to: everything youtubei.js and the artwork
+/// fetcher need (YouTube, Google auth/APIs, the video and image CDNs) and
+/// nothing else.
+fn allowed_host(host: &str) -> bool {
+    const SUFFIXES: [&str; 9] = [
+        "youtube.com",
+        "youtu.be",
+        "google.com",
+        "googleapis.com",
+        "googlevideo.com",
+        "googleusercontent.com",
+        "gstatic.com",
+        "ytimg.com",
+        "ggpht.com",
+    ];
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    SUFFIXES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
+}
+
+/// Parse and vet a URL for the relay: http(s) only, allowlisted hosts only.
+fn checked_url(raw: &str) -> Result<url::Url, String> {
+    let url = url::Url::parse(raw).map_err(|e| e.to_string())?;
+    match url.scheme() {
+        "http" | "https" => {}
+        other => return Err(format!("refused scheme: {other}")),
+    }
+    let host = url.host_str().unwrap_or_default();
+    if !allowed_host(host) {
+        return Err(format!("refused host: {host}"));
+    }
+    Ok(url)
+}
+
 pub async fn proxy_fetch(
     url: String,
     method: String,
     headers: HashMap<String, String>,
     body: Option<String>,
 ) -> Result<ProxyResponse, String> {
-    let url = url::Url::parse(&url).map_err(|e| e.to_string())?;
-    match url.scheme() {
-        "http" | "https" => {}
-        other => return Err(format!("refused scheme: {other}")),
-    }
+    let url = checked_url(&url)?;
     let mut req = client().request(
         reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?,
         url.clone(),
@@ -113,11 +157,7 @@ pub async fn http_proxy_fetch(
 #[tauri::command]
 pub async fn http_proxy_fetch_base64(url: String) -> Result<String, String> {
     use base64::Engine as _;
-    let parsed = url::Url::parse(&url).map_err(|e| e.to_string())?;
-    match parsed.scheme() {
-        "http" | "https" => {}
-        other => return Err(format!("refused scheme: {other}")),
-    }
+    let parsed = checked_url(&url)?;
     let resp = client().get(parsed).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("status {}", resp.status()));
@@ -130,7 +170,56 @@ pub async fn http_proxy_fetch_base64(url: String) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn allowlist_accepts_google_hosts_only() {
+        for ok in [
+            "music.youtube.com",
+            "youtube.com",
+            "rr3---sn-abc.googlevideo.com",
+            "lh3.googleusercontent.com",
+            "i.ytimg.com",
+            "yt3.ggpht.com",
+            "accounts.google.com",
+            "jnn-pa.googleapis.com",
+            "WWW.YOUTUBE.COM",
+            "www.youtube.com.",
+        ] {
+            assert!(allowed_host(ok), "{ok} should be allowed");
+        }
+        for bad in [
+            "localhost",
+            "127.0.0.1",
+            "192.168.1.1",
+            "evil.com",
+            "youtube.com.evil.com",
+            "notyoutube.com",
+            "google.com-attacker.net",
+            "",
+        ] {
+            assert!(!allowed_host(bad), "{bad} should be refused");
+        }
+    }
+
+    #[test]
+    fn checked_url_refuses_bad_scheme_and_host() {
+        assert!(checked_url("https://music.youtube.com/youtubei/v1/browse").is_ok());
+        assert!(checked_url("file:///etc/passwd").unwrap_err().contains("refused scheme"));
+        assert!(checked_url("http://127.0.0.1:8080/").unwrap_err().contains("refused host"));
+        assert!(checked_url("http://[::1]/").unwrap_err().contains("refused host"));
+        assert!(checked_url("https://youtube.com@evil.com/").unwrap_err().contains("refused host"));
+    }
+
     #[tokio::test]
+    async fn refuses_loopback_without_connecting() {
+        let err = proxy_fetch("http://127.0.0.1:1/".into(), "GET".into(), HashMap::new(), None)
+            .await
+            .expect_err("loopback must be refused");
+        assert!(err.contains("refused host"));
+    }
+
+    /// Needs network access to music.youtube.com.
+    #[tokio::test]
+    #[ignore = "network"]
     async fn proxies_https_get() {
         let res = proxy_fetch(
             "https://music.youtube.com/".to_string(),
@@ -158,8 +247,9 @@ mod tests {
     }
 
     /// The album-art theming path depends on this: real image bytes, base64
-    /// encoded, with the JPEG magic number intact.
+    /// encoded, with the JPEG magic number intact. Needs network access.
     #[tokio::test]
+    #[ignore = "network"]
     async fn fetches_image_bytes_as_base64() {
         use base64::Engine as _;
         let encoded = http_proxy_fetch_base64("https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg".into())

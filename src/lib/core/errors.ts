@@ -24,9 +24,13 @@ export class CherryError extends Error {
 export function toCherryError(e: unknown, fallback = 'Something went wrong'): CherryError {
   if (e instanceof CherryError) return e;
   const msg = e instanceof Error ? e.message : String(e ?? fallback);
-  if (/401|403|login|cookie|auth/i.test(msg)) return new CherryError('auth-required', msg, e);
-  if (/429|rate/i.test(msg)) return new CherryError('rate-limited', msg, e);
-  if (/404|not found/i.test(msg)) return new CherryError('not-found', msg, e);
+  // Word boundaries matter: a bare /auth/ matched "author" and /rate/ matched
+  // "generate", so unrelated failures were reported as sign-in problems.
+  if (/\b(401|403)\b|\blog ?in\b|\bcookies?\b|\bauth(?!or)/i.test(msg)) {
+    return new CherryError('auth-required', msg, e);
+  }
+  if (/\b429\b|\brate.?limit/i.test(msg)) return new CherryError('rate-limited', msg, e);
+  if (/\b404\b|not found/i.test(msg)) return new CherryError('not-found', msg, e);
   if (/network|fetch|failed/i.test(msg)) return new CherryError('network', msg, e);
   return new CherryError('internal', msg || fallback, e);
 }

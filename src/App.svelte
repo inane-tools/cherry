@@ -7,10 +7,11 @@
   import { authStore, initAuth } from '$lib/app/services/auth';
   import { initChannel } from '$lib/app/services/account';
   import { loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
-  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback, playerStore } from '$lib/app/services/player';
+  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startMemoryTrimming } from '$lib/app/services/memory';
   import { startScrobbling } from '$lib/app/services/scrobble';
+  import { startShortcuts } from '$lib/app/services/shortcuts';
   import { openDevTools } from '$lib/app/services/devtools';
   import { startAppearance } from '$lib/app/services/appearance';
   import { startZoom } from '$lib/app/services/zoom';
@@ -23,8 +24,6 @@
     closeSidebarDrawer,
   } from '$lib/app/services/layout';
   import { initFolders } from '$lib/app/services/folders';
-  import { isTauri } from '$lib/app/services/platform';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import logoUrl from '$lib/assets/logo.png';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
@@ -44,17 +43,6 @@
 
   let ready = false;
   let mainEl: HTMLElement | undefined;
-
-  // The window title follows the current track.
-  onMount(() => {
-    let last = '';
-    return playerStore.subscribe((st) => {
-      const title = st.track?.title?.trim() || 'Cherry';
-      if (title === last) return;
-      last = title;
-      if (isTauri()) void getCurrentWindow().setTitle(title);
-    });
-  });
 
   // Apply the stored theme/accent as early as possible (defaults until settings
   // load, then re-applied) so there is minimal theme flash on launch.
@@ -104,6 +92,8 @@
       }
     };
     window.addEventListener('keydown', onKeyDown);
+    // Player / navigation shortcuts (Space, arrows, Ctrl+F, …).
+    const stopShortcuts = startShortcuts();
     // WebView2 memory trimming is async to set up; hold the cleanup once ready.
     let stopMemory = () => {};
     void startMemoryTrimming().then((stop) => (stopMemory = stop));
@@ -113,6 +103,7 @@
       unsubscribe();
       window.removeEventListener('cherry:notice', onNotice);
       window.removeEventListener('keydown', onKeyDown);
+      stopShortcuts();
       stopMemory();
     };
   });

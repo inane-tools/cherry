@@ -9,6 +9,7 @@ mod maintenance;
 mod media_controls;
 mod migrate;
 mod playlist_image;
+mod secrets;
 mod thumbar;
 mod webview_memory;
 mod ytm_login;
@@ -127,7 +128,7 @@ fn main() {
         .manage(media_controls::MediaState(Mutex::new(None)))
         .manage(discord::DiscordState::default())
         .setup(|app| {
-            if let Err(e) = media_controls::init_media_controls(&app.handle()) {
+            if let Err(e) = media_controls::init_media_controls(app.handle()) {
                 eprintln!("[cherry] media controls unavailable: {e}");
             }
             // Taskbar thumbnail-preview media buttons (Windows only; no-op
@@ -136,7 +137,7 @@ fn main() {
             if let Err(e) = thumbar::install(&app.handle()) {
                 eprintln!("[cherry] taskbar media buttons unavailable: {e}");
             }
-            build_tray(&app.handle());
+            build_tray(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -163,6 +164,8 @@ fn main() {
             playlist_image::upload_playlist_thumbnail,
             maintenance::cache_size,
             maintenance::clear_local_data,
+            secrets::secret_save,
+            secrets::secret_load,
             webview_memory::set_webview_memory_low,
             set_webview_zoom,
         ])

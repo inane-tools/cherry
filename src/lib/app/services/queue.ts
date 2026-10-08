@@ -78,8 +78,11 @@ export function setQueue(tracks: Track[], startAt = 0): void {
   const list = tracks.map((track) => ({ track, queueId: uid() }));
   items.set(list);
   const clamped = Math.max(0, Math.min(startAt, list.length - 1));
-  if (get(shuffleOn)) {
-    rebuildOrder(list.length, list.length ? clamped : undefined);
+  if (list.length === 0) {
+    order.set([]);
+    index.set(-1);
+  } else if (get(shuffleOn)) {
+    rebuildOrder(list.length, clamped);
     index.set(0);
   } else {
     order.set(list.map((_, i) => i));
@@ -90,22 +93,38 @@ export function setQueue(tracks: Track[], startAt = 0): void {
 export function enqueue(tracks: Track[], playNext = false): void {
   if (tracks.length === 0) return;
   const list = get(items);
-  const additions = tracks.map((track) => ({ track, queueId: uid() }));
   if (list.length === 0) {
     setQueue(tracks, 0);
     return;
   }
+  const additions = tracks.map((track) => ({ track, queueId: uid() }));
+
+  if (get(shuffleOn)) {
+    // Append the new items to `items` and splice their indices into the play
+    // order *without* reshuffling what is already there: re-shuffling the whole
+    // order brought already-played tracks back and moved the current track to a
+    // random play position. Play-next goes right after the current track;
+    // otherwise the additions are shuffled into the not-yet-played tail.
+    const start = list.length;
+    const added = additions.map((_, i) => start + i);
+    const pos = get(index);
+    const current = get(order);
+    const head = current.slice(0, pos + 1);
+    const tail = current.slice(pos + 1);
+    items.set([...list, ...additions]);
+    order.set(playNext ? [...head, ...added, ...tail] : [...head, ...shuffled([...tail, ...added])]);
+    return;
+  }
+
   const at = get(index);
   const next = [...list];
   next.splice(playNext ? at + 1 : next.length, 0, ...additions);
   items.set(next);
-  rebuildOrder(next.length);
-  // keep current position stable
-  const cur = get(currentItem);
-  if (cur) {
-    const pos = next.findIndex((i) => i.queueId === cur.queueId);
-    index.set(get(shuffleOn) ? get(order).indexOf(pos) : pos);
-  }
+  order.set(next.map((_, i) => i));
+  // The current track only moves when play-next inserts before it (never), but
+  // keep it explicit: find it again by id.
+  const cur = at >= 0 ? list[at] : undefined;
+  if (cur) index.set(next.findIndex((i) => i.queueId === cur.queueId));
 }
 
 export function clearQueue(): void {
@@ -255,8 +274,11 @@ export function currentOrder(): number[] {
 export function setShuffle(on: boolean): void {
   const was = get(shuffleOn);
   if (was === on) return;
-  shuffleOn.set(on);
+  // Read the current item *before* flipping the flag: `currentItem` maps the
+  // index through the order only while shuffle is on, so reading it afterwards
+  // resolved to a different track and turning shuffle off jumped songs.
   const cur = get(currentItem);
+  shuffleOn.set(on);
   const list = get(items);
   if (on) {
     const curPos = cur ? list.findIndex((i) => i.queueId === cur.queueId) : -1;

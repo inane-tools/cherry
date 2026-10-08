@@ -6,21 +6,15 @@
 
 import { writable } from 'svelte/store';
 import type { AuthSession } from '$lib/core/models';
-import { getInnertube, resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
+import { clearStreamCache, getInnertube, resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { clearQueue } from './queue';
 import { clearStoredQueue } from './queuePersistence';
-import { invokeSafe, isTauri } from './platform';
+import { invokeSafe, invokeStrict, isTauri } from './platform';
 
 export const authStore = writable<AuthSession | null>(null);
 export type AuthStatus = 'checking' | 'signed-out' | 'signed-in' | 'error';
 export const authStatus = writable<AuthStatus>('checking');
-
-async function invokeStrict<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new Error('Desktop only.');
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(cmd, args);
-}
 
 async function persist(session: AuthSession): Promise<void> {
   if (isTauri()) {
@@ -149,6 +143,7 @@ export async function signInWithCookie(rawCookie: string, accountLabel?: string)
 
 export async function signOut(): Promise<void> {
   resetInnertubeClient();
+  clearStreamCache();
   // Everything cached belongs to the account that is being removed.
   cacheClear();
   // The queue is per-account session state; drop it (and its persisted copy)

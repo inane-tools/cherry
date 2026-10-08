@@ -12,6 +12,7 @@ import { toCherryError } from '$lib/core/errors';
 import { getAudioStream, getInnertube, prefetchAudioStream } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
 import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
+import type { RepeatMode } from '$lib/core/models';
 import { invokeSafe, isTauri } from './platform';
 import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
@@ -30,7 +31,6 @@ export const playerStore = writable<PlaybackState>({
 let audio: HTMLAudioElement | null = null;
 let sessionUnsub: (() => void) | null = null;
 let queueUnsub: (() => void) | null = null;
-let lastStreamVideoId: string | null = null;
 /**
  * Position to seek to once the restored track's stream loads. Scoped to the
  * track it belongs to (and cleared on any load) so it can never be applied to a
@@ -152,7 +152,42 @@ function applyPendingResume(el: HTMLAudioElement, videoId: string): void {
   else el.addEventListener('loadedmetadata', seek, { once: true });
 }
 
+/**
+ * "Stop after this track" (the sleep timer's end-of-track mode). Checked when a
+ * track ends: the queue still advances, but the next track is only cued, not
+ * played.
+ */
+export const stopAfterTrack = writable(false);
+
+/**
+ * Show the current queue item as paused at 0:00 without resolving its stream
+ * (the same state as a restored queue: pressing play loads it).
+ */
+function cueCurrent(): void {
+  const item = get(currentItem);
+  const el = ensureAudio();
+  loadGeneration++;
+  el.removeAttribute('src');
+  el.load();
+  pendingResume = null;
+  playerStore.update((p) => ({
+    ...p,
+    status: item ? 'paused' : 'idle',
+    track: item?.track ?? null,
+    positionSeconds: 0,
+    durationSeconds: item?.track.durationSeconds ?? 0,
+  }));
+  if (!item) resetArtworkTheme();
+  void pushOsState();
+}
+
 async function onEnded(): Promise<void> {
+  if (get(stopAfterTrack)) {
+    stopAfterTrack.set(false);
+    if (step(1, true)) cueCurrent();
+    else await stopPlayback();
+    return;
+  }
   const repeat = get(queueStore.repeat);
   if (repeat === 'one') {
     const el = ensureAudio();
@@ -369,6 +404,61 @@ export async function restorePlayback(): Promise<void> {
   await pushOsState();
 }
 
+/** Toggle shuffle and remember the choice for the next start. */
+export function toggleShuffle(): void {
+  const on = !get(queueStore.shuffle);
+  setShuffle(on);
+  void updateSettings({ shuffle: on });
+}
+
+const REPEAT_CYCLE: RepeatMode[] = ['off', 'all', 'one'];
+
+/** Cycle repeat off → all → one → off, and remember it. */
+export function cycleRepeat(): RepeatMode {
+  const current = get(queueStore.repeat);
+  const next = REPEAT_CYCLE[(REPEAT_CYCLE.indexOf(current) + 1) % REPEAT_CYCLE.length];
+  setRepeat(next);
+  void updateSettings({ repeat: next });
+  return next;
+}
+
+/** Seek relative to the current position (keyboard shortcuts, media keys). */
+export function seekBy(deltaSeconds: number): void {
+  const st = get(playerStore);
+  const max = st.durationSeconds > 0 ? st.durationSeconds : Infinity;
+  seekTo(Math.min(max, Math.max(0, st.positionSeconds + deltaSeconds)));
+}
+
+/**
+ * Fade the volume to silence over `durationMs`, pause, then put the volume back
+ * (so the next play is at the user's level). Used by the sleep timer. An abort
+ * restores the volume immediately and keeps playing.
+ */
+export function fadeOutAndPause(durationMs: number, signal?: AbortSignal): Promise<void> {
+  const el = ensureAudio();
+  const start = el.volume;
+  const steps = Math.max(1, Math.round(durationMs / 100));
+  return new Promise((resolve) => {
+    let n = 0;
+    const timer = setInterval(() => {
+      if (signal?.aborted) {
+        clearInterval(timer);
+        el.volume = start;
+        resolve();
+        return;
+      }
+      n++;
+      el.volume = start * Math.max(0, 1 - n / steps);
+      if (n >= steps) {
+        clearInterval(timer);
+        el.pause();
+        el.volume = start;
+        resolve();
+      }
+    }, durationMs / steps);
+  });
+}
+
 export function setVolume(v: number): void {
   const el = ensureAudio();
   const volume = Math.min(1, Math.max(0, v));
@@ -443,8 +533,26 @@ async function prefetchNext(): Promise<void> {
   }
 }
 
+/**
+ * Incremented on every `loadCurrent`. Each load captures its own value and
+ * checks it after every `await`, so a load that was overtaken (the user skipped
+ * while its stream was resolving) can never touch the audio element.
+ *
+ * Without this, rapid skipping played the wrong song: track A's `el.play()`
+ * rejected with an AbortError when track B's load replaced the source, A's
+ * catch block treated that as an expired URL, re-resolved A and set it as the
+ * source again — so A played while the UI showed B.
+ */
+let loadGeneration = 0;
+
+function isAbort(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
 async function loadCurrent(autoplay: boolean): Promise<void> {
   cancelPauseClear();
+  const generation = ++loadGeneration;
+  const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
   const el = ensureAudio();
   if (!item) {
@@ -466,43 +574,55 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
   // Theme the app from the new track's artwork (fire and forget).
   void applyArtworkTheme(bestThumbnail(item.track.thumbnails, 256));
   await pushOsState();
-  try {
-    // Gate again here: autoplay can advance into this after a sign-out.
-    if (!get(authStore)) {
-      playerStore.update((p) => ({ ...p, status: 'idle', track: null }));
-      await pushOsState();
-      announceSignInRequired();
-      return;
-    }
-    const session = get(authStore);
-    const { track, stream } = await getAudioStream(item.track.videoId, session);
-    // Guard: user skipped while we were resolving.
-    if (get(currentItem)?.track.videoId !== item.track.videoId) return;
-    lastStreamVideoId = item.track.videoId;
+  if (stale()) return;
+
+  // Gate again here: autoplay can advance into this after a sign-out.
+  const session = get(authStore);
+  if (!session) {
+    playerStore.update((p) => ({ ...p, status: 'idle', track: null }));
+    await pushOsState();
+    announceSignInRequired();
+    return;
+  }
+
+  const videoId = item.track.videoId;
+  const start = async (refresh: boolean): Promise<void> => {
+    const { track, stream } = await getAudioStream(videoId, session, { refresh });
+    if (stale()) return;
     el.src = stream.url;
-    applyPendingResume(el, item.track.videoId);
+    applyPendingResume(el, videoId);
     if (track.durationSeconds) {
       playerStore.update((p) => ({ ...p, durationSeconds: track.durationSeconds as number }));
     }
-    if (autoplay) await el.play();
+    if (autoplay) {
+      try {
+        await el.play();
+      } catch (e) {
+        // Blocked by an autoplay policy: the source is fine, so leave the track
+        // loaded and paused instead of re-resolving it as if the URL had failed.
+        if (!(e instanceof DOMException && e.name === 'NotAllowedError')) throw e;
+        if (!stale()) playerStore.update((p) => ({ ...p, status: 'paused' }));
+      }
+    }
+    if (stale()) return;
     // Warm the next track so skipping is instant.
     void prefetchNext();
+  };
+
+  try {
+    await start(false);
   } catch (e) {
+    // An overtaken load, or a play() interrupted by a newer source, is not a
+    // failure of this track — there is nothing to retry or report.
+    if (stale() || isAbort(e)) return;
     const err = toCherryError(e);
-    // If the stream URL expired (410-ish), retry once with a fresh client.
-    if (lastStreamVideoId !== item.track.videoId + ':retry') {
-      lastStreamVideoId = item.track.videoId + ':retry';
-      try {
-        const session = get(authStore);
-        const { stream } = await getAudioStream(item.track.videoId, session, { refresh: true });
-        el.src = stream.url;
-        applyPendingResume(el, item.track.videoId);
-        if (autoplay) await el.play().catch(() => undefined);
-        void prefetchNext();
-        return;
-      } catch {
-        /* fall through to error state */
-      }
+    // The cached stream URL may have expired: retry once per load, bypassing
+    // the cache.
+    try {
+      await start(true);
+      return;
+    } catch (retryError) {
+      if (stale() || isAbort(retryError)) return;
     }
     playerStore.update((p) => ({ ...p, status: 'error', error: err.message }));
     await pushOsState();

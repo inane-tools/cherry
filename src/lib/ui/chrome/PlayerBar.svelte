@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted } from '$lib/app/services/player';
-  import { shuffleMode, setShuffle, upNext, upNextQueue, clearQueue, queueItems } from '$lib/app/services/queue';
+  import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted, toggleShuffle } from '$lib/app/services/player';
+  import { shuffleMode, upNext, upNextQueue, clearQueue, queueItems } from '$lib/app/services/queue';
   import { bestThumbnail, hiResThumbnail, trackDisplayArtists } from '$lib/core/models';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
@@ -10,6 +10,8 @@
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import UpNextPanel from './UpNextPanel.svelte';
   import QueueList from './QueueList.svelte';
+  import RepeatButton from '$lib/ui/components/RepeatButton.svelte';
+  import SleepTimerButton from '$lib/ui/components/SleepTimerButton.svelte';
 
   let upNextOpen = false;
   let volOpen = false;
@@ -221,12 +223,14 @@
           class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode
             ? 'text-[var(--color-accent2)]'
             : 'text-zinc-400 hover:text-white'}"
-          onclick={() => setShuffle(!$shuffleMode)}
+          onclick={toggleShuffle}
           title="Shuffle"
           aria-label="Shuffle"
         >
           <i class="bx bx-shuffle"></i>
         </button>
+        <RepeatButton size="lg" />
+        <SleepTimerButton size="lg" />
         <button
           class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen
             ? 'text-[var(--color-accent2)]'
@@ -361,12 +365,14 @@
           {/if}
           <button
             class="flex h-9 w-9 items-center justify-center rounded-full text-lg {$shuffleMode ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
-            onclick={() => setShuffle(!$shuffleMode)}
+            onclick={toggleShuffle}
             title="Shuffle"
             aria-label="Shuffle"
           >
             <i class="bx bx-shuffle"></i>
           </button>
+          <RepeatButton />
+          <SleepTimerButton />
         </div>
 
         <!-- Center (small) / first (wide): transport -->

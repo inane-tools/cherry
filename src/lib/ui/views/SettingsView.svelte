@@ -35,6 +35,10 @@
     zoomFillPercent,
   } from '$lib/app/services/zoom';
   import SettingsSection from '$lib/ui/components/SettingsSection.svelte';
+  import { SHORTCUT_HELP } from '$lib/app/services/shortcuts';
+
+  // Shortcuts use ⌘ instead of Ctrl on macOS (`metaKey` is accepted too).
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
   import Toggle from '$lib/ui/components/Toggle.svelte';
   // Bundled (hashed) rather than `/logo.png`: an absolute public path is served
   // by the asset protocol, which can 404 in the window right after the cache is
@@ -825,6 +829,25 @@
         </label>
       </div>
     </section>
+
+    <!-- Keyboard shortcuts -->
+    <SettingsSection
+      title="Keyboard shortcuts"
+      description="Work anywhere in the window, except while typing."
+      icon="bx bx-command"
+      collapsible
+    >
+      <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[12px]">
+        {#each SHORTCUT_HELP as shortcut (shortcut.action)}
+          <dt class="text-zinc-300">{shortcut.label}</dt>
+          <dd class="text-right">
+            <kbd class="rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
+              >{isMac ? shortcut.display.replace('Ctrl', '⌘') : shortcut.display}</kbd
+            >
+          </dd>
+        {/each}
+      </dl>
+    </SettingsSection>
 
     <!-- Data and cache -->
     <SettingsSection

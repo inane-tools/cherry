@@ -433,7 +433,8 @@ mod tests {
     }
 
     /// Regression guard for the swapped song/artist lines: Discord's enum is
-    /// `0 = name`, `1 = state`, `2 = details`.    #[test]
+    /// `0 = name`, `1 = state`, `2 = details`.
+    #[test]
     fn status_display_values_match_discord_enum() {
         assert_eq!(
             build_activity(&payload("state")).get("status_display_type").and_then(|v| v.as_u64()),
