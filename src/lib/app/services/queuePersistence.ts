@@ -68,6 +68,27 @@ export function flushQueue(): void {
   writeNow();
 }
 
+/**
+ * The queue to store, at most `MAX_ITEMS` long and always self-consistent.
+ *
+ * Slicing only `items` (as before) left `order`/`index` describing the full
+ * queue, so a restore with shuffle on fell back to list order at a clamped
+ * position. Over the cap, store the play sequence from the current track on,
+ * already in play order (identity `order`, index 0).
+ */
+export function boundedQueue(
+  items: QueueItem[],
+  index: number,
+  order: number[],
+): Pick<PersistedQueue, 'items' | 'index' | 'order'> {
+  if (items.length <= MAX_ITEMS) return { items, index, order };
+  const sequence =
+    order.length === items.length ? order.map((i) => items[i]).filter(Boolean) : items;
+  const from = Math.max(0, index);
+  const kept = sequence.slice(from, from + MAX_ITEMS);
+  return { items: kept, index: 0, order: kept.map((_, i) => i) };
+}
+
 function writeNow(): void {
   const ls = store();
   if (!ls) return;
@@ -81,9 +102,7 @@ function writeNow(): void {
     return;
   }
   const payload: PersistedQueue = {
-    items: items.slice(0, MAX_ITEMS),
-    index: get(queueIndex),
-    order: currentOrder(),
+    ...boundedQueue(items, get(queueIndex), currentOrder()),
     shuffle: get(shuffleMode),
     repeat: get(repeatMode),
     position: Math.max(0, Math.round(pendingPosition)),

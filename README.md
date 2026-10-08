@@ -47,7 +47,13 @@ API, so it speaks the same endpoints the web player does. Built with
 - **Light & dark themes** — follow the system or pick one, with the accent taken
   from the album art or a custom colour and optional background gradients. The
   window title follows the current track.
-- **Last.fm scrobbling** — optional, using your own Last.fm API key.
+- **Keyboard shortcuts** — Space to play/pause, arrows to seek, Ctrl+arrows
+  to skip and change volume, S/R for shuffle/repeat, Ctrl+F to search (full
+  list in Settings).
+- **Sleep timer** — stop after 5 minutes to 1.5 hours with a gentle fade, or
+  at the end of the current track.
+- **Last.fm scrobbling** — optional, using your own Last.fm API key; the
+  secret and session key are kept in the OS keychain.
 - **Discord Rich Presence** — optional "Listening to …" activity.
 - **Built to feel fast** — the shell paints before the player code loads,
   playlists stream in progressively, the next track is prefetched, and a
@@ -75,6 +81,7 @@ Other scripts:
 
 ```bash
 npm run typecheck      # svelte-check
+npm test               # unit tests (Vitest)
 npm run build          # build the frontend to dist/
 npm run tauri build    # package a release (NSIS/MSI on Windows)
 ```
@@ -92,6 +99,19 @@ src-tauri/src/      Rust: tray, media controls, Discord, keychain, HTTP relay,
 
 Dependencies point inward: `ui → services → infra → core`. Raw youtubei.js nodes
 never leave `src/lib/infra/ytmusic/`.
+
+## Tests
+
+```bash
+npm test                       # TypeScript unit tests (jsdom, no Tauri needed)
+cd src-tauri && cargo test     # Rust unit tests
+```
+
+Tests sit next to the code they cover (`*.test.ts`, Rust `mod tests`). Rust
+tests that need the network are `#[ignore = "network"]`, and the keychain tests
+need a real OS keychain (on Linux, a running Secret Service such as
+gnome-keyring). Run everything with `cargo test -- --include-ignored`. See
+[`docs/TESTING.md`](docs/TESTING.md).
 
 ## Changelog
 

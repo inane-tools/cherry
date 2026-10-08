@@ -4,6 +4,45 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Keyboard shortcuts**: Space / K play-pause, ← / → seek 5 s, J / L seek
+  10 s, Ctrl + ← / → previous / next, Ctrl + ↑ / ↓ volume, M mute, S shuffle,
+  R repeat, Ctrl + F or / search, Ctrl + , settings (⌘ on macOS). They never
+  fire while typing. Listed in Settings → Keyboard shortcuts.
+- **Sleep timer** in the player bar and full-screen player: 5, 15, 30, 45, 60
+  or 90 minutes with a countdown and an 8-second fade-out, or "end of track",
+  which lets the song finish and cues the next one paused.
+- **Repeat button** (off / all / one). Repeat existed but had no control.
+- Unit tests: a Vitest suite for the TypeScript layers (`npm test`).
+
+### Fixed
+
+- Skipping quickly could play the previous song while the next one was shown.
+- Turning shuffle off jumped to a different song.
+- Adding songs to the queue with shuffle on re-shuffled the whole queue
+  (already-played songs came back); "Play next" landed in a random place.
+- Songs played on repeat-one were scrobbled only once, and scrobbles that
+  failed while a retry was running could be lost.
+- A playlist that failed to load once looked empty for 30 minutes.
+- Playlists without an explicit count could show absurd song counts (e.g. the
+  year and the count glued together).
+- The Stop media key resumed playback when paused.
+- Some unrelated errors were reported as sign-in or rate-limit problems.
+- Shuffle and repeat changes made from the player bar were not remembered.
+- Reading the saved session no longer blocks the window at startup.
+
+### Security
+
+- The built-in HTTP relay only talks to YouTube / Google hosts (redirects
+  included); it used to forward requests anywhere, including `localhost`.
+- YouTube's signature-deciphering script now runs in an isolated Web Worker
+  without access to the app's internals, instead of inside the app page.
+- The Last.fm API secret and session key moved from the plaintext settings file
+  to the OS keychain (migrated automatically; removed by "Clear everything").
+
 ## [1.2.1] — 2026-10-08
 
 ### Fixed

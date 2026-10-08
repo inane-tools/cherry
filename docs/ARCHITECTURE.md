@@ -9,7 +9,8 @@ src/
   lib/core/          pure domain: models.ts, errors.ts (no Tauri/DOM/Innertube)
   lib/infra/ytmusic/ InnertubeClient.ts + mappers.ts (only place touching youtubei.js)
   lib/infra/storage/ settingsRepo.ts (tauri-plugin-store, localStorage fallback)
-  lib/app/services/  player.ts, queue.ts, folders.ts, pins.ts, auth.ts, settings.ts, navigation.ts
+  lib/app/services/  player.ts, queue.ts, folders.ts, pins.ts, auth.ts, settings.ts, navigation.ts,
+                     shortcuts.ts (in-app keys), sleepTimer.ts
   lib/ui/            chrome/ (Titlebar/Sidebar/PlayerBar) components/ views/
   App.svelte main.ts app.css
 src-tauri/src/
@@ -21,7 +22,8 @@ src-tauri/src/
                      credentials (Windows caps a blob at 2560 bytes)
   ytm_login.rs       in-app music.youtube.com sign-in window; captures the
                      session from the native cookie store
-  http_proxy.rs      CORS-free HTTP relay (reqwest) — see below
+  http_proxy.rs      CORS-free HTTP relay (reqwest), Google/YouTube hosts only
+  secrets.rs         small keychain-held secrets (Last.fm), allowlisted names
 ```
 
 Rules: UI → services → infra → core. Raw youtubei.js nodes never leave `infra/ytmusic`. OS features (media keys, Discord, tray, keychain) live behind `invoke()` commands so the frontend stays testable in a plain browser.
@@ -103,6 +105,37 @@ cache); the migrated session is what keeps the user signed in.
   slot between two rows (dropping a row into its own gap is a no-op), and the
   queue is normalised to the new play order with the current track still playing.
 
+- **Loads are generation-guarded.** Every `loadCurrent` takes a number and
+  re-checks it after each `await`; an overtaken load never touches the
+  `<audio>` element. Before this, a skip during `el.play()` made the old load's
+  promise reject with `AbortError`, which the catch block took for an expired
+  URL — it re-resolved the *old* track and set it as the source, so the previous
+  song played under the new title. `AbortError` and stale loads are now ignored,
+  the expired-URL retry is one per load, and an autoplay-policy rejection
+  (`NotAllowedError`) leaves the track loaded and paused.
+- **Shuffle keeps the play order stable.** `enqueue` under shuffle splices the
+  new indices into `order` instead of reshuffling it: "Play next" goes right
+  after the current track, other additions are shuffled into the unplayed tail.
+  `setShuffle` reads the current item *before* flipping the flag (afterwards
+  `currentItem` resolves through the other mapping and returns a different song).
+- **Sleep timer / stop after track.** `sleepTimer.ts` starts the fade
+  (`fadeOutAndPause`) `FADE_MS` before the deadline so silence lands exactly on
+  time, then restores the volume. "End of track" sets the player's
+  `stopAfterTrack`; `onEnded` then advances the queue and *cues* the next item
+  (`cueCurrent`: paused at 0:00, no stream resolved) instead of playing it. Not
+  persisted on purpose.
+
+## Keyboard shortcuts
+
+`services/shortcuts.ts` holds the binding table (`SHORTCUTS`, also rendered in
+Settings) and `handleShortcut`, installed on `window` by `App.svelte`. A key
+press is ignored when it belongs to the focused element: text fields,
+`contenteditable`, sliders/listboxes, and Space/Enter on buttons and links.
+Auto-repeat only applies to arrows (seek/volume). Ctrl and ⌘ are equivalent;
+Shift is significant for letters only, because some layouts need Shift to type
+`/` or `,`. The F12 / Ctrl+Shift+I DevTools keys stay in `App.svelte`, gated by
+the Developer setting.
+
 ## Caching and request reduction
 
 Measured on the real app (WebView2 request count for a full startup): **cold
@@ -116,7 +149,9 @@ profile 5 requests → warm profile 1**. The savings come from two layers:
   coalesces concurrent loads, so two views asking for the same playlist produce
   one request. Lifetimes: playlist 30 min, home 3 min, search 2 min, channels
   60 min. Keys are channel-scoped; a non-reversible hash of the session is used
-  instead of the cookie. Cleared on sign-out. **Playlist header metadata
+  instead of the cookie. Cleared on sign-out. **Empty results from loaders that
+  swallow errors are never cached** (`shouldCache`): `getCollectionTracks` maps a
+  failure to `[]`, and caching that made a playlist look empty for 30 minutes. **Playlist header metadata
   (`meta:`) and single-track lookups (`track:`) are cached too** — the header
   was being refetched on every open, which is why a playlist's description
   always lagged behind its (already-streamed) track list.
@@ -491,6 +526,28 @@ through the Rust `http_proxy_fetch` command and re-wraps the result as
 a real `Response`. Only http(s) allowed, no cookie jar (auth uses explicit
 headers). `<audio>`/`<img>` load Google media directly — no CORS for those.
 
+**Host allowlist.** The relay deliberately ignores CORS, so without a limit any
+script running in the webview could use it to reach `localhost`, the LAN or an
+arbitrary server. `allowed_host` accepts only YouTube/Google domains
+(`youtube.com`, `youtu.be`, `google.com`, `googleapis.com`, `googlevideo.com`,
+`googleusercontent.com`, `gstatic.com`, `ytimg.com`, `ggpht.com` and their
+subdomains), and the reqwest redirect policy re-checks every hop. If a future
+youtubei.js release starts calling a new host, it fails with
+`refused host: …` — add the domain to `allowed_host` (and its test).
+
+**Decipher sandbox.** youtubei.js needs a JS evaluator for the signature / `n`
+transform it extracts from YouTube's player script (`evaluator.ts`). That code
+is fetched at run time, so it runs in a dedicated Web Worker (no DOM, no
+`__TAURI_INTERNALS__`, therefore no IPC), with a 10 s timeout that replaces a
+hung worker. Its result is `{ sig, n }` strings, which cross the worker boundary
+unchanged. In-page evaluation is only a fallback where `Worker` is missing.
+
+**Remote content cannot call commands.** The sign-in window loads
+`music.youtube.com`; Tauri applies the ACL to non-local origins even for app
+commands (`webview/mod.rs`: `plugin_command.is_some() || has_app_acl_manifest ||
+!is_local`), and no capability grants a remote URL, so that page has no IPC.
+Keep it that way: never add a `remote` entry to a capability.
+
 **The relay adds a browser-style `Origin` header** for Google/YouTube hosts.
 youtubei.js only sets `Origin` on its *server* shim, which the webview does not
 use. Verified live: without it, `accounts_list` returns a 1.8 KB context-only
@@ -680,7 +737,17 @@ error (e.g. *"This playlist cannot be edited."*) rather than failing silently.
 Uses the user's **own** Last.fm API key + secret (entered in Settings) — nothing
 is bundled, so the public repo carries no credentials. Auth is the desktop token
 flow: `auth.getToken` → the user approves in the browser → `auth.getSession`
-yields a long-lived session key stored in settings.
+yields a long-lived session key.
+
+- **The API secret and session key live in the OS keychain**, not the settings
+  file. They are ordinary fields of `CherrySettings` for the UI, but
+  `settingsRepo.ts` strips `SECRET_KEYS` before writing the store and keeps them
+  in one keychain entry through `secret_save` / `secret_load` (`secrets.rs`,
+  which only accepts allowlisted names). Values written in plaintext by older
+  versions are moved on first load, and only removed from the file once the
+  keychain write succeeded. If the keychain is unavailable the rest of the
+  settings still save; the secrets then last for the current run only, the same
+  rule as the YouTube session.
 
 - Signing (`api_sig = md5(sorted params + secret)`) and the HTTP POST happen in
   **Rust** (`lastfm.rs`, `md5` crate), not the webview: no MD5 in JS, no CORS,
@@ -691,7 +758,11 @@ yields a long-lived session key stored in settings.
   as wall time while the player reports `playing` (a seek does not count). The
   scrobble timestamp is when the track started, not when the threshold was hit.
 - Failed scrobbles (offline / Last.fm down) are queued in `localStorage` and
-  retried, so a play is not lost. "Now playing" is sent on the transition into
+  retried, so a play is not lost. Only one flush runs at a time, and it removes
+  exactly the items it sent from the *current* queue: writing back the list read
+  at the start dropped scrobbles that failed while the flush was waiting.
+- A track that starts over after being scrobbled (repeat-one, replay) counts as
+  a new play; seeking back before the scrobble point does not reset progress. "Now playing" is sent on the transition into
   playback and is best-effort (never queued).
 - `lastfmEnabled` gates everything; scrobbling is a no-op unless connected.
 
