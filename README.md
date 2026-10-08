@@ -9,7 +9,7 @@ API, so it speaks the same endpoints the web player does. Built with
 
 > **Latest release: v1.2.1** — see the [changelog](CHANGELOG.md) for what's new.
 
-![Cherry](https://inane.tools/screenshot.png)
+![Cherry](https://inane.tools/screenshot-compact.webp)
 
 > ### Disclaimer
 > Cherry is an unofficial client and is **not affiliated with, endorsed by, or
