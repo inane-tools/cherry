@@ -26,6 +26,14 @@
   import { clearAllData, clearCache, formatCacheSize } from '$lib/app/services/maintenance';
   import { DISCLAIMER } from '$lib/app/services/gate';
   import { isTauri } from '$lib/app/services/platform';
+  import {
+    applyZoom,
+    ZOOM_MAX,
+    ZOOM_MIN,
+    ZOOM_STEP,
+    ZOOM_STEPS,
+    zoomFillPercent,
+  } from '$lib/app/services/zoom';
   import SettingsSection from '$lib/ui/components/SettingsSection.svelte';
   import Toggle from '$lib/ui/components/Toggle.svelte';
   // Bundled (hashed) rather than `/logo.png`: an absolute public path is served
@@ -124,6 +132,11 @@
   let lastfmBusy = false;
   let lastfmError = '';
   let lastfmMessage = '';
+
+  // UI zoom is applied live while dragging but only persisted on release, so the
+  // slider handle never fights the asynchronous settings write.
+  let zoomDraft: number | null = null;
+  $: zoomValue = zoomDraft ?? ($settingsStore.uiZoom ?? 1);
 
   const THEME_OPTIONS: { value: 'system' | 'light' | 'dark'; label: string; icon: string }[] = [
     { value: 'system', label: 'System', icon: 'bx bx-desktop' },
@@ -572,6 +585,50 @@
                 Disconnect
               </button>
             </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-white/[0.06] pt-4">
+              <label class="flex items-center justify-between gap-4">
+                <span class="text-[12px] text-zinc-300">Send “now playing”</span>
+                <Toggle
+                  checked={$settingsStore.lastfmNowPlaying}
+                  label="Send now playing"
+                  onchange={(value) => updateSettings({ lastfmNowPlaying: value })}
+                />
+              </label>
+              <label class="flex items-center justify-between gap-4">
+                <span class="text-[12px] text-zinc-300">Scrobble after</span>
+                <select
+                  value={String($settingsStore.lastfmScrobblePercent ?? 50)}
+                  onchange={(e) =>
+                    updateSettings({
+                      lastfmScrobblePercent: Number((e.currentTarget as HTMLSelectElement).value),
+                    })}
+                  class="rounded-lg border border-white/10 bg-[var(--color-field)] px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none transition-colors focus:border-[var(--color-accent)]/60"
+                >
+                  <option value="50">50% — recommended</option>
+                  <option value="75">75%</option>
+                  <option value="90">90%</option>
+                </select>
+              </label>
+              <label class="flex items-center justify-between gap-4">
+                <span class="text-[12px] text-zinc-300">Skip tracks under</span>
+                <select
+                  value={String($settingsStore.lastfmMinDurationSeconds ?? 30)}
+                  onchange={(e) =>
+                    updateSettings({
+                      lastfmMinDurationSeconds: Number(
+                        (e.currentTarget as HTMLSelectElement).value,
+                      ),
+                    })}
+                  class="rounded-lg border border-white/10 bg-[var(--color-field)] px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none transition-colors focus:border-[var(--color-accent)]/60"
+                >
+                  <option value="0">No minimum</option>
+                  <option value="30">30 seconds</option>
+                  <option value="45">45 seconds</option>
+                  <option value="60">60 seconds</option>
+                </select>
+              </label>
+            </div>
           {:else}
             <p class="mt-3 text-[11px] leading-relaxed text-zinc-400">
               Scrobbling uses <span class="text-zinc-200">your own</span> Last.fm API key. Create one at
@@ -634,7 +691,7 @@
     <!-- Appearance -->
     <SettingsSection
       title="Appearance"
-      description="Theme and accent colour."
+      description="Theme, accent colour and zoom."
       icon="bx bx-palette"
     >
       <div class="flex flex-col gap-5">
@@ -693,6 +750,44 @@
               </div>
             </div>
           {/if}
+        </div>
+
+        <div>
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-[12px] font-semibold text-zinc-200">Zoom</span>
+            <span class="text-[11px] tabular-nums text-zinc-500">{Math.round(zoomValue * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min={ZOOM_MIN}
+            max={ZOOM_MAX}
+            step={ZOOM_STEP}
+            value={zoomValue}
+            style="--fill: {zoomFillPercent(zoomValue)}%"
+            class="cherry-range cherry-range-always w-full"
+            aria-label="UI zoom"
+            oninput={(e) => {
+              zoomDraft = Number((e.currentTarget as HTMLInputElement).value);
+              applyZoom(zoomDraft);
+            }}
+            onchange={() => {
+              if (zoomDraft !== null) {
+                void updateSettings({ uiZoom: zoomDraft });
+                zoomDraft = null;
+              }
+            }}
+          />
+          <!-- Visible step markers, aligned to the handle's travel (half a thumb
+               in from each end). -->
+          <div class="pointer-events-none mt-1.5 flex justify-between px-[6px]">
+            {#each ZOOM_STEPS as step (step)}
+              <span
+                class="h-1.5 w-px rounded-full {Math.abs(step - zoomValue) < ZOOM_STEP / 2
+                  ? 'bg-[var(--color-accent2)]'
+                  : 'bg-white/15'}"
+              ></span>
+            {/each}
+          </div>
         </div>
 
         <div>

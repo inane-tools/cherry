@@ -45,6 +45,7 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let measureTimer: ReturnType<typeof setTimeout> | null = null;
   let frame = 0;
+  let dragging = false;
 
   // Cached geometry; refreshed on resize/mutation only (not on scroll).
   let hasThumb = false;
@@ -111,7 +112,8 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
     setVisible(true);
     paint();
     if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
+    // Keep it pinned open while the user is dragging it.
+    if (!dragging) hideTimer = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
   }
 
   function onEnter(): void {
@@ -122,7 +124,48 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
   }
 
   function onLeave(): void {
-    setVisible(false);
+    if (!dragging) setVisible(false);
+  }
+
+  // Drag the thumb to scroll. The thumb rides the content, so one screen pixel
+  // of pointer travel maps to `travel` scroll pixels; fall back to a whole-range
+  // jump if the geometry is degenerate.
+  function onThumbDown(event: PointerEvent): void {
+    if (!enabled || !hasThumb) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragging = true;
+    setVisible(true);
+    if (hideTimer) clearTimeout(hideTimer);
+
+    const startY = event.clientY;
+    const startScroll = node.scrollTop;
+    const perPixel = travel > 0.0001 ? 1 / travel : node.scrollHeight - node.clientHeight;
+
+    const onMove = (ev: PointerEvent) => {
+      node.scrollTop = startScroll + (ev.clientY - startY) * perPixel;
+    };
+    const end = (ev: PointerEvent) => {
+      dragging = false;
+      thumb.removeEventListener('pointermove', onMove);
+      thumb.removeEventListener('pointerup', end);
+      thumb.removeEventListener('pointercancel', end);
+      try {
+        thumb.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* already released */
+      }
+      reveal();
+    };
+
+    try {
+      thumb.setPointerCapture(event.pointerId);
+    } catch {
+      /* capture is best-effort */
+    }
+    thumb.addEventListener('pointermove', onMove);
+    thumb.addEventListener('pointerup', end);
+    thumb.addEventListener('pointercancel', end);
   }
 
   // No layout read here — just `scrollTop` and a transform write — so this can
@@ -130,6 +173,7 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
   node.addEventListener('scroll', reveal, { passive: true });
   node.addEventListener('mouseenter', onEnter);
   node.addEventListener('mouseleave', onLeave);
+  thumb.addEventListener('pointerdown', onThumbDown);
 
   const resize = new ResizeObserver(() => scheduleMeasure());
   resize.observe(node);
@@ -155,6 +199,7 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
       node.removeEventListener('scroll', reveal);
       node.removeEventListener('mouseenter', onEnter);
       node.removeEventListener('mouseleave', onLeave);
+      thumb.removeEventListener('pointerdown', onThumbDown);
       resize.disconnect();
       mutate.disconnect();
       if (hideTimer) clearTimeout(hideTimer);

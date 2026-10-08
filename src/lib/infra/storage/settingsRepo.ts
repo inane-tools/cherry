@@ -43,6 +43,8 @@ export interface CherrySettings {
   accentSource: 'song' | 'custom';
   /** Custom accent (hex), used when `accentSource === 'custom'`. */
   accentColor: string;
+  /** UI zoom level applied to the whole window (1 = 100%). */
+  uiZoom: number;
   /** Playlist that "Add to playlist" saves to without asking. Empty = ask. */
   defaultPlaylistBrowseId: string;
   defaultPlaylistTitle: string;
@@ -54,6 +56,12 @@ export interface CherrySettings {
   lastfmApiSecret: string;
   lastfmSessionKey: string;
   lastfmUsername: string;
+  /** Send "now playing" updates while a track plays. */
+  lastfmNowPlaying: boolean;
+  /** Percent of a track that must play before scrobbling (Last.fm default 50). */
+  lastfmScrobblePercent: number;
+  /** Tracks shorter than this many seconds are never scrobbled. */
+  lastfmMinDurationSeconds: number;
 }
 
 export const DEFAULT_SETTINGS: CherrySettings = {
@@ -76,6 +84,7 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   theme: 'system',
   accentSource: 'song',
   accentColor: '#ff4d5e',
+  uiZoom: 1,
   defaultPlaylistBrowseId: '',
   defaultPlaylistTitle: '',
   devToolsEnabled: false,
@@ -84,6 +93,9 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   lastfmApiSecret: '',
   lastfmSessionKey: '',
   lastfmUsername: '',
+  lastfmNowPlaying: true,
+  lastfmScrobblePercent: 50,
+  lastfmMinDurationSeconds: 30,
 };
 
 const STORE_PATH = 'cherry-settings.json';

@@ -13,6 +13,7 @@
   import { startScrobbling } from '$lib/app/services/scrobble';
   import { openDevTools } from '$lib/app/services/devtools';
   import { startAppearance } from '$lib/app/services/appearance';
+  import { startZoom } from '$lib/app/services/zoom';
   import {
     narrowLayout,
     sidebarDrawerOpen,
@@ -58,6 +59,8 @@
   // Apply the stored theme/accent as early as possible (defaults until settings
   // load, then re-applied) so there is minimal theme flash on launch.
   startAppearance();
+  // Mirror the stored UI zoom level onto the webview.
+  startZoom();
 
   // Pages that are useless without a session (everything except Settings, where
   // the sign-in button lives). When signed out these show a full-window gate

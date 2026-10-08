@@ -74,6 +74,15 @@ fn append_webview2_args(extra: &str) {
     std::env::set_var(KEY, merged);
 }
 
+/// Set the calling webview's zoom factor (1.0 = 100%). Driven by the Settings
+/// zoom slider; uses WebView2's native zoom so everything (including fixed
+/// chrome) scales consistently.
+#[tauri::command]
+fn set_webview_zoom(window: tauri::WebviewWindow, scale: f64) -> Result<(), String> {
+    let scale = scale.clamp(0.5, 2.0);
+    window.set_zoom(scale).map_err(|e| e.to_string())
+}
+
 fn main() {
     // Browser arguments for every WebView2 webview.
     //
@@ -155,6 +164,7 @@ fn main() {
             maintenance::cache_size,
             maintenance::clear_local_data,
             webview_memory::set_webview_memory_low,
+            set_webview_zoom,
         ])
         .on_window_event(|window, event| {
             // Music app behavior: closing the main window minimizes to tray.

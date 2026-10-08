@@ -13,12 +13,14 @@
 import { get } from 'svelte/store';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { playerStore } from './player';
+import { settingsStore } from './settings';
 import { fieldsFromTrack, lastfmActive, nowPlaying, scrobble, type ScrobbleFields } from './lastfm';
 
-/** Last.fm ignores anything shorter than this. */
-const MIN_DURATION_SECONDS = 30;
-/** Half the track, capped at 4 minutes. */
+/** Last.fm's own cap: never wait longer than 4 minutes. */
 const THRESHOLD_CAP_SECONDS = 240;
+/** Fallbacks when an older settings file predates these options. */
+const DEFAULT_MIN_DURATION_SECONDS = 30;
+const DEFAULT_SCROBBLE_PERCENT = 50;
 
 const QUEUE_KEY = 'cherry.scrobble.queue.v1';
 const MAX_QUEUE = 100;
@@ -96,7 +98,9 @@ function onState(state: PlaybackState): void {
   }
   const playing = state.status === 'playing';
   // Send "now playing" on the transition into playing (and on a fresh track).
-  if (playing && !wasPlaying) void nowPlaying(track);
+  if (playing && !wasPlaying && (get(settingsStore).lastfmNowPlaying ?? true)) {
+    void nowPlaying(track);
+  }
   wasPlaying = playing;
 }
 
@@ -112,8 +116,11 @@ function tick(): void {
 
 function maybeScrobble(track: Track, duration: number): void {
   if (scrobbled || !lastfmActive()) return;
-  if (!duration || duration < MIN_DURATION_SECONDS) return;
-  const threshold = Math.min(duration / 2, THRESHOLD_CAP_SECONDS);
+  const s = get(settingsStore);
+  const minDuration = s.lastfmMinDurationSeconds ?? DEFAULT_MIN_DURATION_SECONDS;
+  if (!duration || duration < minDuration) return;
+  const percent = Math.min(100, Math.max(1, s.lastfmScrobblePercent ?? DEFAULT_SCROBBLE_PERCENT));
+  const threshold = Math.min((duration * percent) / 100, THRESHOLD_CAP_SECONDS);
   if (listenedSeconds < threshold) return;
   scrobbled = true;
   const fields = fieldsFromTrack(track);

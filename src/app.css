@@ -215,9 +215,19 @@ html {
   transition:
     opacity 0.2s ease,
     height 0.16s ease;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
   z-index: 5;
   will-change: transform;
+}
+/* Widen the (visually 4px) thumb's hit area so it is comfortable to grab. */
+.cherry-sb-thumb::before {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+.cherry-sb-thumb:active {
+  cursor: grabbing;
 }
 .cherry-sb-thumb.is-visible {
   opacity: 1;
@@ -278,6 +288,13 @@ html {
 }
 .cherry-range:hover::-webkit-slider-thumb,
 .cherry-range:active::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Opt-in variant (used by the Settings zoom slider): the handle is always
+   visible instead of only on hover, so the current level reads at a glance. */
+.cherry-range-always::-webkit-slider-thumb {
   opacity: 1;
   transform: scale(1);
 }
