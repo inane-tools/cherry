@@ -4,7 +4,7 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.2] — 2026-10-08
 
 ### Added
 
@@ -16,6 +16,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   or 90 minutes with a countdown and an 8-second fade-out, or "end of track",
   which lets the song finish and cues the next one paused.
 - **Repeat button** (off / all / one). Repeat existed but had no control.
+- **UI zoom** — a slider in Settings → Appearance scales the whole window
+  (50–200%) with visible steps; the chosen level is restored on launch.
+- **More Last.fm control** — toggle "now playing", choose how much of a track
+  must play before scrobbling (50 / 75 / 90%) and skip tracks under a chosen
+  length.
+- The overlay scrollbar is now **draggable**.
 - Unit tests: a Vitest suite for the TypeScript layers (`npm test`).
 
 ### Fixed
@@ -197,6 +203,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.2.2]: https://github.com/inane-tools/cherry/releases/tag/v1.2.2
 [1.2.1]: https://github.com/inane-tools/cherry/releases/tag/v1.2.1
 [1.2.0]: https://github.com/inane-tools/cherry/releases/tag/v1.2.0
 [1.1.0]: https://github.com/inane-tools/cherry/releases/tag/v1.1.0
