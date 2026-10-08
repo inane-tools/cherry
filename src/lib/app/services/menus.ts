@@ -27,6 +27,7 @@ import {
 import { openFolderDialog } from './folderDialog';
 import { openPlaylistEditor } from './playlistEditor';
 import { openPlaylistPicker } from './playlistPicker';
+import { openSongCredits } from './songCredits';
 
 async function copy(label: string, url: string): Promise<void> {
   const ok = await copyText(url);
@@ -86,6 +87,12 @@ export function trackMenu(
   }
 
   items.push(
+    {
+      label: 'Song credits',
+      icon: 'bx bx-info-circle',
+      separatorBefore: true,
+      action: () => void openSongCredits(track),
+    },
     {
       label: 'Copy link (YouTube Music)',
       icon: 'bx bx-link',

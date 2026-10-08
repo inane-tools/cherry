@@ -5,6 +5,7 @@
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
   import { playerExpanded } from '$lib/app/services/layout';
+  import { settingsStore } from '$lib/app/services/settings';
   import { fly, fade } from 'svelte/transition';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
@@ -21,12 +22,92 @@
   $: cover = st.track ? bestThumbnail(st.track.thumbnails, 512) : '';
   // A larger source for the full-screen background (falls back to `cover`).
   $: bgCover = cover ? hiResThumbnail(cover, 1080) : '';
+  // The square art is shown large enough that the mid-res cover looks soft, so
+  // upscale to a hi-res source (falls back through `onArtError`).
+  $: squareCover = cover ? hiResThumbnail(cover, 720) : '';
   // A guaranteed-loadable thumbnail for when the upscaled background URL 404s
   // (not every video has a `maxresdefault`, and `cover` itself can be that URL).
   $: fallbackCover = st.track ? bestThumbnail(st.track.thumbnails, 320) : '';
   // First track in the play order after the current one (for the "Next up" chip).
   $: nextItem = $upNext[0] ?? null;
   $: nextArt = nextItem ? bestThumbnail(nextItem.track.thumbnails, 96) : '';
+  // Square album art above the title (Settings → Appearance).
+  $: squareArt = $settingsStore.playerSquareArt;
+
+  // ── Background-art crossfade ────────────────────────────────────────────
+  // Two layers: `baseArt` is the last cover that actually loaded and stays on
+  // screen; `pendingArt` fades in on top once it loads. Keeping the previous
+  // cover underneath is what stops the dark card flashing between tracks — and
+  // on first open, where the cached mid-res cover shows immediately.
+  let baseArt = '';
+  let pendingArt = '';
+  let pendingLoaded = false;
+  let artTrackId: string | null | undefined = undefined;
+  // Promotes the pending cover to the base only *after* its crossfade finishes;
+  // promoting on load swapped the base instantly and defeated the fade (the
+  // "pops in" symptom).
+  let promoteTimer: ReturnType<typeof setTimeout> | null = null;
+  // Square art fades in when it has decoded, not on mount (otherwise a slow
+  // image pops in after the transition has already run). Reset per URL, so two
+  // tracks that share the same cover don't blink.
+  let squareLoaded = false;
+  let squareArtUrl = '';
+
+  $: {
+    const id = st.track?.videoId ?? null;
+    if (id !== artTrackId) {
+      artTrackId = id;
+      pendingLoaded = false;
+      if (promoteTimer) {
+        clearTimeout(promoteTimer);
+        promoteTimer = null;
+      }
+      if (cover) {
+        pendingArt = bgCover;
+        if (!baseArt) baseArt = cover;
+      } else {
+        pendingArt = '';
+        baseArt = '';
+      }
+    }
+  }
+
+  $: if (squareCover !== squareArtUrl) {
+    squareArtUrl = squareCover;
+    squareLoaded = false;
+  }
+
+  function onPendingLoad(): void {
+    pendingLoaded = true;
+    const url = pendingArt;
+    if (promoteTimer) clearTimeout(promoteTimer);
+    promoteTimer = setTimeout(() => {
+      promoteTimer = null;
+      if (pendingArt === url) baseArt = url;
+    }, 520);
+  }
+
+  /**
+   * Album-art fallback chain. The pending <img> is keyed per track, so
+   * `dataset.tried` starts empty each time — the old code kept the flag across
+   * tracks, which made a later track skip the mid-res fallback and show broken
+   * art.
+   */
+  function onArtError(e: Event): void {
+    const img = e.currentTarget as HTMLImageElement;
+    const candidates = [cover, fallbackCover].filter(Boolean);
+    let tried: string[] = [];
+    try {
+      tried = img.dataset.tried ? (JSON.parse(img.dataset.tried) as string[]) : [];
+    } catch {
+      tried = [];
+    }
+    if (!tried.includes(img.src)) tried.push(img.src);
+    const next = candidates.find((url) => !tried.includes(url));
+    img.dataset.tried = JSON.stringify(tried);
+    if (next) img.src = next;
+    else img.style.visibility = 'hidden';
+  }
 
   function fmt(s: number): string {
     if (!Number.isFinite(s) || s < 0) return '0:00';
@@ -70,23 +151,32 @@
     in:fly={{ y: 48, duration: 240 }}
     out:fly={{ y: 48, duration: 180 }}
   >
-    <!-- Album art as a full-bleed, dimmed background. -->
+    <!-- Album art as a full-bleed, dimmed background. Two layers so the
+         previous cover stays visible until the next one has loaded. -->
     {#if cover}
-      <img
-        src={bgCover}
-        alt=""
-        class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover"
-        onerror={(e) => {
-          const img = e.currentTarget as HTMLImageElement;
-          // Try the mid-res cover first, then the reliable small thumbnail.
-          if (!img.dataset.fb && cover && img.src !== cover) {
-            img.dataset.fb = '1';
-            img.src = cover;
-            return;
-          }
-          if (fallbackCover && img.src !== fallbackCover) img.src = fallbackCover;
-        }}
-      />
+      {#if baseArt}
+        <img
+          src={baseArt}
+          alt=""
+          class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover {squareArt
+            ? 'scale-110 blur-3xl'
+            : ''}"
+          onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
+        />
+      {/if}
+      {#if pendingArt}
+        {#key artTrackId}
+          <img
+            src={pendingArt}
+            alt=""
+            class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover transition-opacity duration-500 {squareArt
+              ? 'scale-110 blur-3xl'
+              : ''} {pendingLoaded ? 'opacity-100' : 'opacity-0'}"
+            onload={onPendingLoad}
+            onerror={onArtError}
+          />
+        {/key}
+      {/if}
       <div
         class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-[var(--color-surface)] via-[var(--color-surface)]/75 to-[var(--color-surface)]/25"
       ></div>
@@ -151,7 +241,27 @@
         </div>
       </div>
     {:else}
-      <div class="flex-1"></div>
+      <!-- Empty spacer normally; when the square-art option is on, the cover is
+           centred in this middle area. -->
+      <div class="flex min-h-0 flex-1 items-center justify-center px-8 pb-6">
+        {#if squareArt && cover}
+          <div
+            class="aspect-square h-full max-h-[22rem] overflow-hidden rounded-2xl shadow-[0_18px_50px_rgba(0,0,0,0.55)] ring-1 ring-white/10"
+          >
+            {#key squareCover}
+              <img
+                src={squareCover}
+                alt=""
+                class="h-full w-full object-cover transition-opacity duration-300 {squareLoaded
+                  ? 'opacity-100'
+                  : 'opacity-0'}"
+                onload={() => (squareLoaded = true)}
+                onerror={onArtError}
+              />
+            {/key}
+          </div>
+        {/if}
+      </div>
     {/if}
 
     <div class="mx-auto w-full max-w-2xl shrink-0 px-8 pb-8">

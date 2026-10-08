@@ -11,7 +11,7 @@
 // `themeColor.ts`.
 
 import { isTauri } from './platform';
-import { dominantColour, fromHex, toHex, vividify, type Rgb } from './themeColor';
+import { clampLuminance, dominantColour, fromHex, toHex, vividify, type Rgb } from './themeColor';
 
 const DEFAULT_PAIR = {
   accent: { r: 255, g: 77, b: 94 } as Rgb,
@@ -57,11 +57,21 @@ function lighten(c: Rgb, amount: number): Rgb {
   };
 }
 
-/** Write the current accent (lightened in light mode) to the CSS variables. */
+/**
+ * Write the current accent to the CSS variables, clamped for readability.
+ *
+ * `--color-accent` is a fill that white text sits on, so it is never allowed to
+ * get too light. `--color-accent2` is mostly used as text, so it stays light
+ * enough to read on the dark theme and dark enough to read on the light one.
+ */
 function applyAccent(): void {
   const root = document.documentElement.style;
-  const accent = lightMode ? lighten(current.accent, 0.2) : current.accent;
-  const accent2 = lightMode ? lighten(current.accent2, 0.2) : current.accent2;
+  const accent = lightMode
+    ? clampLuminance(lighten(current.accent, 0.15), 0.4, 0.62)
+    : clampLuminance(current.accent, 0.28, 0.6);
+  const accent2 = lightMode
+    ? clampLuminance(current.accent2, 0.2, 0.55)
+    : clampLuminance(current.accent2, 0.55, 1);
   root.setProperty('--color-accent', toHex(accent));
   root.setProperty('--color-accent2', toHex(accent2));
 }

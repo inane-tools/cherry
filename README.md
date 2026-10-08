@@ -7,7 +7,7 @@ Cherry is a custom UI over YouTube Music's internal *Innertube* API (via
 API, so it speaks the same endpoints the web player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
-> **Latest release: v1.2.2** — see the [changelog](CHANGELOG.md) for what's new.
+> **Latest release: v1.3.0** — see the [changelog](CHANGELOG.md) for what's new.
 
 ![Cherry](https://inane.tools/screenshot-compact.webp)
 
@@ -115,11 +115,21 @@ gnome-keyring). Run everything with `cargo test -- --include-ignored`. See
 
 ## Changelog
 
-**v1.2.2** is the latest release — the layout-and-polish 1.2 line (rebuilt
-sidebar with folders and drag-to-reorder, a full-screen player, floating
-Settings/Search panels), keyboard shortcuts, a sleep timer, a repeat button, UI
-zoom and richer Last.fm options. See [CHANGELOG.md](CHANGELOG.md) for the full
+**v1.3.0** is the latest release — the rebuilt sidebar (folders,
+drag-to-reorder) and full-screen player from 1.2, plus keyboard shortcuts, a
+sleep timer, a repeat button, UI zoom, richer Last.fm options, song credits and
+an optional square-art player. See [CHANGELOG.md](CHANGELOG.md) for the full
 history.
+
+## Credits
+
+Cherry is built by [inane.tools](https://inane.tools).
+
+Thanks to **[jannuary](https://github.com/jannuary/cherry)**, whose fork
+contributed the code audit, the Vitest test suite, keyboard shortcuts, the sleep
+timer and the repeat button. Those commits were authored by **Claude**
+(Anthropic) and are preserved in this repository's history. See
+[CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ## License
 

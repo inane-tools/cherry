@@ -4,7 +4,11 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.2.2] — 2026-10-08
+## [1.3.0] — 2026-10-08
+
+A feature release on top of the 1.2 layout work. Thanks to **jannuary** and
+**Claude** for the audit, tests and player features (see
+[CONTRIBUTORS.md](CONTRIBUTORS.md)).
 
 ### Added
 
@@ -22,6 +26,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   must play before scrobbling (50 / 75 / 90%) and skip tracks under a chosen
   length.
 - The overlay scrollbar is now **draggable**.
+- **Song credits** — right-click a song → "Song credits" to see writers,
+  producers and performers (when YouTube Music provides them).
+- **Square album art** option for the expanded player (Appearance): shows the
+  cover as a square above the title, with a blurred copy behind it.
 - Unit tests: a Vitest suite for the TypeScript layers (`npm test`).
 
 ### Fixed
@@ -39,6 +47,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Some unrelated errors were reported as sign-in or rate-limit problems.
 - Shuffle and repeat changes made from the player bar were not remembered.
 - Reading the saved session no longer blocks the window at startup.
+- The expanded player's cover no longer flashes black or **pops in** when
+  opening or changing tracks: the previous cover stays until the next has
+  loaded, then crossfades. It also no longer occasionally fails to load (the
+  fallback chain restarts per track).
+- **Album pages show the artist again** (the typed header's `author` is read as
+  a string / `.text`, with the header's artist line as a fallback).
+- The OS **window title now actually follows the current song** — a missing
+  window permission had silently blocked `setTitle`.
+- Pale album-art accents no longer wash out white text: the accent is clamped to
+  a readable brightness, and the secondary accent stays legible as text.
+
+### Changed
+
+- The home loading skeleton now mirrors the real home layout (a hero row plus
+  ordinary sections) instead of overflowing the page.
+- The compact-sidebar toggle moved to Appearance, and the minimize-to-tray
+  option was removed (the tray will be reworked).
+- The Open source section is now **Open Source & Contributors** and credits the
+  fork's authors alongside the dependency list.
 
 ### Security
 
@@ -203,7 +230,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
-[1.2.2]: https://github.com/inane-tools/cherry/releases/tag/v1.2.2
+[1.3.0]: https://github.com/inane-tools/cherry/releases/tag/v1.3.0
 [1.2.1]: https://github.com/inane-tools/cherry/releases/tag/v1.2.1
 [1.2.0]: https://github.com/inane-tools/cherry/releases/tag/v1.2.0
 [1.1.0]: https://github.com/inane-tools/cherry/releases/tag/v1.1.0

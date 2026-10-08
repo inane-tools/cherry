@@ -20,7 +20,11 @@
     sections.find((s) => !HIDDEN_SECTIONS.test(s.title) && (s.cards.length > 0 || s.songs.length > 0));
   $: restSections = sections.filter((s) => s !== heroSection && !HIDDEN_SECTIONS.test(s.title));
 
-  const skeletons = Array.from({ length: 7 });
+  // Skeleton sizes mirror the real carousels: a hero row of wide cards plus a
+  // couple of ordinary sections of smaller cards.
+  const heroSkeletons = Array.from({ length: 5 });
+  const cardSkeletons = Array.from({ length: 8 });
+  const sectionSkeletons = Array.from({ length: 2 });
 
   // The home feed can surface the user's own playlists; hide any that report no
   // songs so the front page never shows an empty playlist.
@@ -69,15 +73,34 @@
 
     {#if $homeLoading && sections.length === 0}
       <div>
-        <div class="mb-4 h-7 w-52 animate-pulse rounded bg-white/5"></div>
-        <div class="flex gap-3">
-          {#each skeletons as _s}
-            <div class="w-48 space-y-2 sm:w-56">
-              <div class="aspect-square w-full animate-pulse rounded-lg bg-white/5"></div>
-              <div class="h-3 w-3/4 animate-pulse rounded bg-white/5"></div>
+        <!-- Hero section (wide cards, like "Listen again"). -->
+        <section class="mb-8">
+          <div class="mb-3 h-5 w-40 animate-pulse rounded bg-white/5"></div>
+          <div class="flex gap-3 overflow-hidden">
+            {#each heroSkeletons as _s}
+              <div class="w-48 shrink-0 sm:w-56">
+                <div class="aspect-square w-full animate-pulse rounded-lg bg-white/5"></div>
+                <div class="mt-2 h-3.5 w-3/4 animate-pulse rounded bg-white/5"></div>
+                <div class="mt-1.5 h-3 w-1/2 animate-pulse rounded bg-white/5/60"></div>
+              </div>
+            {/each}
+          </div>
+        </section>
+
+        <!-- A couple of ordinary sections (smaller cards). -->
+        {#each sectionSkeletons as _section, i (i)}
+          <section class="mb-8">
+            <div class="mb-3 h-5 w-32 animate-pulse rounded bg-white/5"></div>
+            <div class="flex gap-3 overflow-hidden">
+              {#each cardSkeletons as _s}
+                <div class="w-36 shrink-0 sm:w-40">
+                  <div class="aspect-square w-full animate-pulse rounded-lg bg-white/5"></div>
+                  <div class="mt-2 h-3 w-3/4 animate-pulse rounded bg-white/5"></div>
+                </div>
+              {/each}
             </div>
-          {/each}
-        </div>
+          </section>
+        {/each}
       </div>
     {:else if sections.length === 0}
       <div class="rounded-2xl border border-white/10 bg-white/[0.03] p-6">

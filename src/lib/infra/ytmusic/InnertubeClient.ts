@@ -814,10 +814,17 @@ export async function getAlbumPage(
       const album = await client.music.getAlbum(browseId);
       const info: AnyNode = album?.header;
       const author = info?.author;
-      if (author?.name) {
+      // youtubei exposes the header author as a `Text` (`.text`) in some
+      // versions, an object with `.name` in others, and occasionally a plain
+      // string — checking only `.name` is why albums lost their artist.
+      const authorName = typeof author === 'string' ? author : (author?.name ?? author?.text);
+      if (authorName) {
         artist = {
-          name: String(author.name),
-          browseId: author.channel_id ? String(author.channel_id) : undefined,
+          name: String(authorName),
+          browseId:
+            typeof author === 'object' && author?.channel_id
+              ? String(author.channel_id)
+              : undefined,
         };
       }
       if (info?.year) year = String(info.year);
@@ -843,7 +850,7 @@ export async function getAlbumPage(
     // ("Artist • Single • 2026") is the fallback when it is missing, so an album
     // never loses its artist.
     if (!artist) {
-      const derived = meta.find((s) => !isNoiseSegment(s));
+      const derived = header?.artist ?? meta.find((s) => !isNoiseSegment(s));
       if (derived) artist = { name: derived };
     }
 
@@ -1184,6 +1191,140 @@ export async function getTrack(
     },
     { shouldCache: (value) => value !== null },
   );
+}
+
+/** One credits group, e.g. `{ title: 'Written by', entries: ['…'] }`. */
+export interface CreditSection {
+  title: string;
+  entries: string[];
+}
+
+function textFromRuns(node: AnyNode): string {
+  if (!node) return '';
+  if (typeof node === 'string') return node;
+  if (typeof node.simpleText === 'string') return node.simpleText;
+  if (Array.isArray(node.runs)) {
+    return node.runs
+      .map((r: AnyNode) => String(r?.text ?? ''))
+      .join('')
+      .trim();
+  }
+  return '';
+}
+
+/** Depth-first search for the first value under `key`. */
+function deepFind(node: AnyNode, key: string, depth = 0): AnyNode {
+  if (!node || typeof node !== 'object' || depth > 14) return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = deepFind(item, key, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (node[key]) return node[key];
+  for (const value of Object.values(node)) {
+    const found = deepFind(value, key, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Find a server-issued `MPTC…` credits browse id anywhere in a response. It is
+ * not derivable from the video id and its exact location varies (menu items,
+ * service/navigation endpoints), so match on the value rather than a fixed key.
+ */
+function findMptc(node: AnyNode, depth = 0): string | null {
+  if (node == null || depth > 16) return null;
+  if (typeof node === 'string') return node.startsWith('MPTC') ? node : null;
+  if (typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findMptc(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const value of Object.values(node)) {
+    const found = findMptc(value, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function parseCreditSections(raw: AnyNode): CreditSection[] | null {
+  const dialog = deepFind(raw, 'dismissableDialogRenderer');
+  if (!dialog) return null;
+  const sections: CreditSection[] = [];
+  const visit = (node: AnyNode): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    const section = node.dismissableDialogContentSectionRenderer;
+    if (section) {
+      const title = textFromRuns(section.header) || textFromRuns(section.title) || 'Credits';
+      const entries: string[] = [];
+      const collect = (n: AnyNode): void => {
+        if (!n || typeof n !== 'object') return;
+        if (Array.isArray(n)) {
+          n.forEach(collect);
+          return;
+        }
+        const text = textFromRuns(n.subtitle);
+        if (text) entries.push(text);
+        for (const [k, v] of Object.entries(n)) if (k !== 'subtitle') collect(v);
+      };
+      collect(section.contents ?? section);
+      const unique = [...new Set(entries)].filter(Boolean);
+      if (unique.length > 0 || title !== 'Credits') sections.push({ title, entries: unique });
+      return;
+    }
+    for (const value of Object.values(node)) visit(value);
+  };
+  visit(dialog);
+  return sections.length > 0 ? sections : null;
+}
+
+/**
+ * Song credits (writers, producers, performers, …).
+ *
+ * Only some songs have credits, and their browse id is server-issued rather
+ * than derivable from the video id. Prefer the id captured from the track's row
+ * menu; otherwise scan the watch response for it. Returns `null` when the song
+ * has no credits.
+ */
+export async function getSongCredits(
+  videoId: string,
+  creditsBrowseId?: string,
+  session?: AuthSession | null,
+): Promise<CreditSection[] | null> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  let browseId: string | null = creditsBrowseId ?? null;
+  if (!browseId) {
+    try {
+      const next: AnyNode = await client.actions.execute('next', {
+        videoId,
+        isAudioOnly: true,
+        enablePersistentPlaylistPanel: false,
+      });
+      browseId = findMptc(next?.data ?? next);
+    } catch {
+      return null;
+    }
+  }
+  if (!browseId) return null;
+  try {
+    const response: AnyNode = await client.actions.execute('/browse', {
+      browseId,
+      client: 'YTMUSIC',
+    });
+    return parseCreditSections(response?.data ?? response);
+  } catch {
+    return null;
+  }
 }
 
 export interface PlaylistMeta {

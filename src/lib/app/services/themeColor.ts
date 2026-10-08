@@ -28,6 +28,31 @@ export function luminance({ r, g, b }: Rgb): number {
 }
 
 /**
+ * Scale a colour's brightness so its luminance lands within `[min, max]`.
+ *
+ * Album artwork can yield a pale accent that leaves white text unreadable. Used
+ * to keep the accent (a fill) dark enough for white text, and — per theme — the
+ * secondary accent light-dark enough to read as text.
+ */
+export function clampLuminance(c: Rgb, min: number, max: number): Rgb {
+  const lum = luminance(c);
+  if (lum <= 0) return c;
+  if (lum > max) {
+    const s = max / lum;
+    return { r: c.r * s, g: c.g * s, b: c.b * s };
+  }
+  if (lum < min) {
+    const t = (min - lum) / (1 - lum);
+    return {
+      r: c.r + (255 - c.r) * t,
+      g: c.g + (255 - c.g) * t,
+      b: c.b + (255 - c.b) * t,
+    };
+  }
+  return c;
+}
+
+/**
  * Pick a representative colour from RGBA pixel data.
  *
  * Pixels are bucketed by hue and weighted by saturation, which avoids the

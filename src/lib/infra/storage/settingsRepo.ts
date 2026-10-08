@@ -42,7 +42,6 @@ export interface CherrySettings {
   sidebarWidth: number;
   /** Show the accent gradient washes (content background + player bar). */
   gradientsEnabled: boolean;
-  minimizeToTray: boolean;
   /** Appearance: follow the OS, or force light/dark. */
   theme: 'system' | 'light' | 'dark';
   /** Accent colour: follow the album art, or a fixed custom colour. */
@@ -51,6 +50,8 @@ export interface CherrySettings {
   accentColor: string;
   /** UI zoom level applied to the whole window (1 = 100%). */
   uiZoom: number;
+  /** Show square album art above the title in the expanded player. */
+  playerSquareArt: boolean;
   /** Playlist that "Add to playlist" saves to without asking. Empty = ask. */
   defaultPlaylistBrowseId: string;
   defaultPlaylistTitle: string;
@@ -86,11 +87,11 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   compactSidebar: false,
   sidebarWidth: 240,
   gradientsEnabled: true,
-  minimizeToTray: true,
   theme: 'system',
   accentSource: 'song',
   accentColor: '#ff4d5e',
   uiZoom: 1,
+  playerSquareArt: false,
   defaultPlaylistBrowseId: '',
   defaultPlaylistTitle: '',
   devToolsEnabled: false,

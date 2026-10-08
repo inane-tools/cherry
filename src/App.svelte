@@ -34,6 +34,7 @@
   import PlaylistPickerDialog from '$lib/ui/components/PlaylistPickerDialog.svelte';
   import EditPlaylistDialog from '$lib/ui/components/EditPlaylistDialog.svelte';
   import FolderDialog from '$lib/ui/components/FolderDialog.svelte';
+  import SongCreditsDialog from '$lib/ui/components/SongCreditsDialog.svelte';
   import SettingsOverlay from '$lib/ui/components/SettingsOverlay.svelte';
   import SearchOverlay from '$lib/ui/components/SearchOverlay.svelte';
   import HomeView from '$lib/ui/views/HomeView.svelte';
@@ -281,6 +282,7 @@
   <PlaylistPickerDialog />
   <EditPlaylistDialog />
   <FolderDialog />
+  <SongCreditsDialog />
 
   <!-- Floating Settings / Search panels (above the sign-in gate). -->
   <SettingsOverlay />

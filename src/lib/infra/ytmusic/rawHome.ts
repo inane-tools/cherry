@@ -38,6 +38,8 @@ export interface HomeSection {
 export interface PageHeader {
   title: string;
   subtitle?: string;
+  /** Best-effort artist line (album/artist pages). */
+  artist?: string;
   description?: string;
   thumbnails: Thumbnail[];
 }
@@ -69,9 +71,33 @@ export function scanPageHeader(raw: Json): PageHeader | null {
   return {
     title: textOf(header.title) ?? textOf(node.title) ?? '',
     subtitle: textOf(header.subtitle) ?? textOf(node.subtitle),
+    artist: artistHintOf(header),
     description: descriptionOf(header) ?? descriptionFromPage(raw),
     thumbnails: thumbnailsOf(header),
   };
+}
+
+/**
+ * Best-effort artist line for a page header. YouTube stores it inconsistently:
+ * usually `subtitle`, sometimes `straplineTextOne`, while `secondSubtitle`
+ * holds the media type / year. Return the first segment that isn't noise.
+ */
+function artistHintOf(header: Json): string | undefined {
+  const sources = [
+    textOf(header?.subtitle),
+    textOf(header?.straplineTextOne),
+    textOf(header?.straplineTextTwo),
+    textOf(header?.secondSubtitle),
+    textOf(header?.author),
+  ].filter((t): t is string => Boolean(t));
+  for (const source of sources) {
+    const segment = source
+      .split('•')
+      .map((s) => s.trim())
+      .find((s) => s && !isNoiseSegment(s));
+    if (segment) return segment;
+  }
+  return undefined;
 }
 
 /**

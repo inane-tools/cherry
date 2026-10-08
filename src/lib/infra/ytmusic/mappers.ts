@@ -168,6 +168,33 @@ function isExplicit(node: AnyNode): boolean {
   );
 }
 
+/**
+ * Server-issued `MPTC…` credits browse id. It is hidden in the row's overflow
+ * menu (there is no way to build it from the video id), and youtubei exposes it
+ * in different places across versions — so look anywhere in the menu.
+ */
+function findMptc(value: AnyNode, depth = 0): string | undefined {
+  if (depth > 10 || value == null) return undefined;
+  if (typeof value === 'string') return value.startsWith('MPTC') ? value : undefined;
+  if (typeof value !== 'object') return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findMptc(item, depth + 1);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  for (const v of Object.values(value)) {
+    const found = findMptc(v, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function creditsBrowseIdOf(node: AnyNode): string | undefined {
+  return findMptc(node?.menu);
+}
+
 export function mapTrack(node: AnyNode): Track | null {
   if (!node || typeof node !== 'object') return null;
   if (node.type === 'MusicCardShelf') return mapCardShelf(node);
@@ -190,6 +217,7 @@ export function mapTrack(node: AnyNode): Track | null {
     durationSeconds: trackDuration(node),
     thumbnails: thumbs(node),
     isExplicit: isExplicit(node),
+    creditsBrowseId: creditsBrowseIdOf(node),
   };
 }
 

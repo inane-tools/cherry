@@ -695,7 +695,7 @@
     <!-- Appearance -->
     <SettingsSection
       title="Appearance"
-      description="Theme, accent colour and zoom."
+      description="Theme, accent colour, zoom and layout."
       icon="bx bx-palette"
     >
       <div class="flex flex-col gap-5">
@@ -805,30 +805,32 @@
             />
           </label>
         </div>
+
+        <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Sidebar</div>
+          <label class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-layout shrink-0 text-sm text-zinc-500"></i>Compact (covers only)</span>
+            <Toggle
+              checked={$settingsStore.compactSidebar}
+              label="Compact sidebar"
+              onchange={(value) => updateSettings({ compactSidebar: value })}
+            />
+          </label>
+        </div>
+
+        <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Expanded player</div>
+          <label class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-image shrink-0 text-sm text-zinc-500"></i>Square album art</span>
+            <Toggle
+              checked={$settingsStore.playerSquareArt}
+              label="Square album art in expanded player"
+              onchange={(value) => updateSettings({ playerSquareArt: value })}
+            />
+          </label>
+        </div>
       </div>
     </SettingsSection>
-
-    <!-- Application -->
-    <section class="rounded-xl border border-white/[0.06] bg-[var(--color-card)] p-5">
-      <div>
-        <label class="flex items-center justify-between gap-4 py-3 first:pt-0">
-          <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-layout shrink-0 text-sm text-zinc-500"></i>Compact sidebar</span>
-          <Toggle
-            checked={$settingsStore.compactSidebar}
-            label="Compact sidebar"
-            onchange={(value) => updateSettings({ compactSidebar: value })}
-          />
-        </label>
-        <label class="flex items-center justify-between gap-4 py-3 last:pb-0">
-          <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-window shrink-0 text-sm text-zinc-500"></i>Minimize to tray</span>
-          <Toggle
-            checked={$settingsStore.minimizeToTray}
-            label="Minimize to tray"
-            onchange={(value) => updateSettings({ minimizeToTray: value })}
-          />
-        </label>
-      </div>
-    </section>
 
     <!-- Keyboard shortcuts -->
     <SettingsSection
@@ -988,8 +990,8 @@
 
     <!-- Licenses, credits and third-party software -->
     <SettingsSection
-      title="Open source"
-      description="Cherry is built on these projects. Each is used under its own license."
+      title="Open Source &amp; Contributors"
+      description="The projects Cherry is built on, and the people who helped."
       icon="bx bx-code-alt"
       collapsible
     >
@@ -998,6 +1000,8 @@
           { name: 'Tauri', use: 'desktop shell, windowing, OS integration', license: 'MIT / Apache-2.0', url: 'https://github.com/tauri-apps/tauri' },
           { name: 'Svelte', use: 'UI framework', license: 'MIT', url: 'https://github.com/sveltejs/svelte' },
           { name: 'Vite', use: 'build tooling', license: 'MIT', url: 'https://github.com/vitejs/vite' },
+          { name: 'Vitest', use: 'unit testing', license: 'MIT', url: 'https://github.com/vitest-dev/vitest' },
+          { name: 'jsdom', use: 'DOM for unit tests', license: 'MIT', url: 'https://github.com/jsdom/jsdom' },
           { name: 'Tailwind CSS', use: 'styling', license: 'MIT', url: 'https://github.com/tailwindlabs/tailwindcss' },
           { name: 'youtubei.js', use: 'YouTube / YouTube Music (Innertube) API', license: 'MIT', url: 'https://github.com/LuanRT/YouTube.js' },
           { name: 'souvlaki', use: 'OS media controls (SMTC / MPRIS)', license: 'MIT', url: 'https://github.com/Sinono3/souvlaki' },
@@ -1006,6 +1010,8 @@
           { name: 'Zalando Sans', use: 'typeface', license: 'OFL-1.1', url: 'https://github.com/zalando/sans' },
           { name: 'keyring', use: 'OS credential storage', license: 'MIT / Apache-2.0', url: 'https://github.com/hwchen/keyring-rs' },
           { name: 'serde / reqwest / tokio', use: 'Rust serialization, HTTP, async runtime', license: 'MIT / Apache-2.0', url: 'https://github.com/serde-rs/serde' },
+          { name: 'base64', use: 'base64 (relay, playlist images)', license: 'MIT / Apache-2.0', url: 'https://github.com/marshallpierce/rust-base64' },
+          { name: 'url', use: 'URL parsing', license: 'MIT / Apache-2.0', url: 'https://github.com/servo/rust-url' },
           { name: 'md5', use: 'Last.fm API request signing', license: 'Apache-2.0 / MIT', url: 'https://github.com/ivan-ukhov/rust-md5' },
           { name: 'sha1', use: 'SAPISIDHASH (playlist image upload)', license: 'MIT / Apache-2.0', url: 'https://github.com/RustCrypto/hashes' },
           { name: 'webview2-com', use: 'WebView2 memory trimming', license: 'MIT', url: 'https://github.com/wravery/webview2-rs' },
@@ -1023,6 +1029,21 @@
           </li>
         {/each}
       </ul>
+
+      <div class="mt-4 border-t border-white/[0.06] pt-3">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+          Contributors
+        </div>
+        <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-400">
+          Audit, tests and player features contributed by
+          <button
+            class="font-semibold text-[var(--color-accent2)] underline decoration-[var(--color-accent2)]/30 underline-offset-2 transition-colors hover:decoration-[var(--color-accent2)]"
+            onclick={() => openExternal('https://github.com/jannuary/cherry')}
+          >
+            jannuary</button
+          > and Claude.
+        </p>
+      </div>
     </SettingsSection>
   </div>
 </div>

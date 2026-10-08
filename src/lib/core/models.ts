@@ -26,6 +26,8 @@ export interface Track {
   thumbnails: Thumbnail[];
   /** Set when from the user's library / Premium-only flag */
   isExplicit?: boolean;
+  /** Server-issued `MPTC…` browse id for the song's credits, when known. */
+  creditsBrowseId?: string;
 }
 
 export interface Album {
