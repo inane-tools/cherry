@@ -24,7 +24,7 @@ import { addPlaylistLocally, addablePlaylistsStore, renamePlaylistLocally } from
 import { authStore } from './auth';
 import { notify } from './contextMenu';
 import { openPage } from './navigation';
-import { isTauri } from './platform';
+import { errorMessage, invokeStrict } from './platform';
 import { openPlaylistPicker } from './playlistPicker';
 import { openPlaylistStore, openPlaylistTracks, playlistStore } from './playlists';
 import { settingsStore, updateSettings } from './settings';
@@ -33,24 +33,6 @@ function requireSession(): boolean {
   if (get(authStore)) return true;
   notify('Sign in with YouTube Music to edit playlists.');
   return false;
-}
-
-async function invokeStrict<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new Error('Changing playlist art needs the desktop app.');
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(cmd, args);
-}
-
-/**
- * Message from a thrown value. Tauri's `invoke` rejects with the command's
- * `Err(String)` — a plain string, not an `Error` — so `e instanceof Error` is
- * false and the real reason was being hidden behind a generic message.
- */
-function errorMessage(e: unknown, fallback = 'Something went wrong.'): string {
-  if (typeof e === 'string' && e.trim()) return e;
-  if (e instanceof Error && e.message) return e.message;
-  if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message);
-  return fallback;
 }
 
 /** Only the playlist that changed is dropped from the cache, not every one. */
@@ -119,7 +101,7 @@ export async function addTracksTo(playlist: Playlist, tracks: Track[]): Promise<
     );
     return true;
   } catch (e) {
-    notify(e instanceof Error ? e.message : 'Could not add to the playlist.');
+    notify(errorMessage(e, 'Could not add to the playlist.'));
     return false;
   }
 }
@@ -144,7 +126,7 @@ export async function createNewPlaylist(title: string, tracks: Track[] = []): Pr
     );
     return id;
   } catch (e) {
-    notify(e instanceof Error ? e.message : 'Could not create the playlist.');
+    notify(errorMessage(e, 'Could not create the playlist.'));
     return null;
   }
 }
@@ -161,7 +143,7 @@ export async function removeTrackFrom(playlist: Playlist, track: Track): Promise
     });
     notify(`Removed “${track.title}”`);
   } catch (e) {
-    notify(e instanceof Error ? e.message : 'Could not remove the track.');
+    notify(errorMessage(e, 'Could not remove the track.'));
   }
 }
 
@@ -196,7 +178,7 @@ export async function updatePlaylistDetails(
     notify('Playlist updated');
     return true;
   } catch (e) {
-    notify(e instanceof Error ? e.message : 'Could not update the playlist.');
+    notify(errorMessage(e, 'Could not update the playlist.'));
     return false;
   }
 }
@@ -234,11 +216,11 @@ export async function setPlaylistImage(
     return false;
   }
   try {
-    const blobId = await invokeStrict<string>('upload_playlist_thumbnail', {
-      cookie: session.cookie,
-      dataBase64,
-      mime,
-    });
+    const blobId = await invokeStrict<string>(
+      'upload_playlist_thumbnail',
+      { cookie: session.cookie, dataBase64, mime },
+      'Changing playlist art needs the desktop app.',
+    );
     await setPlaylistCustomThumbnail(playlist.browseId, blobId, session);
     invalidateMeta(playlist.browseId);
 

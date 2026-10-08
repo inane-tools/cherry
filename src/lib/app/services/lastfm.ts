@@ -7,14 +7,12 @@
 
 import { get } from 'svelte/store';
 import type { Track } from '$lib/core/models';
-import { isTauri } from './platform';
-import { settingsStore } from './settings';
+import { invokeStrict as invokeDesktop, isTauri } from './platform';
 
-async function invokeStrict<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new Error('Last.fm scrobbling needs the desktop app.');
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(cmd, args);
-}
+const DESKTOP_ONLY = 'Last.fm scrobbling needs the desktop app.';
+const invokeStrict = <T>(cmd: string, args?: Record<string, unknown>) =>
+  invokeDesktop<T>(cmd, args, DESKTOP_ONLY);
+import { settingsStore } from './settings';
 
 /** True when scrobbling should actually be sent. */
 export function lastfmActive(): boolean {
