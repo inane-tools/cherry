@@ -79,7 +79,7 @@
   {#if open}
     <div
       role="menu"
-      class="absolute bottom-full right-0 z-30 mb-2 w-52 overflow-hidden rounded-xl border border-white/10 bg-[var(--color-popover)] py-1.5 text-[12px] shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+      class="absolute bottom-full right-0 z-30 mb-2 w-52 overflow-hidden rounded-xl bg-[var(--color-popover)] py-1.5 text-[12px] shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
       in:fly={{ y: 6, duration: 140 }}
       out:fade={{ duration: 100 }}
     >
@@ -103,7 +103,7 @@
         {#if timer.mode === 'track'}<i class="bx bx-check text-[var(--color-accent2)]"></i>{/if}
       </button>
       {#if active}
-        <div class="my-1 border-t border-white/10"></div>
+        <div class="my-1"></div>
         <button
           role="menuitem"
           class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-rose-300 hover:bg-rose-500/10"

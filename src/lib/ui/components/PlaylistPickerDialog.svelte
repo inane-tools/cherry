@@ -100,7 +100,7 @@
         <input
           bind:value={newName}
           placeholder="New playlist name…"
-          class="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
+          class="min-w-0 flex-1 rounded-xl border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
           onkeydown={(e) => {
             if (e.key === 'Enter') create();
           }}
@@ -116,13 +116,13 @@
       </div>
 
       {#if adding}
-        <div class="flex items-center justify-between border-t border-white/[0.06] px-5 pb-2 pt-3">
+        <div class="flex items-center justify-between px-5 pb-2 pt-3">
           <span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
             Your playlists
           </span>
           {#if playlists.length > 6}
             <label
-              class="flex h-7 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 text-zinc-400"
+              class="flex h-7 items-center gap-1.5 rounded-lg border border-transparent bg-white/[0.04] px-2.5 text-zinc-400"
             >
               <i class="bx bx-search text-sm"></i>
               <input

@@ -2,6 +2,7 @@
   import { go } from '$lib/app/services/navigation';
   import { DISCLAIMER } from '$lib/app/services/gate';
   import logoUrl from '$lib/assets/logo.png';
+  import inaneWordmark from '$lib/assets/inane.svg';
 
   /**
    * Full-window sign-in gate.
@@ -26,15 +27,15 @@
   let accepted = false;
 </script>
 
-<div class="flex h-full w-full items-center justify-center px-6 py-16">
-  <div class="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
-    <img src={logoUrl} alt="Cherry" class="mx-auto h-16 w-16 rounded-2xl shadow-lg" />
+<div class="relative flex h-full w-full items-center justify-center px-6 py-16">
+  <div class="w-full max-w-md rounded-2xl bg-[var(--color-popover)] p-8 text-left">
+    <img src={logoUrl} alt="Cherry" class="h-16 w-16 rounded-2xl shadow-lg" />
     <h2 class="mt-4 text-lg font-bold text-white">{title}</h2>
-    <p class="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-zinc-500">
+    <p class="mt-2 max-w-sm text-[13px] leading-relaxed text-zinc-500">
       Sign in with YouTube Music in settings to start listening.
     </p>
 
-    <div class="mt-5 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-left">
+    <div class="mt-5 rounded-lg bg-amber-500/5 p-3 text-left">
       <h3 class="flex items-center gap-2 text-[12px] font-semibold text-amber-200">
         <i class="bx bxs-info-circle text-base text-amber-200"></i>
         Disclaimer
@@ -62,4 +63,13 @@
       Settings
     </button>
   </div>
+
+  <span class="absolute bottom-5 left-6 text-[11px] tabular-nums text-zinc-500">
+    v{__APP_VERSION__}
+  </span>
+  <img
+    src={inaneWordmark}
+    alt="inane.tools"
+    class="inane-wordmark absolute bottom-5 right-6 h-6 w-auto opacity-70"
+  />
 </div>

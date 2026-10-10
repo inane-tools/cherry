@@ -7,7 +7,8 @@ Cherry is a custom UI over YouTube Music's internal *Innertube* API (via
 API, so it speaks the same endpoints the web player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
-> **Latest release: v1.3.0** — see the [changelog](CHANGELOG.md) for what's new.
+> **Latest release: v1.4.1 (Ashibetsu)** — see the [changelog](CHANGELOG.md) for
+> what's new.
 
 ![Cherry](https://inane.tools/screenshot-compact.webp)
 
@@ -115,11 +116,11 @@ gnome-keyring). Run everything with `cargo test -- --include-ignored`. See
 
 ## Changelog
 
-**v1.3.0** is the latest release — the rebuilt sidebar (folders,
-drag-to-reorder) and full-screen player from 1.2, plus keyboard shortcuts, a
-sleep timer, a repeat button, UI zoom, richer Last.fm options, song credits and
-an optional square-art player. See [CHANGELOG.md](CHANGELOG.md) for the full
-history.
+**v1.4.1 (Ashibetsu)** is the latest release — it adds **release codenames**
+(each version is named after a Japanese city, ascending by population) and a
+restyled Settings, on top of 1.4's tinted theme and player-button options, and
+1.3's keyboard shortcuts, sleep timer, UI zoom and song credits. See
+[CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Credits
 

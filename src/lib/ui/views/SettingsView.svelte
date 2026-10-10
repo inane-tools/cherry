@@ -18,6 +18,8 @@
     selectChannel,
   } from '$lib/app/services/account';
   import { settingsStore, updateSettings } from '$lib/app/services/settings';
+  import type { CherrySettings } from '$lib/infra/storage/settingsRepo';
+  import { applyCustomAccent } from '$lib/app/services/theme';
   import { setDefaultPlaylist } from '$lib/app/services/playlistEdit';
   import { addablePlaylistsStore, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import { beginAuth, completeAuth } from '$lib/app/services/lastfm';
@@ -40,6 +42,8 @@
   // Shortcuts use ⌘ instead of Ctrl on macOS (`metaKey` is accepted too).
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
   import Toggle from '$lib/ui/components/Toggle.svelte';
+  import Dropdown from '$lib/ui/components/Dropdown.svelte';
+  import { buildDate, majorMinor, releaseCodename } from '$lib/app/services/release';
   // Bundled (hashed) rather than `/logo.png`: an absolute public path is served
   // by the asset protocol, which can 404 in the window right after the cache is
   // cleared. A build-time import always resolves to a real, versioned URL.
@@ -129,6 +133,32 @@
   let label = '';
   let busy = false;
 
+  // Tapping the Cherry logo five times reveals the Developer section.
+  let logoTaps = 0;
+  let logoTapTimer: ReturnType<typeof setTimeout> | null = null;
+  function onLogoTap(): void {
+    if ($settingsStore.developerUnlocked) return;
+    logoTaps += 1;
+    if (logoTapTimer) clearTimeout(logoTapTimer);
+    logoTapTimer = setTimeout(() => (logoTaps = 0), 1200);
+    if (logoTaps >= 5) {
+      logoTaps = 0;
+      if (logoTapTimer) clearTimeout(logoTapTimer);
+      void updateSettings({ developerUnlocked: true });
+      window.dispatchEvent(
+        new CustomEvent('cherry:notice', {
+          detail: {
+            message: 'In my restless dreams, I see those options. Sile- Developer Options.',
+          },
+        }),
+      );
+    }
+  }
+
+  $: codename = releaseCodename(__APP_VERSION__);
+  $: shortVersion = majorMinor(__APP_VERSION__);
+  $: built = buildDate(__CHERRY_BUILD__);
+
   // Last.fm
   let lastfmKey = get(settingsStore).lastfmApiKey;
   let lastfmSecret = get(settingsStore).lastfmApiSecret;
@@ -152,6 +182,64 @@
     { value: 'custom', label: 'Custom', icon: 'bx bx-color-fill' },
   ];
   const ACCENT_PRESETS = ['#ff4d5e', '#ff8a5c', '#8b5cf6', '#22c55e', '#0ea5e9', '#f5a524'];
+
+  const DISCORD_STATUS_OPTIONS = [
+    { value: 'details', label: 'Song title' },
+    { value: 'state', label: 'Artist' },
+    { value: 'name', label: 'App name' },
+  ];
+  const LASTFM_SCROBBLE_OPTIONS = [
+    { value: '50', label: '50% — recommended' },
+    { value: '75', label: '75%' },
+    { value: '90', label: '90%' },
+  ];
+  const LASTFM_MIN_OPTIONS = [
+    { value: '0', label: 'No minimum' },
+    { value: '30', label: '30 seconds' },
+    { value: '45', label: '45 seconds' },
+    { value: '60', label: '60 seconds' },
+  ];
+
+  type PlayerButtonKey =
+    | 'playerShowPrev'
+    | 'playerShowShuffle'
+    | 'playerShowRepeat'
+    | 'playerShowSleepTimer'
+    | 'playerShowQueue';
+  const PLAYER_BUTTONS: { key: PlayerButtonKey; label: string; icon: string }[] = [
+    { key: 'playerShowPrev', label: 'Previous', icon: 'bx bx-skip-previous' },
+    { key: 'playerShowShuffle', label: 'Shuffle', icon: 'bx bx-shuffle' },
+    { key: 'playerShowRepeat', label: 'Repeat', icon: 'bx bx-repeat' },
+    { key: 'playerShowSleepTimer', label: 'Sleep timer', icon: 'bx bx-moon' },
+    { key: 'playerShowQueue', label: 'Queue', icon: 'bx bx-list-ul' },
+  ];
+
+  $: playlistOptions = [
+    { value: '', label: 'Always ask' },
+    ...($settingsStore.defaultPlaylistBrowseId &&
+    !$addablePlaylistsStore.some((p) => p.browseId === $settingsStore.defaultPlaylistBrowseId)
+      ? [
+          {
+            value: $settingsStore.defaultPlaylistBrowseId,
+            label: $settingsStore.defaultPlaylistTitle || 'Saved default',
+          },
+        ]
+      : []),
+    ...$addablePlaylistsStore.map((p) => ({ value: p.browseId, label: p.title })),
+  ];
+
+  // The colour picker fires `input` continuously while dragging. Apply the
+  // colour live (with the accent transition paused) and only persist on release,
+  // so the UI tracks the picker instead of lagging behind a 700 ms ease and a
+  // settings write per frame.
+  function previewAccent(value: string): void {
+    document.documentElement.classList.add('no-accent-transition');
+    applyCustomAccent(value);
+  }
+  function commitAccent(value: string): void {
+    document.documentElement.classList.remove('no-accent-transition');
+    void updateSettings({ accentColor: value });
+  }
 
   async function setDefaultPlaylistById(id: string): Promise<void> {
     const playlist = get(addablePlaylistsStore).find((p) => p.browseId === id) ?? null;
@@ -341,10 +429,6 @@
     await openUrl(url);
   }
 
-  async function openInaneTools() {
-    await openExternal('https://inane.tools');
-  }
-
   onDestroy(stopPolling);
 </script>
 
@@ -355,10 +439,6 @@
   </header>
 
   <div class="flex flex-col gap-3">
-    <!-- Account & Integrations -->
-    <h2 class="mt-6 text-[18px] font-extrabold tracking-tight text-white first:mt-0 sm:text-[20px]">
-      Account &amp; Integrations
-    </h2>
     <!-- Account -->
     <SettingsSection title={name} description={`${profile?.handle ? `${profile.handle} · ` : ''}${$playlistStore.length} playlists`}>
       <span slot="leading" class="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[var(--color-avatar)]">
@@ -373,7 +453,7 @@
         {#if $authStore}
           <div class="flex items-center gap-2">
             <button
-              class="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-400 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
               disabled={$libraryLoading}
               onclick={refreshPlaylists}
               title="Refresh playlists"
@@ -382,7 +462,7 @@
               <i class="bx bx-refresh text-sm" class:bx-spin={$libraryLoading}></i>
             </button>
             <button
-              class="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+              class="flex items-center gap-1.5 rounded-lg bg-rose-500/10 h-8 px-3 text-[11px] text-rose-300 transition-colors hover:bg-rose-500/20"
               onclick={disconnect}
             >
               <i class="bx bx-log-out text-sm"></i>
@@ -439,7 +519,7 @@
             />
             <button
               disabled={busy || !cookie.trim()}
-              class="cherry-btn-scrim rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
+              class="cherry-btn-scrim rounded-lg bg-[var(--color-accent)] h-8 px-3 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
             >
               {busy ? 'Saving…' : 'Save'}
             </button>
@@ -449,10 +529,6 @@
 
       {#if $authStore && $channelsStore.length > 1}
         <div class="mt-4 border-t border-white/[0.06] pt-3">
-          <div class="mb-2 flex items-baseline justify-between">
-            <span class="text-[12px] font-semibold text-zinc-200">Channel</span>
-            <span class="text-[10px] text-zinc-600">each has its own library</span>
-          </div>
           <div class="flex flex-col gap-0.5">
             {#each $channelsStore.filter((c) => c.isChannel) as channel}
               <button
@@ -483,25 +559,14 @@
         <div class="mt-4 border-t border-white/[0.06] pt-3">
           <div class="flex items-center justify-between gap-4">
             <span class="text-[12px] text-zinc-300">Default save playlist</span>
-            <select
+            <Dropdown
               value={$settingsStore.defaultPlaylistBrowseId}
-              onchange={(e) => setDefaultPlaylistById((e.currentTarget as HTMLSelectElement).value)}
-              class="max-w-[55%] rounded-lg border border-white/10 bg-[var(--color-field)] px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none transition-colors focus:border-[var(--color-accent)]/60"
-            >
-              <option value="">Always ask</option>
-              {#if $settingsStore.defaultPlaylistBrowseId && !$addablePlaylistsStore.some((p) => p.browseId === $settingsStore.defaultPlaylistBrowseId)}
-                <option value={$settingsStore.defaultPlaylistBrowseId}>
-                  {$settingsStore.defaultPlaylistTitle || 'Saved default'}
-                </option>
-              {/if}
-              {#each $addablePlaylistsStore as playlist (playlist.browseId)}
-                <option value={playlist.browseId}>{playlist.title}</option>
-              {/each}
-            </select>
+              options={playlistOptions}
+              onchange={setDefaultPlaylistById}
+              buttonClass="max-w-[55%]"
+              ariaLabel="Default save playlist"
+            />
           </div>
-          <p class="mt-2 text-[10px] leading-relaxed text-zinc-600">
-            Where “Add to playlist” saves a song. Only playlists you can edit are listed.
-          </p>
         </div>
       {/if}
 
@@ -521,8 +586,36 @@
     <SettingsSection
       title="Integrations"
       description="Connect Cherry to the services you use."
-      icon="bx bx-plug"
+      collapsible
     >
+      <span slot="action" class="flex items-center gap-1.5">
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-lg {$settingsStore.discordEnabled
+            ? 'bg-[var(--color-accent)] text-white'
+            : 'bg-white/[0.06] text-zinc-400'}"
+          title="Discord"
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+            <path
+              d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z"
+            />
+          </svg>
+        </span>
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-lg {$settingsStore.lastfmSessionKey &&
+          $settingsStore.lastfmEnabled
+            ? 'bg-[var(--color-accent)] text-white'
+            : 'bg-white/[0.06] text-zinc-400'}"
+          title="Last.fm"
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+            <path
+              d="M10.584 17.21l-.88-2.392s-1.43 1.594-3.573 1.594c-1.897 0-3.244-1.649-3.244-4.288 0-3.382 1.704-4.591 3.381-4.591 2.42 0 3.189 1.567 3.849 3.574l.88 2.749c.88 2.666 2.529 4.81 7.285 4.81 3.409 0 5.718-1.044 5.718-3.793 0-2.227-1.265-3.381-3.63-3.931l-1.758-.385c-1.21-.275-1.567-.77-1.567-1.595 0-.934.742-1.484 1.952-1.484 1.32 0 2.034.495 2.144 1.677l2.749-.33c-.22-2.474-1.924-3.492-4.729-3.492-2.474 0-4.893.935-4.893 3.932 0 1.87.907 3.051 3.189 3.601l1.87.44c1.402.33 1.869.907 1.869 1.704 0 1.017-.99 1.43-2.86 1.43-2.776 0-3.93-1.457-4.59-3.464l-.907-2.75c-1.155-3.573-2.997-4.893-6.653-4.893C2.144 5.333 0 7.89 0 12.233c0 4.18 2.144 6.434 5.993 6.434 3.106 0 4.591-1.457 4.591-1.457z"
+            />
+          </svg>
+        </span>
+      </span>
+
       <div class="flex flex-col">
         <!-- Discord -->
         <div class="pb-5">
@@ -541,18 +634,15 @@
               onchange={setDiscordEnabled}
             />
           </div>
-          <label class="mt-3 flex items-center justify-between gap-4">
+          <div class="mt-3 flex items-center justify-between gap-4">
             <span class="text-[12px] text-zinc-300">Show next to your name</span>
-            <select
+            <Dropdown
               value={$settingsStore.discordStatusDisplay}
-              onchange={(e) => setStatusDisplay((e.currentTarget as HTMLSelectElement).value)}
-              class="rounded-lg border border-white/10 bg-[var(--color-field)] px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none transition-colors focus:border-[var(--color-accent)]/60"
-            >
-              <option value="details">Song title</option>
-              <option value="state">Artist</option>
-              <option value="name">App name</option>
-            </select>
-          </label>
+              options={DISCORD_STATUS_OPTIONS}
+              onchange={setStatusDisplay}
+              ariaLabel="Discord status display"
+            />
+          </div>
         </div>
 
         <!-- Last.fm -->
@@ -583,14 +673,14 @@
                 >
               </span>
               <button
-                class="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+                class="rounded-lg bg-white/[0.06] h-8 px-3 text-[11px] text-zinc-400 transition-colors hover:bg-white/[0.1] hover:text-white"
                 onclick={disconnectLastfm}
               >
                 Disconnect
               </button>
             </div>
 
-            <div class="mt-4 flex flex-col gap-3 border-t border-white/[0.06] pt-4">
+            <div class="mt-4 flex flex-col gap-3">
               <label class="flex items-center justify-between gap-4">
                 <span class="text-[12px] text-zinc-300">Send “now playing”</span>
                 <Toggle
@@ -599,39 +689,24 @@
                   onchange={(value) => updateSettings({ lastfmNowPlaying: value })}
                 />
               </label>
-              <label class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4">
                 <span class="text-[12px] text-zinc-300">Scrobble after</span>
-                <select
+                <Dropdown
                   value={String($settingsStore.lastfmScrobblePercent ?? 50)}
-                  onchange={(e) =>
-                    updateSettings({
-                      lastfmScrobblePercent: Number((e.currentTarget as HTMLSelectElement).value),
-                    })}
-                  class="rounded-lg border border-white/10 bg-[var(--color-field)] px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none transition-colors focus:border-[var(--color-accent)]/60"
-                >
-                  <option value="50">50% — recommended</option>
-                  <option value="75">75%</option>
-                  <option value="90">90%</option>
-                </select>
-              </label>
-              <label class="flex items-center justify-between gap-4">
+                  options={LASTFM_SCROBBLE_OPTIONS}
+                  onchange={(v) => updateSettings({ lastfmScrobblePercent: Number(v) })}
+                  ariaLabel="Scrobble after"
+                />
+              </div>
+              <div class="flex items-center justify-between gap-4">
                 <span class="text-[12px] text-zinc-300">Skip tracks under</span>
-                <select
+                <Dropdown
                   value={String($settingsStore.lastfmMinDurationSeconds ?? 30)}
-                  onchange={(e) =>
-                    updateSettings({
-                      lastfmMinDurationSeconds: Number(
-                        (e.currentTarget as HTMLSelectElement).value,
-                      ),
-                    })}
-                  class="rounded-lg border border-white/10 bg-[var(--color-field)] px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none transition-colors focus:border-[var(--color-accent)]/60"
-                >
-                  <option value="0">No minimum</option>
-                  <option value="30">30 seconds</option>
-                  <option value="45">45 seconds</option>
-                  <option value="60">60 seconds</option>
-                </select>
-              </label>
+                  options={LASTFM_MIN_OPTIONS}
+                  onchange={(v) => updateSettings({ lastfmMinDurationSeconds: Number(v) })}
+                  ariaLabel="Skip tracks under"
+                />
+              </div>
             </div>
           {:else}
             <p class="mt-3 text-[11px] leading-relaxed text-zinc-400">
@@ -658,7 +733,7 @@
             </div>
             <div class="mt-3 flex flex-wrap items-center gap-2">
               <button
-                class="cherry-btn-scrim flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
+                class="cherry-btn-scrim flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] h-8 px-3 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
                 disabled={lastfmBusy || !lastfmKey.trim() || !lastfmSecret.trim()}
                 onclick={connectLastfm}
               >
@@ -667,7 +742,7 @@
               </button>
               {#if lastfmToken}
                 <button
-                  class="rounded-lg border border-white/10 px-3 py-2 text-[11px] font-semibold text-zinc-200 transition-colors hover:bg-white/5 disabled:opacity-40"
+                  class="rounded-lg bg-white/[0.06] h-8 px-3 text-[11px] font-semibold text-zinc-200 transition-colors hover:bg-white/[0.1] disabled:opacity-40"
                   disabled={lastfmBusy}
                   onclick={finishLastfm}
                 >
@@ -690,72 +765,13 @@
       </div>
     </SettingsSection>
 
-    <!-- Cherry -->
-    <h2 class="mt-6 text-[18px] font-extrabold tracking-tight text-white sm:text-[20px]">Cherry</h2>
     <!-- Appearance -->
     <SettingsSection
       title="Appearance"
-      description="Theme, accent colour, zoom and layout."
-      icon="bx bx-palette"
+      description="Tweak the Zoom, Theme &amp; Layout of Cherry."
+      collapsible
     >
       <div class="flex flex-col gap-5">
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Theme</div>
-          <div class="flex gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
-            {#each THEME_OPTIONS as option (option.value)}
-              <button
-                class="flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors {$settingsStore.theme ===
-                option.value
-                  ? 'bg-[var(--color-accent)] text-white'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-white'}"
-                onclick={() => updateSettings({ theme: option.value })}
-              >
-                <i class={option.icon}></i>{option.label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Accent colour</div>
-          <div class="flex gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
-            {#each ACCENT_SOURCE_OPTIONS as option (option.value)}
-              <button
-                class="flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors {$settingsStore.accentSource ===
-                option.value
-                  ? 'bg-[var(--color-accent)] text-white'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-white'}"
-                onclick={() => updateSettings({ accentSource: option.value })}
-              >
-                <i class={option.icon}></i>{option.label}
-              </button>
-            {/each}
-          </div>
-          {#if $settingsStore.accentSource === 'custom'}
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-              <input
-                type="color"
-                value={$settingsStore.accentColor}
-                oninput={(e) =>
-                  updateSettings({ accentColor: (e.currentTarget as HTMLInputElement).value })}
-                class="h-8 w-10 cursor-pointer rounded-md border border-white/10 bg-transparent"
-                aria-label="Accent colour"
-              />
-              <div class="flex items-center gap-1.5">
-                {#each ACCENT_PRESETS as preset (preset)}
-                  <button
-                    class="h-6 w-6 rounded-full border border-white/15 transition-transform hover:scale-110"
-                    style="background: {preset}"
-                    title={preset}
-                    aria-label={`Accent ${preset}`}
-                    onclick={() => updateSettings({ accentColor: preset })}
-                  ></button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-
         <div>
           <div class="mb-2 flex items-center justify-between">
             <span class="text-[12px] font-semibold text-zinc-200">Zoom</span>
@@ -795,6 +811,63 @@
         </div>
 
         <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Theme</div>
+          <div class="flex gap-1 rounded-xl bg-white/[0.03] p-1">
+            {#each THEME_OPTIONS as option (option.value)}
+              <button
+                class="flex flex-1 items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-[11px] font-medium transition-colors {$settingsStore.theme ===
+                option.value
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-zinc-400 hover:bg-white/5 hover:text-white'}"
+                onclick={() => updateSettings({ theme: option.value })}
+              >
+                <i class={option.icon}></i>{option.label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Accent colour</div>
+          <div class="flex gap-1 rounded-xl bg-white/[0.03] p-1">
+            {#each ACCENT_SOURCE_OPTIONS as option (option.value)}
+              <button
+                class="flex flex-1 items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-[11px] font-medium transition-colors {$settingsStore.accentSource ===
+                option.value
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-zinc-400 hover:bg-white/5 hover:text-white'}"
+                onclick={() => updateSettings({ accentSource: option.value })}
+              >
+                <i class={option.icon}></i>{option.label}
+              </button>
+            {/each}
+          </div>
+          {#if $settingsStore.accentSource === 'custom'}
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                type="color"
+                value={$settingsStore.accentColor}
+                oninput={(e) => previewAccent((e.currentTarget as HTMLInputElement).value)}
+                onchange={(e) => commitAccent((e.currentTarget as HTMLInputElement).value)}
+                class="h-8 w-10 cursor-pointer rounded-md border border-white/10 bg-transparent"
+                aria-label="Accent colour"
+              />
+              <div class="flex items-center gap-1.5">
+                {#each ACCENT_PRESETS as preset (preset)}
+                  <button
+                    class="h-6 w-6 rounded-full border border-white/15 transition-transform hover:scale-110"
+                    style="background: {preset}"
+                    title={preset}
+                    aria-label={`Accent ${preset}`}
+                    onclick={() => updateSettings({ accentColor: preset })}
+                  ></button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <div>
           <div class="mb-2 text-[12px] font-semibold text-zinc-200">Background</div>
           <label class="flex items-center justify-between gap-4">
             <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-droplet shrink-0 text-sm text-zinc-500"></i>Accent gradients</span>
@@ -802,6 +875,14 @@
               checked={$settingsStore.gradientsEnabled}
               label="Background gradients"
               onchange={(value) => updateSettings({ gradientsEnabled: value })}
+            />
+          </label>
+          <label class="mt-3 flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-color-fill shrink-0 text-sm text-zinc-500"></i>Tint surfaces with accent</span>
+            <Toggle
+              checked={$settingsStore.tintedBackground}
+              label="Tinted surfaces"
+              onchange={(value) => updateSettings({ tintedBackground: value })}
             />
           </label>
         </div>
@@ -829,6 +910,29 @@
             />
           </label>
         </div>
+
+        <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Player buttons</div>
+          <div class="flex flex-wrap items-center gap-2">
+            {#each PLAYER_BUTTONS as button (button.key)}
+              <button
+                type="button"
+                class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors {$settingsStore[
+                  button.key
+                ]
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1] hover:text-white'}"
+                title={`${$settingsStore[button.key] ? 'Hide' : 'Show'} ${button.label}`}
+                aria-label={`${$settingsStore[button.key] ? 'Hide' : 'Show'} ${button.label}`}
+                aria-pressed={$settingsStore[button.key]}
+                onclick={() =>
+                  updateSettings({ [button.key]: !$settingsStore[button.key] } as Partial<CherrySettings>)}
+              >
+                <i class="{button.icon} text-xl leading-none"></i>
+              </button>
+            {/each}
+          </div>
+        </div>
       </div>
     </SettingsSection>
 
@@ -836,7 +940,6 @@
     <SettingsSection
       title="Keyboard shortcuts"
       description="Work anywhere in the window, except while typing."
-      icon="bx bx-command"
       collapsible
     >
       <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[12px]">
@@ -855,7 +958,6 @@
     <SettingsSection
       title="Data &amp; Cache"
       description="Everything Cherry keeps on this device."
-      icon="bx bx-data"
     >
       <div class="flex items-center justify-between gap-4 text-[12px]">
         <span class="text-zinc-300">Your settings, playlist cache, sign-in info</span>
@@ -863,7 +965,7 @@
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         <button
-          class="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-zinc-300 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+          class="flex items-center gap-2 rounded-lg bg-white/[0.06] h-8 px-3 text-[11px] font-semibold text-zinc-300 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
           disabled={clearing || clearingCache}
           onclick={clearCacheOnly}
         >
@@ -871,7 +973,7 @@
           {clearingCache ? 'Clearing…' : 'Clear cache'}
         </button>
         <button
-          class="flex items-center gap-2 rounded-lg border border-rose-500/30 px-3 py-1.5 text-[11px] font-semibold text-rose-300 transition-colors hover:bg-rose-500/10 disabled:opacity-40"
+          class="flex items-center gap-2 rounded-lg bg-rose-500/10 h-8 px-3 text-[11px] font-semibold text-rose-300 transition-colors hover:bg-rose-500/20 disabled:opacity-40"
           disabled={clearing || clearingCache}
           onclick={clearData}
         >
@@ -882,11 +984,11 @@
       {#if clearNotice}<p class="mt-2 text-[11px] text-emerald-300">{clearNotice}</p>{/if}
     </SettingsSection>
 
+    {#if $settingsStore.developerUnlocked}
     <!-- Developer -->
     <SettingsSection
       title="Developer"
       description="Debug tools for Cherry itself."
-      icon="bx bx-code-alt"
     >
       <div>
         <label class="flex items-center justify-between gap-4 py-3 first:pt-0">
@@ -904,14 +1006,14 @@
           </span>
           <div class="flex gap-2">
             <button
-              class="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+              class="rounded-lg bg-white/[0.06] h-8 px-3 text-[11px] text-zinc-400 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
               disabled={!$settingsStore.devToolsEnabled || !isTauri()}
               onclick={() => openDevTools()}
             >
               Open DevTools
             </button>
             <button
-              class="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+              class="rounded-lg bg-white/[0.06] h-8 px-3 text-[11px] text-zinc-400 transition-colors hover:bg-white/[0.1] hover:text-white"
               onclick={reloadFrontend}
             >
               Reload
@@ -920,79 +1022,12 @@
         </div>
       </div>
     </SettingsSection>
-
-    <!-- About -->
-    <h2 class="mt-6 text-[18px] font-extrabold tracking-tight text-white sm:text-[20px]">About</h2>
-    <!-- Disclaimer (shown above the Cherry info) -->
-    <SettingsSection title="Disclaimer" tone="warn" icon="bx bxs-info-circle">
-      <p class="text-[11px] leading-relaxed text-amber-100/80">{DISCLAIMER}</p>
-    </SettingsSection>
-
-    <!-- About -->
-    <section class="rounded-xl border border-[var(--color-accent)]/25 bg-gradient-to-br from-[var(--color-accent)]/10 to-transparent p-5">
-      <div class="flex items-start gap-3">
-        <img src={logoUrl} alt="Cherry" class="h-10 w-10 shrink-0 rounded-xl shadow-lg" />
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-zinc-300">
-            <span class="font-bold text-white">Cherry</span>
-            <span class="text-zinc-500">by</span>
-            <button
-              class="font-semibold text-[var(--color-accent2)] underline decoration-[var(--color-accent2)]/30 underline-offset-2 transition-colors hover:decoration-[var(--color-accent2)]"
-              onclick={openInaneTools}
-            >
-              inane.tools
-            </button>
-          </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-            [ hit me up google, lets make a better youtube music for everyone ]
-          </p>
-        </div>
-        <span
-          class="shrink-0 rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-300"
-          title={`Cherry ${__APP_VERSION__} · build ${__CHERRY_BUILD__}`}
-        >v{__APP_VERSION__}</span>
-      </div>
-
-      <div class="mt-4 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
-        <img src={inaneWordmark} alt="inane.tools" class="inane-wordmark h-6 w-auto opacity-80" />
-        <div class="flex items-center gap-1.5">
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-            title="@inanetools on X"
-            aria-label="X (Twitter)"
-            onclick={() => openExternal('https://x.com/inanetools')}
-          >
-            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
-              <path
-                d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"
-              />
-            </svg>
-          </button>
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-            title="GitHub repository"
-            aria-label="GitHub repository"
-            onclick={() => openExternal('https://github.com/inane-tools/cherry')}
-          >
-            <i class="bx bxl-github text-lg"></i>
-          </button>
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-            title="inane.tools"
-            aria-label="inane.tools website"
-            onclick={() => openExternal('https://inane.tools')}
-          >
-            <i class="bx bx-globe text-lg"></i>
-          </button>
-        </div>
-      </div>
-    </section>
+    {/if}
 
     <!-- Licenses, credits and third-party software -->
     <SettingsSection
       title="Open Source &amp; Contributors"
       description="The projects Cherry is built on, and the people who helped."
-      icon="bx bx-code-alt"
       collapsible
     >
       <ul class="grid grid-cols-1 gap-x-6 text-[11px] text-zinc-400 sm:grid-cols-2">
@@ -1007,7 +1042,7 @@
           { name: 'souvlaki', use: 'OS media controls (SMTC / MPRIS)', license: 'MIT', url: 'https://github.com/Sinono3/souvlaki' },
           { name: 'discord-rich-presence', use: 'Discord Rich Presence', license: 'MIT', url: 'https://github.com/EmbarkStudios/discord-rich-presence' },
           { name: 'Boxicons', use: 'icon set', license: 'CC BY 4.0', url: 'https://github.com/atisawd/boxicons' },
-          { name: 'Zalando Sans', use: 'typeface', license: 'OFL-1.1', url: 'https://github.com/zalando/sans' },
+          { name: 'Gabarito', use: 'typeface', license: 'OFL-1.1', url: 'https://github.com/googlefonts/gabarito' },
           { name: 'keyring', use: 'OS credential storage', license: 'MIT / Apache-2.0', url: 'https://github.com/hwchen/keyring-rs' },
           { name: 'serde / reqwest / tokio', use: 'Rust serialization, HTTP, async runtime', license: 'MIT / Apache-2.0', url: 'https://github.com/serde-rs/serde' },
           { name: 'base64', use: 'base64 (relay, playlist images)', license: 'MIT / Apache-2.0', url: 'https://github.com/marshallpierce/rust-base64' },
@@ -1045,5 +1080,68 @@
         </p>
       </div>
     </SettingsSection>
+
+    <!-- Disclaimer (shown above the Cherry info) -->
+    <SettingsSection title="Disclaimer" tone="warn">
+      <p class="text-[11px] leading-relaxed text-amber-100/80">{DISCLAIMER}</p>
+    </SettingsSection>
+
+    <!-- About -->
+    <section class="rounded-xl bg-gradient-to-br from-[var(--color-accent)]/10 to-transparent px-5 py-4">
+      <div class="flex items-start gap-3">
+        <button type="button" class="shrink-0 cursor-default" aria-label="Cherry" onclick={onLogoTap}>
+          <img src={logoUrl} alt="Cherry" class="h-10 w-10 rounded-xl shadow-lg" />
+        </button>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-[18px] font-extrabold tracking-tight text-white sm:text-[20px]">
+            Cherry {shortVersion} <span class="text-[var(--color-accent2)]">{codename}</span>
+          </h2>
+          <p class="mt-0.5 text-[10px] tabular-nums text-zinc-500">v{__APP_VERSION__} · {built}</p>
+        </div>
+        <button
+          class="flex h-8 shrink-0 items-center gap-1.5 self-center rounded-lg bg-white/[0.06] px-3 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+          title="Releases on GitHub"
+          onclick={() => openExternal('https://github.com/inane-tools/cherry/releases')}
+        >
+          <i class="bx bxl-github text-base"></i>
+          Releases
+        </button>
+      </div>
+
+      <div class="mt-4 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+        <div class="flex items-center gap-1.5">
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+            title="@inanetools on X"
+            aria-label="X (Twitter)"
+            onclick={() => openExternal('https://x.com/inanetools')}
+          >
+            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+              <path
+                d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"
+              />
+            </svg>
+          </button>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+            title="GitHub repository"
+            aria-label="GitHub repository"
+            onclick={() => openExternal('https://github.com/inane-tools/cherry')}
+          >
+            <i class="bx bxl-github text-lg"></i>
+          </button>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+            title="inane.tools"
+            aria-label="inane.tools website"
+            onclick={() => openExternal('https://inane.tools')}
+          >
+            <i class="bx bx-globe text-lg"></i>
+          </button>
+        </div>
+        <img src={inaneWordmark} alt="inane.tools" class="inane-wordmark h-6 w-auto opacity-80" />
+      </div>
+    </section>
+
   </div>
 </div>

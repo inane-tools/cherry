@@ -97,6 +97,16 @@ export function vividify({ r, g, b }: Rgb): Rgb {
   };
 }
 
+/** Linear interpolation between two colours (`t` = 0 → `a`, 1 → `b`). */
+export function mix(a: Rgb, b: Rgb, t: number): Rgb {
+  const k = Math.max(0, Math.min(1, t));
+  return {
+    r: a.r + (b.r - a.r) * k,
+    g: a.g + (b.g - a.g) * k,
+    b: a.b + (b.b - a.b) * k,
+  };
+}
+
 export function toHex({ r, g, b }: Rgb): string {
   const part = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
   return `#${part(r)}${part(g)}${part(b)}`;

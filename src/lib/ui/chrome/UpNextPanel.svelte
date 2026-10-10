@@ -31,7 +31,7 @@
 {#if open}
   <div
     data-upnext-panel
-    class="absolute bottom-[136px] right-3 z-40 flex max-h-[72vh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[var(--color-elevated)]/95 shadow-[0_30px_80px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:bottom-24"
+    class="absolute bottom-[136px] right-3 z-40 flex max-h-[72vh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl bg-[var(--color-elevated)]/95 shadow-[0_30px_80px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:bottom-24"
     in:fly={{ y: 10, duration: 170 }}
     out:fade={{ duration: 120 }}
   >

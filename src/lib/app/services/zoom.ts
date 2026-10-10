@@ -13,6 +13,13 @@ export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 2;
 export const ZOOM_STEP = 0.1;
 
+/**
+ * Baseline scale applied to every level, so the slider's "100%" renders at the
+ * size the app used to be at 110%. The stored `uiZoom` stays a plain percentage
+ * (1 = 100%); only the webview factor is multiplied by this.
+ */
+export const ZOOM_BASE = 1.1;
+
 /** Every selectable level, for the slider's visible step markers. */
 export const ZOOM_STEPS: number[] = Array.from(
   { length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 },
@@ -36,7 +43,7 @@ export function applyZoom(scale: number): void {
   const next = clampZoom(scale);
   if (next === applied) return;
   applied = next;
-  void invokeSafe('set_webview_zoom', { scale: next });
+  void invokeSafe('set_webview_zoom', { scale: next * ZOOM_BASE });
 }
 
 let started = false;

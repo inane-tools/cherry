@@ -47,9 +47,11 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
   let frame = 0;
   let dragging = false;
 
-  // Cached geometry; refreshed on resize/mutation only (not on scroll).
+  // Cached geometry; refreshed on resize/mutation/content-size change.
   let hasThumb = false;
   let travel = 0; // thumb travel per pixel scrolled: (available - h) / (content - viewport)
+  let contentHeight = 0;
+  let thumbHeight = 0;
   let lastContent = -1;
   let lastViewport = -1;
 
@@ -64,6 +66,7 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
     if (content === lastContent && viewport === lastViewport) return;
     lastContent = content;
     lastViewport = viewport;
+    contentHeight = content;
     if (content <= viewport + 1) {
       hasThumb = false;
       thumb.style.display = 'none';
@@ -74,16 +77,23 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
     // The track is only as long as the visible content area (below the inset).
     const available = Math.max(0, viewport - topInset);
     const height = Math.max(MIN_THUMB, Math.round((available * viewport) / content));
+    thumbHeight = height;
     travel = content - viewport > 0 ? (available - height) / (content - viewport) : 0;
     thumb.style.height = `${height}px`;
   }
 
   function paint(): void {
     if (!hasThumb) return;
-    // The thumb scrolls with the content, so add the scroll offset back before
-    // applying the proportional travel, then offset below the inset:
-    // visual y = topInset + scrollTop * travel.
-    thumb.style.transform = `translateY(${topInset + node.scrollTop * (1 + travel)}px)`;
+    // The thumb rides the content, so add the scroll offset back before applying
+    // the proportional travel. Crucially, clamp it inside the content: a stale
+    // `travel` (the content grew since the last measure) would otherwise push the
+    // thumb past the end, and because it is a child of the scroller its
+    // transformed box then *extends the scrollable area* — which lets you scroll
+    // further, pushing it further again (runaway scroll). The clamp breaks that.
+    const wanted = topInset + node.scrollTop * (1 + travel);
+    const maxTop = Math.max(0, contentHeight - thumbHeight);
+    const top = Math.min(Math.max(0, wanted), maxTop);
+    thumb.style.transform = `translateY(${top}px)`;
   }
 
   function scheduleMeasure(): void {
@@ -177,7 +187,21 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
 
   const resize = new ResizeObserver(() => scheduleMeasure());
   resize.observe(node);
-  const mutate = new MutationObserver(() => scheduleMeasureDebounced());
+  // `node` keeps its size while its *content* grows (e.g. a settings section
+  // expanding), so watch the content too — otherwise `travel` goes stale and the
+  // thumb drifts past the end (see `paint`).
+  const contentResize = new ResizeObserver(() => scheduleMeasure());
+  function observeContent(): void {
+    contentResize.disconnect();
+    for (const child of Array.from(node.children)) {
+      if (child !== thumb) contentResize.observe(child);
+    }
+  }
+  observeContent();
+  const mutate = new MutationObserver(() => {
+    observeContent();
+    scheduleMeasureDebounced();
+  });
   mutate.observe(node, { childList: true, subtree: true });
 
   measure();
@@ -201,6 +225,7 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
       node.removeEventListener('mouseleave', onLeave);
       thumb.removeEventListener('pointerdown', onThumbDown);
       resize.disconnect();
+      contentResize.disconnect();
       mutate.disconnect();
       if (hideTimer) clearTimeout(hideTimer);
       if (measureTimer) clearTimeout(measureTimer);

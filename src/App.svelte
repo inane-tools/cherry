@@ -175,8 +175,10 @@
     {#if ready && !signedOut && !$narrowLayout}
       <Sidebar />
     {/if}
-    <!-- Content column: owns the translucent top bar and the floating player. -->
-    <div class="relative flex min-w-0 flex-1 flex-col">
+    <!-- Content column: owns the translucent top bar and the floating player.
+         `overflow-x-clip` keeps the player bar's drop shadow from spilling left
+         over the sidebar, without clipping anything vertically. -->
+    <div class="relative flex min-w-0 flex-1 flex-col overflow-x-clip">
       <!-- On the welcome screen only the native window controls remain; the bar
            itself stays draggable. -->
       <Titlebar minimal={signedOut} narrow={$narrowLayout} onMenu={toggleSidebarDrawer} />

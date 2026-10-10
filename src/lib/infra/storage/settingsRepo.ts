@@ -42,6 +42,8 @@ export interface CherrySettings {
   sidebarWidth: number;
   /** Show the accent gradient washes (content background + player bar). */
   gradientsEnabled: boolean;
+  /** Tint the neutral surfaces with the accent (Material-You style). */
+  tintedBackground: boolean;
   /** Appearance: follow the OS, or force light/dark. */
   theme: 'system' | 'light' | 'dark';
   /** Accent colour: follow the album art, or a fixed custom colour. */
@@ -52,11 +54,19 @@ export interface CherrySettings {
   uiZoom: number;
   /** Show square album art above the title in the expanded player. */
   playerSquareArt: boolean;
+  /** Player buttons that can be hidden. */
+  playerShowPrev: boolean;
+  playerShowShuffle: boolean;
+  playerShowRepeat: boolean;
+  playerShowSleepTimer: boolean;
+  playerShowQueue: boolean;
   /** Playlist that "Add to playlist" saves to without asking. Empty = ask. */
   defaultPlaylistBrowseId: string;
   defaultPlaylistTitle: string;
   /** Reveal the Developer section's DevTools access (off by default). */
   devToolsEnabled: boolean;
+  /** Reveal the Developer settings section (unlocked by tapping the logo 5×). */
+  developerUnlocked: boolean;
   /** Last.fm scrobbling; the session key/username come from the auth flow. */
   lastfmEnabled: boolean;
   lastfmApiKey: string;
@@ -87,14 +97,21 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   compactSidebar: false,
   sidebarWidth: 240,
   gradientsEnabled: true,
+  tintedBackground: false,
   theme: 'system',
   accentSource: 'song',
   accentColor: '#ff4d5e',
   uiZoom: 1,
   playerSquareArt: false,
+  playerShowPrev: true,
+  playerShowShuffle: true,
+  playerShowRepeat: true,
+  playerShowSleepTimer: true,
+  playerShowQueue: true,
   defaultPlaylistBrowseId: '',
   defaultPlaylistTitle: '',
   devToolsEnabled: false,
+  developerUnlocked: false,
   lastfmEnabled: false,
   lastfmApiKey: '',
   lastfmApiSecret: '',

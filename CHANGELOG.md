@@ -4,6 +4,39 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] — 2026-10-10
+
+### Added
+
+- **Release codenames** — every release is named after a Japanese city, taken in
+  ascending order of population (so later releases get bigger cities). The name
+  shows beside the version in **Settings → About** and advances automatically
+  when the minor version bumps; patch releases keep their minor's name.
+- A **Releases** button in the About card, linking to the GitHub releases page.
+
+### Changed
+
+- **Settings was restyled** — flat, borderless sections with plain headings and
+  no per-row icons, and the native dropdowns are now consistent in-app menus.
+  The account and data sections were simplified.
+- **Developer options are hidden by default** — tap the Cherry logo five times
+  in Settings → About to unlock them.
+
+## [1.4.0] — 2026-10-08
+
+### Added
+
+- **Tinted surfaces** (Appearance): a Material-You-style variant that mixes the
+  accent into the neutral background and card colours (stronger on light theme).
+- **Player button visibility** (Appearance): hide the previous, shuffle, repeat,
+  sleep-timer or queue buttons from the player.
+
+### Changed
+
+- The app typeface is now **Gabarito** (was Zalando Sans).
+- The default UI scale is 10% larger — the zoom slider's "100%" now renders at
+  the size 110% used to.
+
 ## [1.3.0] — 2026-10-08
 
 A feature release on top of the 1.2 layout work. Thanks to **jannuary** and
@@ -230,6 +263,8 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.4.1]: https://github.com/inane-tools/cherry/releases/tag/v1.4.1
+[1.4.0]: https://github.com/inane-tools/cherry/releases/tag/v1.4.0
 [1.3.0]: https://github.com/inane-tools/cherry/releases/tag/v1.3.0
 [1.2.1]: https://github.com/inane-tools/cherry/releases/tag/v1.2.1
 [1.2.0]: https://github.com/inane-tools/cherry/releases/tag/v1.2.0

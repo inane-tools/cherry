@@ -297,16 +297,18 @@
 
       <!-- Main controls -->
       <div class="mt-5 flex items-center justify-center gap-6">
+        {#if $settingsStore.playerShowPrev}
+          <button
+            class="flex h-12 w-12 items-center justify-center rounded-full text-4xl text-zinc-200 hover:text-white"
+            onclick={prev}
+            title="Previous"
+            aria-label="Previous"
+          >
+            <i class="bx bx-skip-previous"></i>
+          </button>
+        {/if}
         <button
-          class="flex h-12 w-12 items-center justify-center rounded-full text-4xl text-zinc-200 hover:text-white"
-          onclick={prev}
-          title="Previous"
-          aria-label="Previous"
-        >
-          <i class="bx bx-skip-previous"></i>
-        </button>
-        <button
-          class="cherry-btn-scrim flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent)] text-4xl text-white transition-transform hover:scale-105"
+          class="cherry-btn-scrim flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent)] text-4xl text-white"
           onclick={toggle}
           title={st.status === 'playing' ? 'Pause' : 'Play'}
           aria-label={st.status === 'playing' ? 'Pause' : 'Play'}
@@ -329,28 +331,32 @@
 
       <!-- Secondary controls -->
       <div class="mt-4 flex items-center justify-center gap-5">
-        <button
-          class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode
-            ? 'text-[var(--color-accent2)]'
-            : 'text-zinc-400 hover:text-white'}"
-          onclick={toggleShuffle}
-          title="Shuffle"
-          aria-label="Shuffle"
-        >
-          <i class="bx bx-shuffle"></i>
-        </button>
-        <RepeatButton size="lg" />
-        <SleepTimerButton size="lg" />
-        <button
-          class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen
-            ? 'text-[var(--color-accent2)]'
-            : 'text-zinc-400 hover:text-white'}"
-          onclick={() => (upNextOpen = !upNextOpen)}
-          title="Queue"
-          aria-label="Queue"
-        >
-          <i class="bx bx-list-ul"></i>
-        </button>
+        {#if $settingsStore.playerShowShuffle}
+          <button
+            class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode
+              ? 'text-[var(--color-accent2)]'
+              : 'text-zinc-400 hover:text-white'}"
+            onclick={toggleShuffle}
+            title="Shuffle"
+            aria-label="Shuffle"
+          >
+            <i class="bx bx-shuffle"></i>
+          </button>
+        {/if}
+        {#if $settingsStore.playerShowRepeat}<RepeatButton size="lg" />{/if}
+        {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton size="lg" />{/if}
+        {#if $settingsStore.playerShowQueue}
+          <button
+            class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen
+              ? 'text-[var(--color-accent2)]'
+              : 'text-zinc-400 hover:text-white'}"
+            onclick={() => (upNextOpen = !upNextOpen)}
+            title="Queue"
+            aria-label="Queue"
+          >
+            <i class="bx bx-list-ul"></i>
+          </button>
+        {/if}
 
         <!-- svelte-ignore a11y_no_static_element_interactions : hover wrapper for the volume popup -->
         <div
@@ -373,7 +379,7 @@
             {/if}
           </button>
           <div
-            class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg border border-white/10 bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
+            class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
               ? 'pointer-events-auto opacity-100'
               : 'pointer-events-none opacity-0'}"
           >
@@ -398,9 +404,10 @@
     </div>
   </div>
 {:else}
-  <!-- Black fade behind the floating bar so content trails off at the bottom. -->
+  <!-- Fade behind the floating bar so content trails off at the bottom. Uses
+       the (tinted) surface colour rather than pure black, and stays subtle. -->
   <div
-    class="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-40 bg-gradient-to-t from-black via-black/70 to-transparent"
+    class="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-28 bg-gradient-to-t from-[var(--color-surface)] via-[var(--color-surface)]/60 to-transparent"
   ></div>
 
   <footer
@@ -410,7 +417,7 @@
       <!-- Album art doubles as the "expand player" button; the chevron shows on
            hover. Right-click still opens the track menu. -->
       <button
-        class="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10 sm:h-16 sm:w-16"
+        class="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-white/5 sm:h-16 sm:w-16"
         title="Expand player"
         aria-label="Expand player"
         onclick={expand}
@@ -464,39 +471,46 @@
         </div>
       </div>
 
-      <!-- Controls. On small widths this drops to its own row: shuffle on the
-           left, transport centered, queue + volume on the right. On wider widths
-           it sits inline, right-aligned as [transport][shuffle][queue][volume]. -->
+      <!-- Controls. On small widths the transport is left-aligned and every
+           other button (shuffle, repeat, sleep timer, queue, volume) sits on the
+           right. On wider widths it sits inline, right-aligned as
+           [transport][shuffle][queue][volume]. -->
       <div class="flex w-full items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end sm:gap-1">
-        <!-- Left (small) / second (wide): shuffle -->
-        <div class="order-1 -ml-2 flex flex-1 items-center gap-3 sm:order-2 sm:ml-0 sm:flex-none sm:gap-1">
+        <!-- Second (wide): shuffle -->
+        <div class="order-2 flex items-center gap-3 sm:order-2 sm:gap-1">
           {#if st.error}
             <span class="max-w-40 truncate text-[10px] leading-tight text-red-400" title={st.error}>{st.error}</span>
           {/if}
-          <button
-            class="flex h-9 w-9 items-center justify-center rounded-full text-lg {$shuffleMode ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
-            onclick={toggleShuffle}
-            title="Shuffle"
-            aria-label="Shuffle"
-          >
-            <i class="bx bx-shuffle"></i>
-          </button>
-          <RepeatButton />
-          <SleepTimerButton />
+          {#if $settingsStore.playerShowShuffle}
+            <button
+              class="flex h-9 w-9 items-center justify-center rounded-full text-lg {$shuffleMode ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
+              onclick={toggleShuffle}
+              title="Shuffle"
+              aria-label="Shuffle"
+            >
+              <i class="bx bx-shuffle"></i>
+            </button>
+          {/if}
+          {#if $settingsStore.playerShowRepeat}<RepeatButton />{/if}
+          {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton />{/if}
         </div>
 
-        <!-- Center (small) / first (wide): transport -->
-        <div class="order-2 flex items-center gap-1 sm:order-1 sm:-ml-2">
+        <!-- Left (small) / first (wide): transport. The negative margin on small
+             screens offsets the button's own inset so the first icon lines up
+             with the album art. -->
+        <div class="order-1 -ml-1.5 mr-auto flex items-center gap-1 sm:order-1 sm:mr-0 sm:-ml-2">
+          {#if $settingsStore.playerShowPrev}
+            <button
+              class="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-zinc-200 hover:text-white"
+              onclick={prev}
+              title="Previous"
+              aria-label="Previous"
+            >
+              <i class="bx bx-skip-previous"></i>
+            </button>
+          {/if}
           <button
-            class="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-zinc-200 hover:text-white"
-            onclick={prev}
-            title="Previous"
-            aria-label="Previous"
-          >
-            <i class="bx bx-skip-previous"></i>
-          </button>
-          <button
-            class="cherry-btn-scrim flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent)] text-2xl text-white transition-transform hover:scale-105"
+            class="cherry-btn-scrim flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent)] text-2xl text-white"
             onclick={toggle}
             title={st.status === 'playing' ? 'Pause' : 'Play'}
             aria-label={st.status === 'playing' ? 'Pause' : 'Play'}
@@ -518,16 +532,18 @@
         </div>
 
         <!-- Right (small) / third (wide): queue + volume -->
-        <div class="order-3 -mr-2 flex flex-1 items-center justify-end gap-1 sm:flex-none sm:justify-start">
-          <button
-            data-upnext-toggle
-            class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
-            title="Queue"
-            aria-label="Queue"
-            onclick={() => (upNextOpen = !upNextOpen)}
-          >
-            <i class="bx bx-list-ul"></i>
-          </button>
+        <div class="order-3 -mr-2 flex items-center gap-1 sm:order-3">
+          {#if $settingsStore.playerShowQueue}
+            <button
+              data-upnext-toggle
+              class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
+              title="Queue"
+              aria-label="Queue"
+              onclick={() => (upNextOpen = !upNextOpen)}
+            >
+              <i class="bx bx-list-ul"></i>
+            </button>
+          {/if}
 
           <!-- svelte-ignore a11y_no_static_element_interactions : hover wrapper for the volume popup -->
           <div
@@ -551,7 +567,7 @@
             </button>
 
             <div
-              class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg border border-white/10 bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
+              class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
                 ? 'pointer-events-auto opacity-100'
                 : 'pointer-events-none opacity-0'}"
             >

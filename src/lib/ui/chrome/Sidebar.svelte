@@ -542,7 +542,7 @@
 {/snippet}
 
 <aside
-  class="relative flex h-full shrink-0 flex-col border-r border-white/5 {forceFull
+  class="relative flex h-full shrink-0 flex-col {forceFull
     ? 'w-full bg-[var(--color-surface)]/95 pt-12'
     : compact
       ? 'cherry-sidebar w-14 pt-2'

@@ -13,8 +13,42 @@
   initial-value: #ff8a5c;
 }
 
+/* Surface tokens are registered too, so the "tinted surfaces" option (and the
+   accent it follows) can fade in/out instead of snapping. Initial values match
+   the dark theme, where the transition normally runs. */
+@property --color-surface {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #050505;
+}
+@property --color-card {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1c1c1c;
+}
+@property --color-elevated {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1a1a1a;
+}
+@property --color-field {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1a1a1a;
+}
+@property --color-popover {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #101010;
+}
+@property --color-art {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1c1c1c;
+}
+
 @theme {
-  --font-sans: 'Zalando Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Gabarito Variable', ui-sans-serif, system-ui, sans-serif;
   /* Near-black base with a warm accent. The accent is replaced at runtime from
      the current album art (see services/theme.ts).
      NOTE: this token is deliberately NOT called `base`. In Tailwind v4 every
@@ -72,11 +106,13 @@ body {
       75% 45% at 88% -10%,
       color-mix(in srgb, var(--color-accent2) 34%, transparent) 0%,
       transparent 72%
-    ),
-    linear-gradient(180deg, #0a0a0a 0%, #060606 55%, #050505 100%);
+    );
 }
 
+/* The wash is the accent glow *over* the surface colour, so the base follows
+   the (possibly tinted) surface instead of a fixed black/white. */
 .cherry-wash {
+  background-color: var(--color-surface);
   background-image: var(--cherry-wash-image);
 }
 
@@ -96,13 +132,13 @@ body {
   mask-image: linear-gradient(to bottom, transparent 0, #fff 60px);
 }
 
-/* Player bar: dark at the top fading into a subtle accent tint at the bottom. */
+/* Player bar: a subtle accent tint that follows the theme's (tinted) surface. */
 .cherry-playerbar {
   background: linear-gradient(
     180deg,
-    #0b0b0b 0%,
-    #0c0c0c 24%,
-    color-mix(in srgb, var(--color-accent) 20%, #0e0e0e) 100%
+    var(--color-popover) 0%,
+    var(--color-popover) 35%,
+    color-mix(in srgb, var(--color-accent) 12%, var(--color-popover)) 100%
   );
 }
 
@@ -122,11 +158,24 @@ html.no-gradients .cherry-playerbar {
   backdrop-filter: blur(6px);
 }
 
-/* Animate the accent itself; everything derived from it follows along. */
+/* Animate the accent itself; everything derived from it follows along. The
+   surface tokens are included so the tint fades with it. */
 html {
   transition:
     --color-accent 700ms ease,
-    --color-accent2 700ms ease;
+    --color-accent2 700ms ease,
+    --color-surface 700ms ease,
+    --color-card 700ms ease,
+    --color-elevated 700ms ease,
+    --color-field 700ms ease,
+    --color-popover 700ms ease,
+    --color-art 700ms ease;
+}
+
+/* Paused while the colour picker is being dragged, so the accent tracks the
+   picker instantly instead of easing behind it. */
+html.no-accent-transition {
+  transition: none;
 }
 
 /* "Loading a track" equaliser inside the play button. */
@@ -334,7 +383,7 @@ html {
 html.light {
   --color-surface: #f4f4f5;
   --color-line: #e4e4e7;
-  --color-card: #ffffff;
+  --color-card: #f4f4f5;
   --color-elevated: #ffffff;
   --color-field: #ffffff;
   --color-avatar: #e4e4e7;
@@ -372,8 +421,7 @@ html.light {
       75% 45% at 88% -10%,
       color-mix(in srgb, var(--color-accent2) 18%, transparent) 0%,
       transparent 72%
-    ),
-    linear-gradient(180deg, #fbf1f2 0%, #f4f4f5 55%, #f4f4f5 100%);
+    );
 }
 
 /* Native form controls (selects, colour picker, scrollbars) follow the theme. */
@@ -391,9 +439,9 @@ html.light body {
 html.light .cherry-playerbar {
   background: linear-gradient(
     180deg,
-    #ffffff 0%,
-    #fafafa 45%,
-    color-mix(in srgb, var(--color-accent) 12%, #ffffff) 100%
+    var(--color-popover) 0%,
+    var(--color-popover) 55%,
+    color-mix(in srgb, var(--color-accent) 5%, var(--color-popover)) 100%
   );
 }
 

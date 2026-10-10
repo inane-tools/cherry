@@ -80,7 +80,7 @@ fn append_webview2_args(extra: &str) {
 /// chrome) scales consistently.
 #[tauri::command]
 fn set_webview_zoom(window: tauri::WebviewWindow, scale: f64) -> Result<(), String> {
-    let scale = scale.clamp(0.5, 2.0);
+    let scale = scale.clamp(0.4, 2.5);
     window.set_zoom(scale).map_err(|e| e.to_string())
 }
 

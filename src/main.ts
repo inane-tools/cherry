@@ -1,4 +1,4 @@
-import '@fontsource-variable/zalando-sans';
+import '@fontsource-variable/gabarito';
 import 'boxicons/css/boxicons.min.css';
 import './app.css';
 import { mount } from 'svelte';

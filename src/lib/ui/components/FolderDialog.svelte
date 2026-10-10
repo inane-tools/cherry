@@ -81,16 +81,16 @@
         <input
           bind:value={name}
           placeholder="Folder name…"
-          class="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
+          class="w-full rounded-xl border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
           onkeydown={(e) => {
             if (e.key === 'Enter') save();
           }}
         />
       </div>
 
-      <footer class="flex items-center justify-end gap-2 border-t border-white/[0.06] px-5 py-3.5">
+      <footer class="flex items-center justify-end gap-2 px-5 py-3.5">
         <button
-          class="rounded-xl border border-white/10 px-4 py-2 text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+          class="rounded-xl px-4 py-2 text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
           onclick={closeFolderDialog}
         >
           Cancel

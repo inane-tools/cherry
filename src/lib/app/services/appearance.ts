@@ -11,7 +11,14 @@ import type { CherrySettings } from '$lib/infra/storage/settingsRepo';
 import { bestThumbnail } from '$lib/core/models';
 import { playerStore } from './player';
 import { settingsStore } from './settings';
-import { applyArtworkTheme, applyCustomAccent, resetArtworkTheme, setAccentSource, setLightMode } from './theme';
+import {
+  applyArtworkTheme,
+  applyCustomAccent,
+  resetArtworkTheme,
+  setAccentSource,
+  setLightMode,
+  setTinted,
+} from './theme';
 
 const media =
   typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -32,6 +39,7 @@ let lastTheme: 'light' | 'dark' | null = null;
 let lastSource: CherrySettings['accentSource'] | null = null;
 let lastColour: string | null = null;
 let lastGradients: boolean | null = null;
+let lastTinted: boolean | null = null;
 
 function apply(settings: CherrySettings): void {
   if (typeof document === 'undefined') return;
@@ -47,6 +55,11 @@ function apply(settings: CherrySettings): void {
   if (settings.gradientsEnabled !== lastGradients) {
     document.documentElement.classList.toggle('no-gradients', !settings.gradientsEnabled);
     lastGradients = settings.gradientsEnabled;
+  }
+
+  if (settings.tintedBackground !== lastTinted) {
+    setTinted(settings.tintedBackground);
+    lastTinted = settings.tintedBackground;
   }
 
   if (settings.accentSource === 'custom') {

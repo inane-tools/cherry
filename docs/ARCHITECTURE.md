@@ -196,7 +196,7 @@ actually needs deciphering.
   split into **tabs** — Profile (Account / Discord / Last.fm), Cherry (Playlists
   / Application / Data & Cache / Developer), Appearance, and About (Cherry info
   / Disclaimer / Open source).
-- **Font:** Zalando Sans, self-hosted via `@fontsource-variable/zalando-sans`
+- **Font:** Gabarito, self-hosted via `@fontsource-variable/gabarito`
   (bundled by Vite, no runtime network).
 - **Theme:** near-black base with a red/amber wash from the top of the window
   (`.cherry-wash` in `app.css`); accent is `--color-accent` (#ff4d5e).

@@ -90,9 +90,9 @@
         {/if}
       </div>
 
-      <footer class="flex items-center justify-end border-t border-white/[0.06] px-5 py-3">
+      <footer class="flex items-center justify-end px-5 py-3">
         <button
-          class="rounded-lg border border-white/10 px-4 py-1.5 text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+          class="rounded-lg px-4 py-1.5 text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
           onclick={closeSongCredits}
         >
           Close
