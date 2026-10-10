@@ -13,6 +13,7 @@ interface Pending {
 const pending: Pending[] = [];
 
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
+  setActiveChannel: vi.fn(),
   getInnertube: vi.fn(() => Promise.resolve({})),
   prefetchAudioStream: vi.fn(() => Promise.resolve()),
   getAudioStream: vi.fn(
@@ -49,19 +50,51 @@ async function flush(): Promise<void> {
 let playImpl: (el: HTMLMediaElement) => Promise<void>;
 
 beforeEach(() => {
-  pending.length = 0;
-  clearQueue();
-  setShuffle(false);
-  authStore.set({ kind: 'cookie', cookie: 'SID=x', savedAt: 0 } satisfies AuthSession);
   playImpl = () => Promise.resolve();
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
     return playImpl(this);
   });
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
   vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+  pending.length = 0;
+  clearQueue();
+  setShuffle(false);
+  authStore.set({ kind: 'cookie', cookie: 'SID=x', savedAt: 0 } satisfies AuthSession);
 });
 
 describe('loadCurrent', () => {
+  it('does not start a stream that resolves after Stop', async () => {
+    const done = player.playTracks([track('a')]);
+    await flush();
+    await player.stopPlayback();
+    pending[0].resolve('https://media/a');
+    await done;
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(get(player.playerStore)).toMatchObject({ status: 'idle', track: null, durationSeconds: 0 });
+  });
+
+  it('does not retry a stream failure after Stop', async () => {
+    const done = player.playTracks([track('a')]);
+    await flush();
+    await player.stopPlayback();
+    pending[0].reject(new Error('HTTP 403'));
+    await done;
+    expect(pending).toHaveLength(1);
+    expect(get(player.playerStore).status).toBe('idle');
+  });
+
+  it('does not start a stream that resolves after sign-out clears the queue', async () => {
+    player.warmup();
+    const done = player.playTracks([track('a')]);
+    await flush();
+    clearQueue();
+    authStore.set(null);
+    pending[0].resolve('https://media/a');
+    await done;
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(get(player.playerStore)).toMatchObject({ status: 'idle', track: null });
+  });
+
   it('plays the resolved stream of the current track', async () => {
     const done = player.playTracks([track('a'), track('b')]);
     await flush();

@@ -63,6 +63,31 @@ describe('cache', () => {
     expect(cacheGet('collection:1')).toBe('b');
   });
 
+  it('refetches after clearing and prevents an older loader from overwriting the new value', async () => {
+    let finishOld!: (value: string) => void;
+    const old = cached('library:1', 1000, () => new Promise<string>((resolve) => (finishOld = resolve)));
+    cacheClear('library:');
+    expect(await cached('library:1', 1000, async () => 'new')).toBe('new');
+    finishOld('old');
+    expect(await old).toBe('old');
+    expect(cacheGet('library:1')).toBe('new');
+  });
+
+  it('does not let an old completion remove a newer pending loader', async () => {
+    let finishOld!: (value: string) => void;
+    let finishNew!: (value: string) => void;
+    const old = cached('library:1', 1000, () => new Promise<string>((resolve) => (finishOld = resolve)));
+    cacheClear();
+    const fresh = cached('library:1', 1000, () => new Promise<string>((resolve) => (finishNew = resolve)));
+    finishOld('old');
+    await old;
+    expect(cacheGet('library:1')).toBeNull();
+    expect(cached('library:1', 1000, async () => 'unexpected')).toBe(fresh);
+    finishNew('new');
+    await fresh;
+    expect(cacheGet('library:1')).toBe('new');
+  });
+
   it('evicts non-priority entries first when over the entry limit', () => {
     cacheSet('collection:keep', 'p', 60_000);
     for (let i = 0; i < 20; i++) cacheSet(`search:${i}`, i, 60_000);

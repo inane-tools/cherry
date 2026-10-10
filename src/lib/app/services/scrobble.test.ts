@@ -94,6 +94,22 @@ describe('scrobble threshold', () => {
 });
 
 describe('offline queue', () => {
+  it('keeps the original timestamp when a failed request finishes during another song', async () => {
+    const originalTime = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(originalTime);
+    let rejectScrobble!: () => void;
+    accept = () => new Promise<boolean>((resolve) => (rejectScrobble = () => resolve(false)));
+    __test.onState(state(0));
+    listen(50);
+    vi.mocked(Date.now).mockReturnValue(originalTime + 100_000);
+    __test.onState({ ...state(0), track: { ...song, videoId: 'v2', title: 'Next song' } });
+    rejectScrobble();
+    await settle();
+    expect(JSON.parse(localStorage.getItem(QUEUE_KEY)!)).toEqual([
+      { fields: { artist: 'artist', track: 'Song', duration: 100 }, timestamp: originalTime / 1000 },
+    ]);
+  });
+
   it('queues a failed scrobble and sends it on the next flush', async () => {
     accept = () => false;
     __test.onState(state(0));

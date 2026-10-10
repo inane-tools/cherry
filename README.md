@@ -7,7 +7,7 @@ Cherry is a YouTube Music desktop client that is not just another wrapper, it ha
 Since there is no official API, it uses the same endpoints that the Web Player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
-> **Latest release: v1.4.1 (Ashibetsu)** — see the [changelog](CHANGELOG.md) for
+> **Current version: v1.4.2 (Ashibetsu)** — see the [changelog](CHANGELOG.md) for
 > what's new.
 
 ![Cherry](https://inane.tools/screenshot-compact.webp)
@@ -103,10 +103,9 @@ gnome-keyring). Run everything with `cargo test -- --include-ignored`. See
 
 ## Changelog
 
-**v1.4.1 (Ashibetsu)** is the latest release — it adds **release codenames**
-(each version is named after a Japanese city, ascending by population) and a
-restyled Settings, on top of 1.4's tinted theme and player-button options, and
-1.3's keyboard shortcuts, sleep timer, UI zoom and song credits. See
+**v1.4.2 (Ashibetsu)** refines the folder, playlist and search popups to match
+Settings, updates button rounding, and fixes playback, sign-out, library loading
+and scrobble races. See
 [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Credits
@@ -118,6 +117,9 @@ contributed the code audit, the Vitest test suite, keyboard shortcuts, the sleep
 timer and the repeat button. Those commits were authored by **Claude**
 (Anthropic) and are preserved in this repository's history. See
 [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+**Codex (OpenAI)** contributed code review, playback and sign-out fixes,
+regression tests and UI refinements.
 
 ## License
 

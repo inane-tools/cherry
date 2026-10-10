@@ -27,7 +27,7 @@
   import { refreshDiscord } from '$lib/app/services/player';
   import { clearAllData, clearCache, formatCacheSize } from '$lib/app/services/maintenance';
   import { DISCLAIMER } from '$lib/app/services/gate';
-  import { isTauri } from '$lib/app/services/platform';
+  import { errorMessage, isTauri } from '$lib/app/services/platform';
   import {
     applyZoom,
     ZOOM_MAX,
@@ -375,8 +375,14 @@
 
   async function disconnect() {
     stopPolling();
-    await signOut();
-    message = 'Signed out.';
+    message = '';
+    error = '';
+    try {
+      await signOut();
+      message = 'Signed out.';
+    } catch (e) {
+      error = `Could not sign out: ${errorMessage(e)} Please try again.`;
+    }
   }
 
   async function refreshPlaylists() {
@@ -1077,6 +1083,10 @@
           >
             jannuary</button
           > and Claude.
+        </p>
+        <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-400">
+          <span class="font-semibold text-zinc-300">Codex (OpenAI)</span> — code review,
+          playback and sign-out fixes, regression tests, and UI refinements.
         </p>
       </div>
     </SettingsSection>

@@ -146,9 +146,12 @@
   let lastCookie = '';
   authStore.subscribe((session) => {
     const cookie = session?.cookie ?? '';
-    if (!ready || cookie === lastCookie) return;
+    if (cookie === lastCookie) return;
     const wasSignedOut = lastCookie === '';
     lastCookie = cookie;
+    // Track the restored session during startup too, so the first sign-out
+    // after launch is recognized as a session change.
+    if (!ready) return;
     if (cookie) {
       // Sign-in: force a genuine refetch, so a login after clearing the cache
       // reliably repopulates the rail and home feed. Then resume the queue.

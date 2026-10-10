@@ -21,8 +21,6 @@
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
 
-  /** When provided, a close button is rendered inline with the search bar. */
-  export let onClose: (() => void) | undefined = undefined;
 
   let q = get(searchQuery);
   $: results = $searchResultsStore;
@@ -153,13 +151,14 @@
     }}
   >
     <div
-      class="flex h-[46px] min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-elevated)]/80 px-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur focus-within:border-[var(--color-accent)]/60"
+      class="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 transition-colors focus-within:border-[var(--color-accent)]/60"
     >
       <input
         bind:value={q}
         oninput={onType}
         placeholder="What do you want to listen to?"
-        class="min-w-0 flex-1 bg-transparent text-[15px] text-zinc-100 outline-none placeholder:text-zinc-600"
+        class="min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-none placeholder:text-zinc-600"
+        aria-label="Search music"
       />
       {#if q}
         <button
@@ -179,22 +178,12 @@
     </div>
     <button
       type="submit"
-      class="cherry-btn-scrim flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)] text-xl text-white hover:brightness-110"
+      class="cherry-btn-scrim flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)] text-lg text-white transition-colors hover:bg-[var(--color-accent2)]"
       title="Search"
       aria-label="Search"
     >
       <i class="bx bx-search"></i>
     </button>
-    {#if onClose}
-      <button
-        type="button"
-        class="cherry-btn-scrim flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        aria-label="Close search"
-        onclick={onClose}
-      >
-        <i class="bx bx-x text-2xl"></i>
-      </button>
-    {/if}
   </form>
 
   {#if loading}

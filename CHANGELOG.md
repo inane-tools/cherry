@@ -4,6 +4,29 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] — 2026-10-10
+
+### Changed
+
+- Folder, playlist creation/editing and search popups now follow the redesigned
+  Settings view, with plain bold headings and compact fields without extra panels.
+  New folder and playlist fields no longer show a redundant name label.
+- Floating and expanded-player queues share a compact layout with opaque
+  backgrounds, smaller artwork and consistent headings and controls.
+- Playlist and album action buttons use the same corner rounding as compact
+  sidebar artwork, and compact sidebar hover labels no longer have an outline.
+- Codex (OpenAI) is credited for code review, bug fixes, regression tests and UI
+  refinements.
+
+### Fixed
+
+- Pending streams can no longer restart playback after stopping or signing out.
+- Signing out after restoring a saved session clears account and library state;
+  failures to delete saved credentials are reported instead of hidden.
+- Stale channel, library and cache requests cannot overwrite refreshed data or
+  repopulate account state after sign-out.
+- Failed Last.fm scrobbles keep the original song's timestamp when retried.
+
 ## [1.4.1] — 2026-10-10
 
 ### Added
@@ -264,6 +287,7 @@ Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
 [1.4.1]: https://github.com/inane-tools/cherry/releases/tag/v1.4.1
+[1.4.2]: https://github.com/inane-tools/cherry/releases/tag/v1.4.2
 [1.4.0]: https://github.com/inane-tools/cherry/releases/tag/v1.4.0
 [1.3.0]: https://github.com/inane-tools/cherry/releases/tag/v1.3.0
 [1.2.1]: https://github.com/inane-tools/cherry/releases/tag/v1.2.1

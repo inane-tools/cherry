@@ -89,12 +89,12 @@
       Now playing
     </div>
     <div
-      class="mb-3 flex items-center gap-3 rounded-xl border border-[var(--color-accent)]/25 bg-[var(--color-accent)]/10 p-2.5"
+      class="mb-3 flex items-center gap-2 rounded-lg bg-[var(--color-accent)]/10 px-2 py-1.5"
     >
       {#if bestThumbnail($currentItem.track.thumbnails, 96)}
-        <img src={bestThumbnail($currentItem.track.thumbnails, 96)} alt="" class="h-10 w-10 rounded-lg object-cover" />
+        <img src={bestThumbnail($currentItem.track.thumbnails, 96)} alt="" class="h-8 w-8 shrink-0 rounded-lg object-cover" />
       {:else}
-        <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 text-zinc-600">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-600">
           <i class="bx bx-music text-lg"></i>
         </span>
       {/if}
@@ -113,7 +113,7 @@
     <div class="flex flex-col gap-0.5">
       {#each upcoming as qi, i (qi.queueId)}
         <div
-          class="group relative flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.06] {dragId ===
+          class="group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06] {dragId ===
           qi.queueId
             ? 'opacity-40'
             : ''}"
@@ -138,9 +138,9 @@
             aria-hidden="true"
           ></i>
           {#if bestThumbnail(qi.track.thumbnails, 96)}
-            <img src={bestThumbnail(qi.track.thumbnails, 96)} alt="" draggable="false" class="h-10 w-10 rounded-lg object-cover" loading="lazy" />
+            <img src={bestThumbnail(qi.track.thumbnails, 96)} alt="" draggable="false" class="h-8 w-8 shrink-0 rounded-lg object-cover" loading="lazy" />
           {:else}
-            <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 text-zinc-600">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-600">
               <i class="bx bx-music text-lg"></i>
             </span>
           {/if}
@@ -149,7 +149,7 @@
             <ArtistsLine artists={qi.track.artists} textClass="block truncate text-[11px] text-zinc-500" />
           </span>
           <button
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-lg text-zinc-500 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100"
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-lg text-zinc-500 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100 group-focus-within:opacity-100"
             title="Remove from queue"
             aria-label="Remove from queue"
             onclick={(event) => remove(event, qi.queueId)}

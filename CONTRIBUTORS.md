@@ -9,6 +9,8 @@ Cherry is built by [inane.tools](https://inane.tools).
   repeat button.
 - **Claude** (Anthropic) — authored those contributions; the commits are
   preserved in this repository's history.
+- **Codex** (OpenAI) — code review, playback and sign-out fixes, regression
+  tests and UI refinements.
 
 Additional thanks to the open-source projects listed in **Settings → About →
 Open Source & Contributors**, and in [README.md](README.md).

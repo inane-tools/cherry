@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import type { Playlist, Track } from '$lib/core/models';
-import { getHomeSections, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
+import { getActiveChannel, getHomeSections, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
 import type { HomeSection } from '$lib/infra/ytmusic/rawHome';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
@@ -23,46 +23,63 @@ export const openPlaylistLoading = writable(false);
 export const openPlaylistError = writable<string | null>(null);
 
 let inflight: Promise<void> | null = null;
+let homeInflight: Promise<void> | null = null;
+let generation = 0;
+
+function invalidateLoads(): number {
+  generation++;
+  openSeq++;
+  inflight = null;
+  homeInflight = null;
+  libraryLoading.set(false);
+  homeLoading.set(false);
+  openPlaylistLoading.set(false);
+  return generation;
+}
 
 /** Loads the playlist rail for the *active channel*. */
 export function loadLibrary(): Promise<void> {
+  const session = get(authStore);
+  if (!session) {
+    playlistStore.set([]);
+    libraryError.set(null);
+    return Promise.resolve();
+  }
   if (inflight) return inflight;
+  const id = generation;
+  let channel: string | undefined;
+  const stale = () => id !== generation || get(authStore)?.cookie !== session.cookie
+    || (channel !== undefined && channel !== getActiveChannel());
   inflight = (async () => {
-    // Everything, including the signed-out early return, has to clear
-    // `inflight` in a `finally`. If the signed-out path returned before the
-    // try block, `inflight` kept a resolved promise forever and every later
-    // load (notably the sidebar "Retry" after signing in) was a silent no-op.
     try {
-      const session = get(authStore);
-      if (!session) {
-        playlistStore.set([]);
-        libraryError.set(null);
-        return;
-      }
       libraryLoading.set(true);
       libraryError.set(null);
       // The channel context decides which library we get, so establish it
       // before asking for playlists.
       await initChannel();
+      if (stale()) return;
+      channel = getActiveChannel();
       const playlists = await getLibraryPlaylists(session);
+      if (stale()) return;
       playlistStore.set(playlists);
       if (playlists.length === 0) {
         libraryError.set('No playlists found for this channel.');
       }
     } catch (e) {
+      if (stale()) return;
       const message = e instanceof Error ? e.message : String(e);
       // eslint-disable-next-line no-console
       console.error('[cherry] library load failed:', e);
       libraryError.set(message);
     } finally {
-      libraryLoading.set(false);
-      inflight = null;
+      if (id === generation) {
+        libraryLoading.set(false);
+        inflight = null;
+      }
     }
   })();
   return inflight;
 }
-
-let homeInflight: Promise<void> | null = null;
 
 /** Loads the real YouTube Music home feed for the active channel. */
 export function loadHome(): Promise<void> {
@@ -72,18 +89,29 @@ export function loadHome(): Promise<void> {
     return Promise.resolve();
   }
   if (homeInflight) return homeInflight;
+  const id = generation;
+  let channel: string | undefined;
+  const stale = () => id !== generation || get(authStore)?.cookie !== session.cookie
+    || (channel !== undefined && channel !== getActiveChannel());
   homeInflight = (async () => {
     homeLoading.set(true);
     try {
       await initChannel();
-      homeSectionsStore.set(await getHomeSections(session));
+      if (stale()) return;
+      channel = getActiveChannel();
+      const sections = await getHomeSections(session);
+      if (stale()) return;
+      homeSectionsStore.set(sections);
     } catch (e) {
+      if (stale()) return;
       // eslint-disable-next-line no-console
       console.error('[cherry] home feed failed:', e);
       homeSectionsStore.set([]);
     } finally {
-      homeLoading.set(false);
-      homeInflight = null;
+      if (id === generation) {
+        homeLoading.set(false);
+        homeInflight = null;
+      }
     }
   })();
   return homeInflight;
@@ -99,12 +127,13 @@ export function loadHome(): Promise<void> {
  * signed-out state and the rail stayed empty.
  */
 export async function reloadAll(): Promise<void> {
+  const id = invalidateLoads();
   cacheClear('channels:');
   cacheClear('probe:');
-  // Drop the in-flight guards so the reload is a genuine refetch.
-  inflight = null;
-  homeInflight = null;
+  cacheClear('library:');
+  cacheClear('home:');
   await initChannel(true);
+  if (id !== generation) return;
   await Promise.all([loadHome(), loadLibrary()]);
 }
 
@@ -114,14 +143,7 @@ export async function reloadAll(): Promise<void> {
  * button actually re-fetches instead of returning the cached list.
  */
 export async function refreshLibrary(): Promise<void> {
-  cacheClear('channels:');
-  cacheClear('probe:');
-  cacheClear('home:');
-  // Drop the in-flight guards so the reload is a genuine refetch.
-  inflight = null;
-  homeInflight = null;
-  await initChannel(true);
-  await Promise.all([loadLibrary(), loadHome()]);
+  await reloadAll();
 }
 
 /**
@@ -143,13 +165,20 @@ export function openPlaylist(playlist: Playlist): void {
 export async function playPlaylist(playlist: Playlist, shuffle = false): Promise<void> {
   const session = get(authStore);
   if (!session) return;
+  const id = generation;
+  let channel: string | undefined;
+  const stale = () => id !== generation || get(authStore)?.cookie !== session.cookie
+    || (channel !== undefined && channel !== getActiveChannel());
   try {
     await initChannel();
+    if (stale()) return;
+    channel = getActiveChannel();
     // Start on the first page (and enqueue the rest as it streams in) so a large
     // playlist begins playing immediately instead of after every page is read.
     let started = false;
     let seen = 0;
     await streamCollectionTracks(playlist.browseId, session, (partial) => {
+      if (stale()) return;
       const fresh = partial.slice(seen);
       seen = partial.length;
       if (fresh.length === 0) return;
@@ -162,6 +191,7 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
       }
     });
   } catch (e) {
+    if (stale()) return;
     // eslint-disable-next-line no-console
     console.error('[cherry] could not play playlist:', e);
   }
@@ -187,30 +217,51 @@ export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
     return;
   }
   openPlaylistLoading.set(true);
+  let channel: string | undefined;
+  const stale = () => id !== openSeq || get(authStore)?.cookie !== session.cookie
+    || (channel !== undefined && channel !== getActiveChannel());
   try {
     await initChannel();
+    if (stale()) return;
+    channel = getActiveChannel();
     // Header metadata (description/art) is independent of the track stream, so
     // fetch it alongside rather than serialising the two.
     void getPlaylistMeta(playlist.browseId, session).then((meta) => {
-      if (id !== openSeq) return;
+      if (stale()) return;
       openPlaylistDescription.set(meta?.description ?? null);
     });
     const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done) => {
-      if (id !== openSeq) return;
+      if (stale()) return;
       openPlaylistTracks.set(partial);
       // The first page is enough to render and play; drop the skeleton while
       // the remaining pages keep streaming in.
       if (!done) openPlaylistLoading.set(false);
     });
-    if (id !== openSeq) return;
+    if (stale()) return;
     openPlaylistTracks.set(tracks);
     if (tracks.length === 0) {
       openPlaylistError.set('This playlist has no playable tracks.');
     }
   } catch (e) {
-    if (id !== openSeq) return;
+    if (stale()) return;
     openPlaylistError.set(e instanceof Error ? e.message : String(e));
   } finally {
     if (id === openSeq) openPlaylistLoading.set(false);
   }
 }
+
+// Clear account-owned UI immediately, including sessions restored at startup.
+let lastCookie: string | null = null;
+authStore.subscribe((session) => {
+  const cookie = session?.cookie ?? '';
+  if (cookie === lastCookie) return;
+  lastCookie = cookie;
+  invalidateLoads();
+  playlistStore.set([]);
+  homeSectionsStore.set([]);
+  libraryError.set(null);
+  openPlaylistStore.set(null);
+  openPlaylistTracks.set([]);
+  openPlaylistDescription.set(null);
+  openPlaylistError.set(null);
+});

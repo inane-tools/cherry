@@ -6,6 +6,7 @@
   import { authStore } from '$lib/app/services/auth';
   import { updatePlaylistDetails, setPlaylistImage } from '$lib/app/services/playlistEdit';
   import { closePlaylistEditor, playlistEditorStore } from '$lib/app/services/playlistEditor';
+  import DialogHeader from './DialogHeader.svelte';
 
   $: state = $playlistEditorStore;
   $: playlist = state.playlist;
@@ -105,7 +106,7 @@
 {#if state.open && playlist}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 z-[70] flex items-center justify-center bg-scrim/55 p-4 backdrop-blur-sm"
+    class="fixed inset-0 z-[70] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]"
     role="presentation"
     onclick={closePlaylistEditor}
     in:fade={{ duration: 150 }}
@@ -122,88 +123,73 @@
       in:fly={{ y: -12, duration: 180 }}
       out:fade={{ duration: 120 }}
     >
-      <header class="flex items-center gap-3 px-5 py-4">
-        <span
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/15 text-lg text-[var(--color-accent2)]"
-        >
-          <i class="bx bx-pencil"></i>
-        </span>
-        <div class="min-w-0 flex-1">
-          <h2 class="text-[14px] font-semibold text-white">Edit playlist</h2>
-          <p class="truncate text-[11px] text-zinc-500">{playlist.title}</p>
-        </div>
-        <button
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-          aria-label="Close"
-          onclick={closePlaylistEditor}
-        >
-          <i class="bx bx-x text-xl"></i>
-        </button>
-      </header>
+      <DialogHeader title="Edit playlist" description={playlist.title} onClose={closePlaylistEditor} />
 
-      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5">
-        <!-- The cover image is itself the upload target (hover reveals the
-             action) and sits inline with the title field. -->
-        <div class="flex items-start gap-4">
-          <label
-            class="group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-xl bg-[var(--color-art)] shadow-[0_10px_30px_rgba(0,0,0,0.4)]"
-          >
-            {#if cover}
-              <img src={cover} alt="" class="h-full w-full object-cover" />
-            {:else}
-              <span class="flex h-full w-full items-center justify-center text-zinc-600">
-                <i class="bx bx-music text-3xl"></i>
-              </span>
-            {/if}
-            <span
-              class="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100"
+      <div class="min-h-0 flex-1 overflow-y-auto px-6">
+        <div class="flex flex-col gap-4">
+          <!-- The cover image is itself the upload target (hover reveals the
+               action) and sits inline with the title field. -->
+          <div class="flex items-start gap-4">
+            <label
+              class="group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-lg bg-[var(--color-art)]"
             >
-              <i class="bx bx-upload text-xl"></i>
-              <span class="text-[9px] font-medium">Upload</span>
-            </span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg"
-              class="hidden"
-              onchange={onPickImage}
-            />
-          </label>
-          <label class="flex min-w-0 flex-1 flex-col gap-1.5">
-            <span class="text-[11px] font-medium text-zinc-400">Title</span>
-            <input
-              bind:value={title}
+              {#if cover}
+                <img src={cover} alt="" class="h-full w-full object-cover" />
+              {:else}
+                <span class="flex h-full w-full items-center justify-center text-zinc-600">
+                  <i class="bx bx-music text-3xl"></i>
+                </span>
+              {/if}
+              <span
+                class="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100"
+              >
+                <i class="bx bx-upload text-xl"></i>
+                <span class="text-[9px] font-medium">Upload</span>
+              </span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                class="hidden"
+                onchange={onPickImage}
+              />
+            </label>
+            <label class="flex min-w-0 flex-1 flex-col gap-1.5">
+              <span class="text-[11px] font-medium text-zinc-400">Title</span>
+              <input
+                bind:value={title}
+                disabled={loading}
+                class="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60 disabled:opacity-50"
+              />
+              <span class="text-[10px] leading-relaxed text-zinc-600">
+                {pendingImage
+                  ? 'New cover applies when you press Save.'
+                  : 'Hover the cover to change it. JPG or PNG.'}
+              </span>
+            </label>
+          </div>
+
+          <label class="flex flex-col gap-1.5">
+            <span class="text-[11px] font-medium text-zinc-400">Description</span>
+            <textarea
+              bind:value={description}
               disabled={loading}
-              class="rounded-xl border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60 disabled:opacity-50"
-            />
-            <span class="text-[10px] leading-relaxed text-zinc-600">
-              {pendingImage
-                ? 'New cover applies when you press Save.'
-                : 'Hover the cover to change it. JPG or PNG.'}
-            </span>
+              rows="5"
+              placeholder="Add a description…"
+              class="resize-none rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] leading-relaxed text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60 disabled:opacity-50"
+            ></textarea>
           </label>
         </div>
-
-        <label class="flex flex-col gap-1.5">
-          <span class="text-[11px] font-medium text-zinc-400">Description</span>
-          <textarea
-            bind:value={description}
-            disabled={loading}
-            rows="5"
-            placeholder="Add a description…"
-            class="resize-none rounded-xl border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-[12px] leading-relaxed text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60 disabled:opacity-50"
-          ></textarea>
-        </label>
       </div>
 
-      <footer class="flex items-center justify-end gap-2 px-5 py-3.5">
+      <footer class="flex shrink-0 items-center justify-end gap-2 p-6">
         <button
-          class="rounded-xl px-4 py-2 text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+          class="rounded-lg bg-white/[0.06] px-4 py-2 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.1] hover:text-white"
           onclick={closePlaylistEditor}
         >
           Cancel
         </button>
         <button
-          class="cherry-btn-scrim rounded-xl bg-[var(--color-accent)] px-5 py-2 text-[12px] font-semibold text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
+          class="cherry-btn-scrim rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
           disabled={busy || loading || !title.trim()}
           onclick={save}
         >

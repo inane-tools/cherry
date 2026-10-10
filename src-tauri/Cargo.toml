@@ -1,6 +1,6 @@
 [package]
 name = "cherry"
-version = "1.4.1"
+version = "1.4.2"
 description = "Lightweight YouTube Music desktop client"
 authors = ["Cherry"]
 edition = "2021"

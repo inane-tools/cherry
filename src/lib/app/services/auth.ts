@@ -142,6 +142,13 @@ export async function signInWithCookie(rawCookie: string, accountLabel?: string)
 }
 
 export async function signOut(): Promise<void> {
+  // Do not report success or discard the live session if its persisted copy
+  // could not be deleted: it would otherwise return on the next launch.
+  if (isTauri()) {
+    await invokeStrict('auth_clear');
+  } else {
+    sessionStorage.removeItem('cherry.auth.dev');
+  }
   resetInnertubeClient();
   clearStreamCache();
   // Everything cached belongs to the account that is being removed.
@@ -150,15 +157,6 @@ export async function signOut(): Promise<void> {
   // so the next sign-in does not resume the previous account's music.
   clearQueue();
   clearStoredQueue();
-  if (isTauri()) {
-    await invokeSafe('auth_clear');
-  } else {
-    try {
-      sessionStorage.removeItem('cherry.auth.dev');
-    } catch {
-      /* ignore */
-    }
-  }
   authStore.set(null);
   authStatus.set('signed-out');
 }

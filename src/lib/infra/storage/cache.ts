@@ -160,13 +160,13 @@ export function cached<T>(key: string, ttlMs: number, loader: () => Promise<T>, 
 
   const promise = loader()
     .then((value) => {
-      if (!options?.shouldCache || options.shouldCache(value)) {
+      if (inflight.get(key) === promise && (!options?.shouldCache || options.shouldCache(value))) {
         cacheSet(key, value, ttlMs, options);
       }
       return value;
     })
     .finally(() => {
-      inflight.delete(key);
+      if (inflight.get(key) === promise) inflight.delete(key);
     });
   inflight.set(key, promise);
   return promise;
@@ -174,6 +174,11 @@ export function cached<T>(key: string, ttlMs: number, loader: () => Promise<T>, 
 
 /** Drop cached entries, optionally only those under a prefix. */
 export function cacheClear(prefix = ''): void {
+  // Detach old loaders too: a refresh must issue a new request, and an old
+  // response must not repopulate entries that were explicitly cleared.
+  for (const key of [...inflight.keys()]) {
+    if (key.startsWith(prefix)) inflight.delete(key);
+  }
   for (const key of [...memory.keys()]) {
     if (key.startsWith(prefix)) memory.delete(key);
   }

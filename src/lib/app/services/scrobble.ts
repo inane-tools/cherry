@@ -156,8 +156,9 @@ function maybeScrobble(track: Track, duration: number): void {
   if (listenedSeconds < threshold) return;
   scrobbled = true;
   const fields = fieldsFromTrack(track);
-  void scrobble(fields, startedAt).then((ok) => {
-    if (!ok) enqueue({ fields, timestamp: startedAt });
+  const timestamp = startedAt;
+  void scrobble(fields, timestamp).then((ok) => {
+    if (!ok) enqueue({ fields, timestamp });
   });
 }
 

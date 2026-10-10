@@ -100,7 +100,7 @@
         {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
             disabled={tracks.length === 0}
             onclick={() => playTracks(tracks, 0)}
           >
@@ -108,7 +108,7 @@
             Play
           </button>
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
+            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
               ? 'text-[var(--color-accent2)]'
               : 'text-zinc-200'} hover:bg-white/10 disabled:opacity-40"
             disabled={tracks.length === 0}

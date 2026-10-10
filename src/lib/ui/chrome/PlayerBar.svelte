@@ -1,6 +1,6 @@
 <script lang="ts">
   import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted, toggleShuffle } from '$lib/app/services/player';
-  import { shuffleMode, upNext, upNextQueue, clearQueue, queueItems } from '$lib/app/services/queue';
+  import { shuffleMode, upNext } from '$lib/app/services/queue';
   import { bestThumbnail, hiResThumbnail, trackDisplayArtists } from '$lib/core/models';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
@@ -11,6 +11,7 @@
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import UpNextPanel from './UpNextPanel.svelte';
   import QueueList from './QueueList.svelte';
+  import QueueHeader from './QueueHeader.svelte';
   import RepeatButton from '$lib/ui/components/RepeatButton.svelte';
   import SleepTimerButton from '$lib/ui/components/SleepTimerButton.svelte';
 
@@ -216,27 +217,10 @@
     {#if upNextOpen}
       <!-- Queue shown inline in the middle of the full-screen card. -->
       <div
-        class="mx-auto mb-2 flex min-h-0 w-full max-w-2xl flex-1 flex-col rounded-2xl bg-[var(--color-elevated)]/50 p-4 backdrop-blur-md"
+        class="mx-auto mb-2 flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)]"
       >
-        <div class="flex shrink-0 items-center gap-3 pb-2">
-          <h2 class="min-w-0 flex-1 truncate text-[13px] font-semibold text-white">Queue</h2>
-          <span
-            class="shrink-0 rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400"
-          >
-            {$upNextQueue.length} up next
-          </span>
-          {#if $queueItems.length > 0}
-            <button
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-              aria-label="Clear queue"
-              title="Clear queue"
-              onclick={clearQueue}
-            >
-              <i class="bx bx-trash text-lg"></i>
-            </button>
-          {/if}
-        </div>
-        <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1">
+        <QueueHeader onClose={() => (upNextOpen = false)} />
+        <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1 px-3 pb-3">
           <QueueList />
         </div>
       </div>

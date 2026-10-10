@@ -142,7 +142,9 @@ function applyPendingResume(el: HTMLAudioElement, videoId: string): void {
   pendingResume = null;
   if (!resume || resume.videoId !== videoId) return;
   const target = resume.seconds;
+  const generation = loadGeneration;
   const seek = () => {
+    if (generation !== loadGeneration) return;
     // Guard against a bogus remembered position (e.g. longer than the track).
     const max = Number.isFinite(el.duration) && el.duration > 0 ? Math.max(0, el.duration - 1) : target;
     el.currentTime = Math.min(target, max);
@@ -354,6 +356,9 @@ export function seekTo(seconds: number): void {
 // Stops playback entirely and clears the OS media session and Discord presence.
 // Used when the queue is exhausted or emptied so nothing lingers.
 export async function stopPlayback(): Promise<void> {
+  // A stream resolving after Stop must not reattach its source and autoplay.
+  loadGeneration++;
+  pendingResume = null;
   cancelPauseClear();
   const el = ensureAudio();
   el.pause();

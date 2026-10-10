@@ -2,6 +2,7 @@
   import { fly, fade } from 'svelte/transition';
   import { createFolder, renameFolder } from '$lib/app/services/folders';
   import { closeFolderDialog, folderDialogStore } from '$lib/app/services/folderDialog';
+  import DialogHeader from './DialogHeader.svelte';
 
   $: state = $folderDialogStore;
   $: editing = state.folder;
@@ -59,44 +60,34 @@
       in:fly={{ y: -12, duration: 180 }}
       out:fade={{ duration: 120 }}
     >
-      <header class="flex items-center gap-3 px-5 py-4">
-        <span
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/15 text-lg text-[var(--color-accent2)]"
-        >
-          <i class="bx bxs-folder"></i>
-        </span>
-        <h2 class="min-w-0 flex-1 text-[14px] font-semibold text-white">
-          {editing ? 'Rename folder' : 'New folder'}
-        </h2>
-        <button
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-          aria-label="Close"
-          onclick={closeFolderDialog}
-        >
-          <i class="bx bx-x text-xl"></i>
-        </button>
-      </header>
+      <DialogHeader
+        title={editing ? 'Rename folder' : 'New folder'}
+        description="Organize your playlists."
+        onClose={closeFolderDialog}
+      />
 
-      <div class="px-5 pb-4">
+      <div class="px-6">
         <input
+          id="folder-name"
+          aria-label="Folder name"
           bind:value={name}
           placeholder="Folder name…"
-          class="w-full rounded-xl border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-[13px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
+          class="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
           onkeydown={(e) => {
             if (e.key === 'Enter') save();
           }}
         />
       </div>
 
-      <footer class="flex items-center justify-end gap-2 px-5 py-3.5">
+      <footer class="flex items-center justify-end gap-2 p-6">
         <button
-          class="rounded-xl px-4 py-2 text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white"
+          class="rounded-lg bg-white/[0.06] px-4 py-2 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.1] hover:text-white"
           onclick={closeFolderDialog}
         >
           Cancel
         </button>
         <button
-          class="cherry-btn-scrim rounded-xl bg-[var(--color-accent)] px-5 py-2 text-[12px] font-semibold text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
+          class="cherry-btn-scrim rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
           disabled={busy || !name.trim()}
           onclick={save}
         >

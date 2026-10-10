@@ -733,7 +733,7 @@
 
 {#if tip.show}
   <div
-    class="pointer-events-none fixed z-[60] -translate-y-1/2 rounded-lg border border-white/10 bg-[var(--color-elevated)] px-3 py-1.5 shadow-[0_12px_34px_rgba(0,0,0,0.55)]"
+    class="pointer-events-none fixed z-[60] -translate-y-1/2 rounded-lg bg-[var(--color-elevated)] px-3 py-1.5 shadow-[0_12px_34px_rgba(0,0,0,0.55)]"
     style="left: {tip.x}px; top: {tip.y}px;"
   >
     <div class="text-[12px] font-medium text-white">{tip.title}</div>

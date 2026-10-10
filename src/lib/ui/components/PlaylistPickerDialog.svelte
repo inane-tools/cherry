@@ -5,6 +5,7 @@
   import { addablePlaylistsStore, addablePlaylistsLoading, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import { addTracksTo, createNewPlaylist } from '$lib/app/services/playlistEdit';
   import { closePlaylistPicker, playlistPickerStore } from '$lib/app/services/playlistPicker';
+  import DialogHeader from './DialogHeader.svelte';
 
   $: state = $playlistPickerStore;
   $: adding = state.tracks.length > 0;
@@ -69,50 +70,35 @@
       in:fly={{ y: -12, duration: 180 }}
       out:fade={{ duration: 120 }}
     >
-      <header class="flex items-center gap-3 px-5 py-4">
-        <span
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/15 text-lg text-[var(--color-accent2)]"
-        >
-          <i class={adding ? 'bx bx-list-plus' : 'bx bx-plus'}></i>
-        </span>
-        <div class="min-w-0 flex-1">
-          <h2 class="text-[14px] font-semibold text-white">
-            {adding ? 'Add to playlist' : 'New playlist'}
-          </h2>
-          <p class="truncate text-[11px] text-zinc-500">
-            {#if adding}
-              {state.tracks.length === 1 ? state.tracks[0].title : `${state.tracks.length} songs`}
-            {:else}
-              Give it a name to start
-            {/if}
-          </p>
-        </div>
-        <button
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-          aria-label="Close"
-          onclick={closePlaylistPicker}
-        >
-          <i class="bx bx-x text-xl"></i>
-        </button>
-      </header>
+      <DialogHeader
+        title={adding ? 'Add to playlist' : 'New playlist'}
+        description={adding
+          ? (state.tracks.length === 1 ? state.tracks[0].title : `${state.tracks.length} songs`)
+          : 'Give it a name to start.'}
+        onClose={closePlaylistPicker}
+      />
 
-      <div class="flex items-center gap-2 px-5 pb-4">
-        <input
-          bind:value={newName}
-          placeholder="New playlist name…"
-          class="min-w-0 flex-1 rounded-xl border border-transparent bg-white/[0.04] px-3.5 py-2.5 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
-          onkeydown={(e) => {
-            if (e.key === 'Enter') create();
-          }}
-        />
-        <button
-          class="cherry-btn-scrim flex shrink-0 items-center gap-1.5 rounded-xl bg-[var(--color-accent)] px-3.5 py-2.5 text-[12px] font-semibold text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
-          disabled={busy || !newName.trim()}
-          onclick={create}
-        >
-          <i class="bx bx-plus"></i>
-          Create
-        </button>
+      <div class="px-6 pb-6">
+        <div class="flex items-center gap-2">
+          <input
+            id="new-playlist-name"
+            aria-label="New playlist name"
+            bind:value={newName}
+            placeholder="New playlist name…"
+            class="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
+            onkeydown={(e) => {
+              if (e.key === 'Enter') create();
+            }}
+          />
+          <button
+            class="cherry-btn-scrim flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
+            disabled={busy || !newName.trim()}
+            onclick={create}
+          >
+            <i class="bx bx-plus"></i>
+            Create
+          </button>
+        </div>
       </div>
 
       {#if adding}
@@ -122,7 +108,7 @@
           </span>
           {#if playlists.length > 6}
             <label
-              class="flex h-7 items-center gap-1.5 rounded-lg border border-transparent bg-white/[0.04] px-2.5 text-zinc-400"
+              class="flex h-7 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-zinc-400"
             >
               <i class="bx bx-search text-sm"></i>
               <input
@@ -146,7 +132,7 @@
           {:else}
             {#each filtered as playlist (playlist.browseId)}
               <button
-                class="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+                class="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/[0.06] disabled:opacity-40"
                 disabled={busy}
                 onclick={() => pick(playlist)}
               >

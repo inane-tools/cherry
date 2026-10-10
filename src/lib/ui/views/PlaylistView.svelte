@@ -92,7 +92,7 @@
         {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
             disabled={tracks.length === 0}
             onclick={() => playTracks(tracks, 0)}
           >
@@ -100,7 +100,7 @@
             Play
           </button>
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
+            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
               ? 'text-[var(--color-accent2)]'
               : 'text-zinc-200'} hover:bg-white/10 disabled:opacity-40"
             disabled={tracks.length === 0}
@@ -113,7 +113,7 @@
           {#if $authStore}
             {#if owned}
               <button
-                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-full bg-white/5 text-lg text-zinc-200 hover:bg-white/10"
+                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg bg-white/5 text-lg text-zinc-200 hover:bg-white/10"
                 title="Edit playlist details"
                 aria-label="Edit playlist"
                 onclick={() => openPlaylistEditor(playlist)}
@@ -122,7 +122,7 @@
               </button>
             {:else if ownershipLoaded}
               <button
-                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-full bg-white/5 text-lg {saved
+                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-lg bg-white/5 text-lg {saved
                   ? 'text-[var(--color-accent2)]'
                   : 'text-zinc-200'} hover:bg-white/10"
                 title={saved ? 'Remove from library' : 'Save to library'}
