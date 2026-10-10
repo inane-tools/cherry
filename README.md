@@ -1,10 +1,10 @@
 # Cherry
 
-**A lightweight, native-feeling YouTube Music desktop client.**
+**Your music, my way.**
 
-Cherry is a custom UI over YouTube Music's internal *Innertube* API (via
-[`youtubei.js`](https://github.com/LuanRT/YouTube.js)) — there is no official
-API, so it speaks the same endpoints the web player does. Built with
+Cherry is a YouTube Music desktop client that is not just another wrapper, it has a completely custom frontend, that speaks directly to YouTube Music's internal *Innertube* API (via [`youtubei.js`](https://github.com/LuanRT/YouTube.js))
+
+Since there is no official API, it uses the same endpoints that the Web Player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
 > **Latest release: v1.4.1 (Ashibetsu)** — see the [changelog](CHANGELOG.md) for
@@ -15,52 +15,39 @@ API, so it speaks the same endpoints the web player does. Built with
 > ### Disclaimer
 > Cherry is an unofficial client and is **not affiliated with, endorsed by, or
 > associated with YouTube, Google or YouTube Music**. All trademarks and content
-> belong to their respective owners. Cherry needs your **own account and a valid
-> Premium subscription** to play music. You are responsible for how you use it
+> belong to their respective owners. To use Cherry, you need your **own YouTube account**. You are responsible for how you use it
 > and for any consequences, including any effect on your account. The software is
 > provided **as is**, without warranty of any kind.
 
 ## Features
 
-- **Fully custom UI** — a home feed with a time-based greeting, search, playlist,
-  artist and album pages, a floating player bar and a full-screen now-playing
-  view. No embedded web view of YouTube.
-- **Rebuilt sidebar** — one user-organised list of playlists and folders. Drag to
+- **Fully custom UI** - Cherry is not a wrapper on the YouTube Music web app, it has a fully custom built user interface, with a focus on simplicity and good looks.
+- **A customizable sidebar** - one user-organised list of playlists and folders. Drag to
   reorder, drop a playlist onto a folder to file it, **pin** favourites to the
-  top, resize the rail, or switch to a compact icon-only mode. Below ~820px it
+  top, resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
   collapses into a slide-in drawer.
-- **Full-screen player** — click the album art to expand into a now-playing card
-  with a next-up chip and the queue shown inline.
-- **Sign in in-app** — loads music.youtube.com and captures the session from the
+- **Full-screen player** - click the album art to open the full-screen music view.
+- **In-app sign in** - loads music.youtube.com and captures the session from the
   native cookie store; the session lives in the **OS keychain**, never in
-  localStorage.
-- **Multiple brand channels** — a single login can own several; Cherry picks the
-  one with the real library and lets you switch from Settings.
-- **Edit your library** — create playlists, add or remove songs, rename, edit
+  localStorage. Cherry also handles multiple brand accounts, as one YouTube account can have many, it is really easy to switch between them in Settings.
+- **Edit your library** - Currently you can create playlists, add or remove songs, rename, edit
   descriptions and set a **custom cover image**; pick a **default save
-  playlist**; and **save / unsave** playlists you did not create.
-- **Queue control** — jump to any track (dropping the ones before it),
+  playlist**; and **save / unsave** playlists you did not create. (This functionality is still work in progress so there are still certain things you cannot do, like deleting playlists)
+- **Queue control** - jump to any track (dropping the ones before it),
   drag-reorder, remove tracks, and clear.
-- **Paste a link** — drop a YouTube / YouTube Music song or playlist URL into the
+- **Paste a link** - drop a YouTube / YouTube Music song or playlist URL into the
   search box to open it.
-- **OS media integration** — SMTC / MPRIS / Now Playing, taskbar preview
+- **OS media integration** - SMTC / MPRIS / Now Playing, taskbar preview
   buttons, hardware media keys, and album-art-driven theming.
-- **Light & dark themes** — follow the system or pick one, with the accent taken
+- **Light & dark themes** - follow the system or pick one, with the accent taken
   from the album art or a custom colour and optional background gradients. The
   window title follows the current track.
-- **Keyboard shortcuts** — Space to play/pause, arrows to seek, Ctrl+arrows
+- **Keyboard shortcuts** - Space to play/pause, arrows to seek, Ctrl+arrows
   to skip and change volume, S/R for shuffle/repeat, Ctrl+F to search (full
   list in Settings).
-- **Sleep timer** — stop after 5 minutes to 1.5 hours with a gentle fade, or
+- **Sleep timer** - stop after 5 minutes to 1.5 hours with a gentle fade, or
   at the end of the current track.
-- **Last.fm scrobbling** — optional, using your own Last.fm API key; the
-  secret and session key are kept in the OS keychain.
-- **Discord Rich Presence** — optional "Listening to …" activity.
-- **Built to feel fast** — the shell paints before the player code loads,
-  playlists stream in progressively, the next track is prefetched, and a
-  persistent response cache makes re-opens instant.
-- **Dev tools when you need them** — open the WebView inspector from Settings
-  (F12).
+- **Integrations** - Cherry currently has the ability to display your currently playing music as an activity on Discord and you can also scrobble songs to last.fm.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design notes,
 measurements and the Windows landmines that were hit along the way.
@@ -124,7 +111,7 @@ restyled Settings, on top of 1.4's tinted theme and player-button options, and
 
 ## Credits
 
-Cherry is built by [inane.tools](https://inane.tools).
+Cherry is built by DeepSeek V4.1 Flash, working from the ideas and feedback of [inane.tools](https://inane.tools).
 
 Thanks to **[jannuary](https://github.com/jannuary/cherry)**, whose fork
 contributed the code audit, the Vitest test suite, keyboard shortcuts, the sleep
@@ -135,7 +122,3 @@ timer and the repeat button. Those commits were authored by **Claude**
 ## License
 
 [MIT](LICENSE) © 2026 inane.tools
-
----
-
-Made with **DeepSeek V4.1 Flash**.
