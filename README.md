@@ -47,22 +47,36 @@ measurements and the Windows landmines that were hit along the way.
 ## Changelog
 
 **v1.5.0 (Sunagawa)** adds Spotlight-style search, optional window controls,
-native Linux/macOS decorations, and build pipelines for Linux, macOS and direct
-Flatpak distribution. See [platform support](docs/platforms.md) for validation
-status and Flathub requirements, and
+native GTK controls on Linux, and Linux Flatpak/AppImage downloads alongside
+the Windows NSIS installer. Linux controls follow Cherry's theme and live app
+scaling; popup and artwork animations have rendering workarounds for WebKit.
+macOS builds are deferred. See [platform support](docs/platforms.md) and
 [CHANGELOG.md](CHANGELOG.md) for the full history.
+
+## Download
+
+Get **[v1.5.0 Sunagawa](https://github.com/inane-tools/cherry/releases/tag/v1.5.0)**:
+
+- **Windows:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.5.0/Cherry_1.5.0_x64-setup.exe).
+- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.5.0/Cherry_1.5.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.5.0/Cherry_1.5.0_amd64.AppImage).
+
+Install the downloaded Flatpak with `flatpak install --user Cherry_1.5.0_x86_64.flatpak`,
+then run `flatpak run tools.inane.cherry`. For AppImage, make the downloaded file
+executable before opening it. See [platform support](docs/platforms.md) for
+Linux keyring requirements and known limitations.
 
 ## Requirements
 
-- **Windows 10/11** (WebView2 is preinstalled), or Linux/macOS.
-- **Node 20+**, **Rust** stable, and the **VS Build Tools C++ workload** on
-  Windows.
+- **Windows 10/11** (with WebView2), or Linux x86_64. macOS builds are deferred.
+- To develop: **Node 22+**, **Rust** stable, and the **VS Build Tools C++ workload**
+  on Windows or the [Linux build dependencies](docs/platforms.md#linux).
 
 ## Develop
 
 ```bash
 npm install
-npm run tauri dev      # desktop app with hot reload
+npm run tauri -- dev   # desktop app with hot reload
+npm run dev:linux      # Linux dev launcher; prevents duplicate media players
 ```
 
 Other scripts:
@@ -71,7 +85,7 @@ Other scripts:
 npm run typecheck      # svelte-check
 npm test               # unit tests (Vitest)
 npm run build          # build the frontend to dist/
-npm run tauri build    # package a release (NSIS/MSI on Windows)
+npm run tauri -- build # package a release (NSIS on Windows)
 ```
 
 Linux/macOS builds, native window controls, direct Flatpak packaging and the

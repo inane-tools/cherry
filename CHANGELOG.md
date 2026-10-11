@@ -8,7 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Window-controls preference in Appearance, with native Linux/macOS decorations.
+- Window-controls preference in Appearance, with native GTK buttons on Linux.
+- Linux Flatpak and AppImage downloads alongside the Windows NSIS installer.
 - Native desktop build workflow for Windows NSIS, Linux DEB/AppImage and direct
   Flatpak distribution. macOS configuration is prepared; builds are deferred.
 
@@ -18,10 +19,19 @@ adheres to [Semantic Versioning](https://semver.org/).
   opening and songs first. The release codename advances to Sunagawa.
 - Linux uses Secret Service directly for sandbox-compatible credential storage.
 - Linux closes normally without relying on a tray host; macOS supports Dock reopen.
+- Linux window controls follow desktop button placement, Cherry's light/dark
+  theme and live app scaling, with rounded hover backgrounds at the window edges.
+- Linux popup and artwork fades use frame-by-frame updates; hover feedback is
+  immediate to avoid flickering CSS transitions in WebKit.
 
 ### Fixed
 
 - Cleared, replaced or closed searches cannot restore stale responses.
+- Linux mouse/touch window interaction no longer crashes under the GTK controls.
+- Flatpak prevents duplicate generic WebKit media-player entries; direct Linux
+  builds can use the filtered session-bus launcher.
+- Linux data-size reporting includes WebKit storage and caches, and full data
+  cleanup completes before the next webview starts.
 
 ## [1.4.2] — 2026-10-10
 

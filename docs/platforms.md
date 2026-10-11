@@ -4,6 +4,12 @@ Cherry 1.5.0 is Sunagawa. The desktop-builds workflow checks the frontend and
 builds Windows NSIS and Linux DEB/AppImage/Flatpak on native GitHub runners.
 It uploads artifacts only and does not publish releases. macOS is deferred.
 
+[v1.5.0 Sunagawa](https://github.com/inane-tools/cherry/releases/tag/v1.5.0)
+ships Windows NSIS and Linux x86_64 Flatpak/AppImage. Linux has been tested on
+Fedora KDE in VMware and on Steam Deck. Some animation flicker may remain;
+popups and artwork fades use frame-by-frame updates and hover feedback is
+immediate on Linux. This is a direct Flatpak release, not a Flathub listing.
+
 ## Window controls
 
 Windows keeps Cherry's existing caption buttons. Linux keeps Cherry's custom
@@ -16,8 +22,9 @@ Linux GTK buttons or Windows caption buttons, and removes macOS decorations.
 The in-app drag handle remains available. Test zoom, left/right button layouts,
 maximize/restore, themes, and decorated/undecorated modes on real desktops.
 
-Linux caption buttons use 46-pixel hit areas like Windows, with transparent
-resting backgrounds and GTK theme glyphs. The Linux surface is transparent only
+Linux caption buttons use 46-pixel hit areas like Windows, scaled with the live
+app zoom, with transparent resting backgrounds and GTK theme glyphs. Glyph
+colours follow Cherry's light/dark theme. The Linux surface is transparent only
 at its rounded 12-pixel corners; app content stays opaque. Maximized/fullscreen
 windows use square corners. Compositors control surrounding window shadows.
 
