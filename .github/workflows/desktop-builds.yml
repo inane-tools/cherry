@@ -48,6 +48,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev patchelf flatpak flatpak-builder
       - run: npm ci
+      - name: Build frontend for Rust context
+        run: npm run build
       - name: Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build installers
