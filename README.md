@@ -1,18 +1,13 @@
 # Cherry
 
-**Your music, my way.**
+Cherry is a YouTube Music desktop client, it features a completely custom frontend that speaks directly to YouTube Music's internal *Innertube* API (via [`youtubei.js`](https://github.com/LuanRT/YouTube.js))
 
-Cherry is a YouTube Music desktop client, it has a completely custom frontend, that speaks directly to YouTube Music's internal *Innertube* API (via [`youtubei.js`](https://github.com/LuanRT/YouTube.js))
-
-Since there is no official API, it uses the same endpoints that the Web Player does. Built with
+Since there is no official API, Cherry uses the same endpoints that the official YouTube Music Web app does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
-
-> **Current version: v1.4.2 (Ashibetsu)** — see the [changelog](CHANGELOG.md) for
-> what's new.
 
 ![Cherry](https://inane.tools/screenshot-compact.webp)
 
-> ### Disclaimer
+> ### ⚠️ Disclaimer
 > Cherry is an unofficial client and is **not affiliated with, endorsed by, or
 > associated with YouTube, Google or YouTube Music**. All trademarks and content
 > belong to their respective owners. To use Cherry, you need your **own YouTube account**. You are responsible for how you use it
@@ -51,6 +46,13 @@ Since there is no official API, it uses the same endpoints that the Web Player d
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design notes,
 measurements and the Windows landmines that were hit along the way.
+
+## Changelog
+
+**v1.4.2 (Ashibetsu)** refines the folder, playlist and search popups to match
+Settings, updates button rounding, and fixes playback, sign-out, library loading
+and scrobble races. See
+[CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Requirements
 
@@ -101,16 +103,11 @@ need a real OS keychain (on Linux, a running Secret Service such as
 gnome-keyring). Run everything with `cargo test -- --include-ignored`. See
 [`docs/TESTING.md`](docs/TESTING.md).
 
-## Changelog
-
-**v1.4.2 (Ashibetsu)** refines the folder, playlist and search popups to match
-Settings, updates button rounding, and fixes playback, sign-out, library loading
-and scrobble races. See
-[CHANGELOG.md](CHANGELOG.md) for the full history.
-
 ## Credits
 
-Cherry is built by DeepSeek V4.1 Flash, working from the ideas and feedback of [inane.tools](https://inane.tools).
+Cherry is built with the use of LLM's (Majority of code has been generated with DeepSeek v4.1 Flash) additional work done with Claude (jannuary fork features). 
+
+As of update 1.4.2, Codex with GPT-6.1 Sol working from the ideas and feedback of [inane.tools](https://inane.tools).
 
 Thanks to **[jannuary](https://github.com/jannuary/cherry)**, whose fork
 contributed the code audit, the Vitest test suite, keyboard shortcuts, the sleep
@@ -120,6 +117,8 @@ timer and the repeat button. Those commits were authored by **Claude**
 
 **Codex (OpenAI)** contributed code review, playback and sign-out fixes,
 regression tests and UI refinements.
+
+**DeepSeek** v4.1 Flash contributed project scaffolding and most of the coding work from v1.0 to v1.4
 
 ## License
 
