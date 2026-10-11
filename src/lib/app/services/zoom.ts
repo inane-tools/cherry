@@ -7,6 +7,7 @@
 
 import { invokeSafe } from './platform';
 import { settingsStore } from './settings';
+import { writable } from 'svelte/store';
 
 /** Allowed zoom range (shared with the Settings slider). */
 export const ZOOM_MIN = 0.5;
@@ -19,6 +20,9 @@ export const ZOOM_STEP = 0.1;
  * (1 = 100%); only the webview factor is multiplied by this.
  */
 export const ZOOM_BASE = 1.1;
+
+// Includes the baseline and live slider preview, before settings are persisted.
+export const renderedZoom = writable(ZOOM_BASE);
 
 /** Every selectable level, for the slider's visible step markers. */
 export const ZOOM_STEPS: number[] = Array.from(
@@ -43,6 +47,7 @@ export function applyZoom(scale: number): void {
   const next = clampZoom(scale);
   if (next === applied) return;
   applied = next;
+  renderedZoom.set(next * ZOOM_BASE);
   void invokeSafe('set_webview_zoom', { scale: next * ZOOM_BASE });
 }
 

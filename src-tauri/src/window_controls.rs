@@ -202,6 +202,7 @@ mod linux {
                     button.set_size_request((46.0 * zoom).round() as i32, -1);
                     button.set_tooltip_text(Some(label));
                     let image = gtk::Image::from_icon_name(Some(icon), gtk::IconSize::Button);
+                    image.set_pixel_size((16.0 * zoom).round() as i32);
                     button.set_image(Some(&image));
                     let win = native.clone();
                     let action = name.to_owned();

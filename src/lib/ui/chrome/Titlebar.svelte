@@ -5,6 +5,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { isTauri, invokeSafe } from '$lib/app/services/platform';
   import { settingsStore } from '$lib/app/services/settings';
+  import { renderedZoom } from '$lib/app/services/zoom';
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
   import { back, canGoBack, go } from '$lib/app/services/navigation';
@@ -30,6 +31,7 @@
     let stopResize: (() => void) | undefined;
     let stopInsets: (() => void) | undefined;
     let themeObserver: MutationObserver | undefined;
+    let stopZoom: (() => void) | undefined;
     void (async () => {
       platform = await invokeSafe<string>('desktop_platform') ?? '';
       if (disposed) return;
@@ -48,15 +50,16 @@
         let frameUpdate = Promise.resolve();
         let lastVisible: string | undefined;
         const updateControls = () => {
-          const { windowControls, uiZoom } = get(settingsStore);
+          const { windowControls } = get(settingsStore);
+          const zoom = get(renderedZoom);
           const light = document.documentElement.classList.contains('light');
-          const key = `${windowControls}:${uiZoom}:${light}`;
+          const key = `${windowControls}:${zoom}:${light}`;
           if (lastVisible === key) return;
           lastVisible = key;
           frameUpdate = frameUpdate.then(async () => {
             if (disposed) return;
             if (platform === 'linux') {
-              const insets = await invokeSafe<typeof linuxInsets>('set_linux_window_controls', { visible: windowControls, zoom: uiZoom, light });
+              const insets = await invokeSafe<typeof linuxInsets>('set_linux_window_controls', { visible: windowControls, zoom, light });
               if (!disposed && insets) linuxInsets = insets;
             } else {
               await win.setDecorations(windowControls);
@@ -65,6 +68,7 @@
         };
         stopSettings = settingsStore.subscribe(updateControls);
         if (platform === 'linux') {
+          stopZoom = renderedZoom.subscribe(updateControls);
           // Observe the resolved theme, including OS changes in system mode.
           themeObserver = new MutationObserver(updateControls);
           themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -82,7 +86,7 @@
       if (disposed) unlisten();
       else stopResize = unlisten;
     })().catch(console.error);
-    return () => { disposed = true; themeObserver?.disconnect(); stopSettings?.(); stopResize?.(); stopInsets?.(); };
+    return () => { disposed = true; themeObserver?.disconnect(); stopZoom?.(); stopSettings?.(); stopResize?.(); stopInsets?.(); };
   });
 
   $: profile = $activeChannelStore;
@@ -133,8 +137,8 @@
 <header
   onmousedown={onBarMouseDown}
   class="absolute inset-x-0 top-0 z-40 flex h-12 items-center gap-2 pl-2"
-  style:padding-left={platform === 'linux' ? `${Math.max(8, linuxInsets.left / $settingsStore.uiZoom)}px` : undefined}
-  style:padding-right={platform === 'linux' ? `${linuxInsets.right / $settingsStore.uiZoom || 12}px` : undefined}
+  style:padding-left={platform === 'linux' ? `${Math.max(8, linuxInsets.left / $renderedZoom)}px` : undefined}
+  style:padding-right={platform === 'linux' ? `${linuxInsets.right / $renderedZoom || 12}px` : undefined}
 >
   <!-- Left: back + menu, shown only in the narrow layout (where the sidebar is a
        drawer). Hidden on the welcome screen. -->
