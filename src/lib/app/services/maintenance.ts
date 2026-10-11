@@ -4,11 +4,12 @@
 // them:
 //  1. in-page storage — youtubei.js's IndexedDB cache, the app's
 //     `localStorage`/`sessionStorage` and service-worker caches (cleared here);
-//  2. the on-disk WebView2 profile + settings store (cleared in Rust);
+//  2. the native webview profile + settings store (Linux defers disk deletion
+//     until restart so the running WebKit process cannot recreate the data);
 //  3. the keychain session (cleared in Rust via `auth_clear`).
 
 import { cacheClear } from '$lib/infra/storage/cache';
-import { invokeSafe, isTauri } from './platform';
+import { invokeSafe, invokeStrict, isTauri } from './platform';
 import { resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
 
 export interface ClearResult {
@@ -124,8 +125,7 @@ export async function clearAllData(): Promise<ClearResult> {
 
   let removed: string[] = [];
   if (isTauri()) {
-    const result = await invokeSafe<string[]>('clear_local_data');
-    removed = result ?? [];
+    removed = await invokeStrict<string[]>('clear_local_data');
   }
 
   const locked = removed

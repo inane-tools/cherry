@@ -48,6 +48,13 @@ Linux builds are copied once to the new directory. Flatpak uses private data.
 Credentials use Secret Service, without the kernel-keyring backend blocked by
 Flatpak. An unlocked GNOME Keyring or compatible service is required.
 
+The data-size report includes WebKit's cookies, website storage, HTTP/media
+caches and Cherry's app-cache directory. “Clear cache” clears Cherry's
+playlist/library cache while keeping settings and sign-in. “Clear all data”
+schedules Linux profile and settings deletion before the next webview starts;
+the app relaunches to complete it. Cleanup preserves migration markers and
+unrelated files and uses the same XDG paths inside Flatpak's private storage.
+
 ### Duplicate media players in direct builds
 
 WebKit may register an additional MPRIS player with the generic Cherry name,

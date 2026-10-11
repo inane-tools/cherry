@@ -1,17 +1,14 @@
 //! Maintenance commands for Settings → "Clear data and cache".
 //!
-//! Wipes everything Cherry stores locally: the settings store, the WebView2
+//! Wipes everything Cherry stores locally: the settings store, the webview
 //! profile (which holds youtubei.js's IndexedDB cache, the app's
 //! `localStorage`/`sessionStorage` and the service worker caches) and the
 //! keychain session.
 //!
-//! The WebView2 profile cannot be deleted while the app is running — the
-//! runtime holds files open. So the profile is cleared with WebView2's own
-//! `ClearBrowsingData`-style approach instead: the in-page caches are cleared
-//! from the frontend (`localStorage`, `caches`, IndexedDB), and Rust removes
-//! the on-disk cache directories that are *not* locked (the HTTP/GPU caches).
-//! Anything still locked is reported and removed on the next start via
-//! `migrate::run`'s sibling cleanup below.
+//! The frontend clears in-page caches. Windows removes unlocked profile files
+//! immediately and retries at startup. Linux schedules disk cleanup before the
+//! next webview starts: unlinking active WebKit databases can lose the reset
+//! when the running network process writes them back.
 
 use std::path::PathBuf;
 
@@ -34,13 +31,42 @@ fn app_data_dir(app: &AppHandle) -> Option<PathBuf> {
 /// the settings store).
 const CLEAR_TARGETS: [&str; 3] = [SETTINGS_FILE, "EBWebView", "ytm-login-webview"];
 
+// Tauri's Linux directory is Wry's WebKit base-data/base-cache directory.
+// Names follow WebKit's GLib defaults; Wry's persistent cookie jar is `cookies`.
+// Preserve migration markers and unrelated files by using an explicit allowlist.
+#[cfg(any(target_os = "linux", test))]
+const LINUX_WEBKIT_TARGETS: &[&str] = &[
+    "cookies", "cookies-journal", "cookies-wal", "cookies-shm",
+    "localstorage", "databases", "storage", "serviceworkers", "CacheStorage",
+    "WebKitCache", "MediaCache", "applications", "itp", "mediakeys",
+    "deviceidhashsalts", "mediakeyshashsalts", "AlternativeServices",
+    "isolatedsites", "resourcemonitorthrottler", "hsts-storage.sqlite",
+    "hsts-storage.sqlite-journal", "hsts-storage.sqlite-wal", "hsts-storage.sqlite-shm",
+];
+
+fn clear_targets() -> Vec<&'static str> {
+    let targets = CLEAR_TARGETS.to_vec();
+    #[cfg(target_os = "linux")]
+    let targets = targets.into_iter().chain(LINUX_WEBKIT_TARGETS.iter().copied()).collect();
+    targets
+}
+
+fn disk_size(dir: &std::path::Path, app_cache: Option<&std::path::Path>, targets: &[&str]) -> u64 {
+    let mut total = targets.iter().map(|name| dir_size(&dir.join(name))).sum();
+    if let Some(cache) = app_cache {
+        if cache != dir { total += dir_size(&cache.to_path_buf()); }
+    }
+    total
+}
+
 /// Size, in bytes, of a file/directory tree (best effort — unreadable entries
 /// count as zero, since a transient lock must not fail the whole report).
 fn dir_size(path: &PathBuf) -> u64 {
     let mut total = 0;
-    let Ok(meta) = std::fs::metadata(path) else {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
         return 0;
     };
+    if meta.is_symlink() { return 0; }
     if meta.is_file() {
         return meta.len();
     }
@@ -71,25 +97,18 @@ pub async fn cache_size(app: AppHandle) -> Result<u64, String> {
         .resolve("", tauri::path::BaseDirectory::AppCache)
         .ok();
 
-    let mut total = 0u64;
-    for name in CLEAR_TARGETS {
-        total += dir_size(&dir.join(name));
-    }
-    if let Some(cache) = app_cache {
-        if cache != dir {
-            total += dir_size(&cache);
-        }
-    }
-    Ok(total)
+    tauri::async_runtime::spawn_blocking(move || disk_size(&dir, app_cache.as_deref(), &clear_targets()))
+        .await.map_err(|e| e.to_string())
 }
 
 /// Remove one path, reporting whether it was removed. A missing path counts as
 /// "already gone" (Ok) so the caller's report stays accurate on a second run.
 fn remove_path(path: &std::path::Path) -> bool {
-    if !path.exists() {
-        return true;
-    }
-    if path.is_dir() {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+    };
+    if meta.is_dir() && !meta.is_symlink() {
         std::fs::remove_dir_all(path).is_ok()
     } else {
         std::fs::remove_file(path).is_ok()
@@ -148,16 +167,30 @@ pub fn clear_disk(dir: &std::path::Path, app_cache: Option<&std::path::Path>) ->
 ///
 /// Called at startup, before the WebView2 runtime opens its profile directory.
 pub fn finish_pending_clear(dir: &std::path::Path) {
+    finish_pending_clear_with_cache(dir, None, &clear_targets());
+}
+
+fn finish_pending_clear_with_cache(
+    dir: &std::path::Path,
+    app_cache: Option<&std::path::Path>,
+    targets: &[&str],
+) {
     if !dir.join(PENDING_CLEAR).exists() {
         return;
     }
-    for name in CLEAR_TARGETS {
+    let mut complete = true;
+    for name in targets {
         let path = dir.join(name);
-        if path.exists() {
-            let _ = remove_path(&path);
-        }
+        complete &= remove_path(&path);
     }
-    let _ = std::fs::remove_file(dir.join(PENDING_CLEAR));
+    if let Some(cache) = app_cache {
+        if cache != dir { complete &= remove_path(cache); }
+    }
+    // Retry on a later launch if permissions or a surviving process prevented
+    // cleanup. Do not silently discard the user's reset request.
+    if complete {
+        let _ = std::fs::remove_file(dir.join(PENDING_CLEAR));
+    }
 }
 
 /// Startup entry point (called from `main()` before the Tauri builder, so the
@@ -167,6 +200,16 @@ pub fn run_startup_cleanup() {
     let Some(dir) = crate::migrate::app_data_dir(crate::migrate::NEW_IDENTIFIER) else {
         return;
     };
+    #[cfg(target_os = "linux")]
+    {
+        let cache = std::env::var_os("XDG_CACHE_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+            .map(|base| base.join(crate::migrate::NEW_IDENTIFIER));
+        finish_pending_clear_with_cache(&dir, cache.as_deref(), &clear_targets());
+    }
+    #[cfg(not(target_os = "linux"))]
     finish_pending_clear(&dir);
 }
 
@@ -182,6 +225,18 @@ pub fn clear_local_data(app: AppHandle) -> Result<Vec<String>, String> {
     let Some(dir) = app_data_dir(&app) else {
         return Ok(Vec::new());
     };
+    #[cfg(target_os = "linux")]
+    {
+        // Unix permits unlinking live databases, but WebKit can keep using open
+        // files or recreate them. Clear before constructing the next webview.
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(PENDING_CLEAR), b"linux-webkit-reset")
+            .map_err(|e| format!("Could not schedule data cleanup: {e}"))?;
+        crate::secrets::clear_all();
+        Ok(vec!["locked: settings and Linux WebKit data".into()])
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
     let app_cache = app
         .path()
         .resolve("", tauri::path::BaseDirectory::AppCache)
@@ -195,6 +250,7 @@ pub fn clear_local_data(app: AppHandle) -> Result<Vec<String>, String> {
         removed.push(format!("locked: {}", report.skipped.join(", ")));
     }
     Ok(removed)
+    }
 }
 
 #[cfg(test)]
@@ -207,6 +263,49 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create temp dir");
         dir
+    }
+
+    #[test]
+    fn linux_profile_size_and_startup_reset_use_the_same_targets() {
+        let dir = temp_dir("linux-profile");
+        let cache = temp_dir("linux-cache");
+        let targets: Vec<_> = CLEAR_TARGETS.iter().copied()
+            .chain(LINUX_WEBKIT_TARGETS.iter().copied()).collect();
+        for name in &targets {
+            if LINUX_WEBKIT_TARGETS.contains(name) && *name != "cookies" && !name.contains('.') {
+                std::fs::create_dir_all(dir.join(name).join("origin")).unwrap();
+                std::fs::write(dir.join(name).join("origin/data"), b"data").unwrap();
+            } else {
+                std::fs::write(dir.join(name), b"data").unwrap();
+            }
+        }
+        std::fs::write(cache.join("cached-image"), b"cache").unwrap();
+        for name in [".migrated-from-cherry", ".migrated-from-xylo", "unrelated-file"] {
+            std::fs::write(dir.join(name), b"keep").unwrap();
+        }
+        assert_eq!(disk_size(&dir, Some(&cache), &targets), (targets.len() * 4 + 5) as u64);
+        // A running Linux profile is untouched until a reset was scheduled.
+        finish_pending_clear_with_cache(&dir, Some(&cache), &targets);
+        assert!(dir.join("cookies").exists());
+        std::fs::write(dir.join(PENDING_CLEAR), b"linux-webkit-reset").unwrap();
+        finish_pending_clear_with_cache(&dir, Some(&cache), &targets);
+        assert_eq!(disk_size(&dir, Some(&cache), &targets), 0);
+        assert!(!dir.join(PENDING_CLEAR).exists());
+        for name in [".migrated-from-cherry", ".migrated-from-xylo", "unrelated-file"] {
+            assert!(dir.join(name).exists());
+        }
+        // Repeated cleanup remains a no-op.
+        finish_pending_clear_with_cache(&dir, Some(&cache), &targets);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn linux_profile_size_counts_nested_storage_once() {
+        let dir = temp_dir("linux-size");
+        std::fs::create_dir_all(dir.join("databases/indexeddb/origin")).unwrap();
+        std::fs::write(dir.join("databases/indexeddb/origin/db"), b"123456").unwrap();
+        assert_eq!(disk_size(&dir, Some(&dir), LINUX_WEBKIT_TARGETS), 6);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The settings store and WebView cache folders must actually go, and a
