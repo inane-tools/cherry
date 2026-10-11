@@ -106,7 +106,7 @@ mod linux {
                         background: alpha(currentColor, 0.10);
                     }
                     window.cherry-linux-native.cherry-light .cherry-caption-button {
-                        color: #3f3f46;
+                        color: #000000;
                     }
                     .cherry-caption-button.close:hover,
                     window.cherry-linux-native.cherry-light .cherry-caption-button.close:hover {
