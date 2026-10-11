@@ -104,6 +104,16 @@ mod linux {
                         background: #c42b1c;
                         color: white;
                     }
+                    .cherry-caption-button.cherry-corner-left {
+                        border-top-left-radius: 12px;
+                    }
+                    .cherry-caption-button.cherry-corner-right {
+                        border-top-right-radius: 12px;
+                    }
+                    window.cherry-linux-native.maximized .cherry-caption-button,
+                    window.cherry-linux-native.fullscreen .cherry-caption-button {
+                        border-radius: 0;
+                    }
                 ",
                 )
                 .map_err(|e| e.to_string())?;
@@ -217,6 +227,21 @@ mod linux {
                 }
                 if buttons.children().is_empty() {
                     continue;
+                }
+                // Round only the outermost control, following the desktop's
+                // left/right button layout (close is not always on the right).
+                let children = buttons.children();
+                let edge = if align == gtk::Align::Start {
+                    children.first()
+                } else {
+                    children.last()
+                };
+                if let Some(edge) = edge {
+                    edge.style_context().add_class(if align == gtk::Align::Start {
+                        "cherry-corner-left"
+                    } else {
+                        "cherry-corner-right"
+                    });
                 }
                 controls.overlay.add_overlay(&buttons);
                 buttons.show_all();
