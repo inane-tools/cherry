@@ -66,7 +66,7 @@ mod linux {
                 )
                 .map_err(|e| e.to_string())?;
                 gtk::StyleContext::add_provider_for_screen(
-                    &native.screen().ok_or("GTK screen unavailable")?,
+                    &gtk::prelude::WidgetExt::screen(&native).ok_or("GTK screen unavailable")?,
                     &css,
                     gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
                 );
