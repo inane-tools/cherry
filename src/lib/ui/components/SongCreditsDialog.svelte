@@ -18,7 +18,7 @@
 {#if state.open && track}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 z-[70] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]"
+    class="cherry-popup-surface fixed inset-0 z-[70] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]"
     role="presentation"
     onclick={closeSongCredits}
     in:fade={{ duration: 150 }}

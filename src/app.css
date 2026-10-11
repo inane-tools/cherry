@@ -118,6 +118,13 @@ html.cherry-linux-window.cherry-window-expanded #app {
   -webkit-mask-image: none;
 }
 
+/* Linux VM diagnostic: preserve popup transitions, but remove the backdrop
+   sampling pass to check whether WebKit's blur compositing causes flicker. */
+html.cherry-linux-window .cherry-popup-surface {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 /* Red gradient from the top of the window, tinted by the album art colour.
    `color-mix` keeps it derived from the animatable accent, so changing track
    fades the whole wash rather than snapping. */

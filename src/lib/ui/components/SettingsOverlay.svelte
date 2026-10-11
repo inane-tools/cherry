@@ -21,7 +21,7 @@
 {#if $settingsOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 z-30 flex items-start justify-center bg-scrim/60 p-4 pt-16 backdrop-blur-[3px]"
+    class="cherry-popup-surface fixed inset-0 z-30 flex items-start justify-center bg-scrim/60 p-4 pt-16 backdrop-blur-[3px]"
     role="presentation"
     onclick={closeSettings}
     in:fade={{ duration: 150 }}
