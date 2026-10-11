@@ -1,2 +1,2 @@
-// Keep normal transitions during the opaque Linux window rendering diagnostic.
+// Shared UI transitions retain the normal animations on every platform.
 export { fade, fly } from 'svelte/transition';
