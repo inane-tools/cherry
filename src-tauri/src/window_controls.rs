@@ -5,6 +5,48 @@ pub struct Insets {
     right: i32,
 }
 
+/// Install the empty GTK client-side frame before the Linux window is mapped.
+/// GTK paints its shadow outside the content; the webview supplies the topbar.
+#[cfg(target_os = "linux")]
+pub fn init_frame(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use gtk::prelude::*;
+    let native = window.gtk_window().map_err(|e| e.to_string())?;
+    native.style_context().add_class("cherry-linux-native");
+    let titlebar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    titlebar.style_context().add_class("cherry-empty-titlebar");
+    let css = gtk::CssProvider::new();
+    css.load_from_data(b"
+        window.cherry-linux-native { background-color: transparent; }
+        window.cherry-linux-native decoration {
+            background-color: transparent;
+            border-radius: 12px;
+            box-shadow: 0 6px 24px alpha(black, 0.35);
+        }
+        window.cherry-linux-native.maximized decoration,
+        window.cherry-linux-native.fullscreen decoration {
+            border-radius: 0;
+            box-shadow: none;
+        }
+        .cherry-empty-titlebar {
+            min-height: 0;
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+        }
+    ").map_err(|e| e.to_string())?;
+    gtk::StyleContext::add_provider_for_screen(
+        &gtk::prelude::WidgetExt::screen(&native).ok_or("GTK screen unavailable")?,
+        &css,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    native.set_titlebar(Some(&titlebar));
+    titlebar.show();
+    window.show().map_err(|e| e.to_string())
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
     use super::Insets;

@@ -142,6 +142,10 @@ fn main() {
         .manage(media_controls::MediaState(Mutex::new(None)))
         .manage(discord::DiscordState::default())
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                window_controls::init_frame(&window).map_err(std::io::Error::other)?;
+            }
             if let Err(e) = media_controls::init_media_controls(app.handle()) {
                 eprintln!("[cherry] media controls unavailable: {e}");
             }
