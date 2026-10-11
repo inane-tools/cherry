@@ -2,7 +2,7 @@
 
 **Your music, my way.**
 
-Cherry is a YouTube Music desktop client that is not just another wrapper, it has a completely custom frontend, that speaks directly to YouTube Music's internal *Innertube* API (via [`youtubei.js`](https://github.com/LuanRT/YouTube.js))
+Cherry is a YouTube Music desktop client, it has a completely custom frontend, that speaks directly to YouTube Music's internal *Innertube* API (via [`youtubei.js`](https://github.com/LuanRT/YouTube.js))
 
 Since there is no official API, it uses the same endpoints that the Web Player does. Built with
 **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
