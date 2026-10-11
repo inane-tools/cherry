@@ -514,6 +514,22 @@ html.light .inane-wordmark {
   filter: invert(1);
 }
 
+/* WebKitGTK can flicker during CSS hover transitions. Main-thread popup/art
+   animations remain enabled; hover feedback changes immediately on Linux. */
+html.cherry-linux-window :is(
+  .transition,
+  .transition-all,
+  .transition-colors,
+  .transition-opacity,
+  .transition-transform
+) {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+html.cherry-linux-window .cherry-range::-webkit-slider-thumb {
+  transition: none;
+}
+
 /* Respect the OS "reduce motion" setting: collapse every animation/transition so
    the app never animates for users who asked it not to. */
 @media (prefers-reduced-motion: reduce) {
