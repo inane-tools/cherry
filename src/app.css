@@ -93,15 +93,29 @@ body {
 
 /* Linux uses a transparent native surface so the entire webview, including
    floating overlays, can follow the rounded window outline. */
+html.cherry-linux-window {
+  background: transparent !important;
+}
 html.cherry-linux-window body {
-  background: transparent;
+  background: transparent !important;
+  border-radius: 12px;
+  clip-path: inset(0 round 12px);
 }
 html.cherry-linux-window #app {
   background: var(--color-surface);
+  border-radius: 12px;
+  overflow: hidden;
+  isolation: isolate;
+  /* Force WebKit to composite rounded overflow, including fixed-position
+     popups and the background washes, into the same clipped surface. */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
   clip-path: inset(0 round 12px);
 }
+html.cherry-linux-window.cherry-window-expanded body,
 html.cherry-linux-window.cherry-window-expanded #app {
+  border-radius: 0;
   clip-path: none;
+  -webkit-mask-image: none;
 }
 
 /* Red gradient from the top of the window, tinted by the album art colour.
