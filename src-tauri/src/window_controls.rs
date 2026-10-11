@@ -58,6 +58,7 @@ mod linux {
         overlay: gtk::Overlay,
         visible: bool,
         zoom: f64,
+        light: bool,
         handlers: Vec<gtk::glib::SignalHandlerId>,
     }
     thread_local! {
@@ -68,8 +69,11 @@ mod linux {
         window: &tauri::WebviewWindow,
         visible: bool,
         zoom: f64,
+        light: bool,
     ) -> Result<Insets, String> {
         let native = window.gtk_window().map_err(|e| e.to_string())?;
+        if light { native.style_context().add_class("cherry-light"); }
+        else { native.style_context().remove_class("cherry-light"); }
         CONTROLS.with(|slot| {
             let mut state = slot.borrow_mut();
             if state.is_none() {
@@ -88,6 +92,7 @@ mod linux {
                 css.load_from_data(
                     b"
                     .cherry-caption-button {
+                        color: #e4e4e7;
                         background: transparent;
                         background-image: none;
                         border: none;
@@ -100,7 +105,11 @@ mod linux {
                     .cherry-caption-button:hover {
                         background: alpha(currentColor, 0.10);
                     }
-                    .cherry-caption-button.close:hover {
+                    window.cherry-linux-native.cherry-light .cherry-caption-button {
+                        color: #3f3f46;
+                    }
+                    .cherry-caption-button.close:hover,
+                    window.cherry-linux-native.cherry-light .cherry-caption-button.close:hover {
                         background: #c42b1c;
                         color: white;
                     }
@@ -126,6 +135,7 @@ mod linux {
                     overlay,
                     visible,
                     zoom,
+                    light,
                     handlers: Vec::new(),
                 });
                 if let Some(settings) = gtk::Settings::default() {
@@ -139,9 +149,9 @@ mod linux {
                             let win = win.clone();
                             gtk::glib::idle_add_local_once(move || {
                                 let visible = CONTROLS
-                                    .with(|s| s.borrow().as_ref().map(|c| (c.visible, c.zoom)));
-                                if let Some((visible, zoom)) = visible {
-                                    if let Ok(insets) = update(&win, visible, zoom) {
+                                    .with(|s| s.borrow().as_ref().map(|c| (c.visible, c.zoom, c.light)));
+                                if let Some((visible, zoom, light)) = visible {
+                                    if let Ok(insets) = update(&win, visible, zoom, light) {
                                         let _ = win.emit("linux-controls-insets", insets);
                                     }
                                 }
@@ -153,6 +163,7 @@ mod linux {
             let controls = state.as_mut().unwrap();
             controls.visible = visible;
             controls.zoom = zoom;
+            controls.light = light;
             for handler in controls.handlers.drain(..) {
                 native.disconnect(handler);
             }
@@ -257,6 +268,7 @@ pub async fn set_linux_window_controls(
     window: tauri::WebviewWindow,
     visible: bool,
     zoom: f64,
+    light: bool,
 ) -> Result<Insets, String> {
     if window.label() != "main" {
         return Err("Only the main window has custom controls".into());
@@ -272,14 +284,14 @@ pub async fn set_linux_window_controls(
         let native_window = window.clone();
         window
             .run_on_main_thread(move || {
-                let _ = send.send(linux::update(&native_window, visible, zoom));
+                let _ = send.send(linux::update(&native_window, visible, zoom, light));
             })
             .map_err(|e| e.to_string())?;
         receive.await.map_err(|e| e.to_string())?
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (visible, zoom);
+        let _ = (visible, zoom, light);
         Ok(Insets { left: 0, right: 0 })
     }
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { listen } from '@tauri-apps/api/event';
   import { isTauri, invokeSafe } from '$lib/app/services/platform';
   import { settingsStore } from '$lib/app/services/settings';
@@ -28,6 +29,7 @@
     let stopSettings: (() => void) | undefined;
     let stopResize: (() => void) | undefined;
     let stopInsets: (() => void) | undefined;
+    let themeObserver: MutationObserver | undefined;
     void (async () => {
       platform = await invokeSafe<string>('desktop_platform') ?? '';
       if (disposed) return;
@@ -45,20 +47,28 @@
         // changes so rapid toggles cannot leave the wrong frame on screen.
         let frameUpdate = Promise.resolve();
         let lastVisible: string | undefined;
-        stopSettings = settingsStore.subscribe(({ windowControls, uiZoom }) => {
-          const key = `${windowControls}:${uiZoom}`;
+        const updateControls = () => {
+          const { windowControls, uiZoom } = get(settingsStore);
+          const light = document.documentElement.classList.contains('light');
+          const key = `${windowControls}:${uiZoom}:${light}`;
           if (lastVisible === key) return;
           lastVisible = key;
           frameUpdate = frameUpdate.then(async () => {
             if (disposed) return;
             if (platform === 'linux') {
-              const insets = await invokeSafe<typeof linuxInsets>('set_linux_window_controls', { visible: windowControls, zoom: uiZoom });
+              const insets = await invokeSafe<typeof linuxInsets>('set_linux_window_controls', { visible: windowControls, zoom: uiZoom, light });
               if (!disposed && insets) linuxInsets = insets;
             } else {
               await win.setDecorations(windowControls);
             }
           }).catch(console.error);
-        });
+        };
+        stopSettings = settingsStore.subscribe(updateControls);
+        if (platform === 'linux') {
+          // Observe the resolved theme, including OS changes in system mode.
+          themeObserver = new MutationObserver(updateControls);
+          themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        }
       }
       const updateWindowShape = async () => {
         maximized = await win.isMaximized().catch(() => maximized);
@@ -72,7 +82,7 @@
       if (disposed) unlisten();
       else stopResize = unlisten;
     })().catch(console.error);
-    return () => { disposed = true; stopSettings?.(); stopResize?.(); stopInsets?.(); };
+    return () => { disposed = true; themeObserver?.disconnect(); stopSettings?.(); stopResize?.(); stopInsets?.(); };
   });
 
   $: profile = $activeChannelStore;
