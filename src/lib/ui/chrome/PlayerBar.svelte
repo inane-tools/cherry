@@ -9,6 +9,7 @@
   import { fly, fade } from '$lib/ui/transitions';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
+  import { frameOpacity } from '$lib/ui/actions/frameOpacity';
   import UpNextPanel from './UpNextPanel.svelte';
   import QueueList from './QueueList.svelte';
   import QueueHeader from './QueueHeader.svelte';
@@ -170,6 +171,7 @@
           <img
             src={pendingArt}
             alt=""
+            use:frameOpacity={{ visible: pendingLoaded, duration: 500 }}
             class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover transition-opacity duration-500 {squareArt
               ? 'scale-110 blur-3xl'
               : ''} {pendingLoaded ? 'opacity-100' : 'opacity-0'}"
@@ -236,6 +238,7 @@
               <img
                 src={squareCover}
                 alt=""
+                use:frameOpacity={{ visible: squareLoaded, duration: 300 }}
                 class="h-full w-full object-cover transition-opacity duration-300 {squareLoaded
                   ? 'opacity-100'
                   : 'opacity-0'}"
@@ -363,6 +366,7 @@
             {/if}
           </button>
           <div
+            use:frameOpacity={{ visible: volOpen, duration: 150 }}
             class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
               ? 'pointer-events-auto opacity-100'
               : 'pointer-events-none opacity-0'}"
@@ -551,6 +555,7 @@
             </button>
 
             <div
+              use:frameOpacity={{ visible: volOpen, duration: 150 }}
               class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
                 ? 'pointer-events-auto opacity-100'
                 : 'pointer-events-none opacity-0'}"
