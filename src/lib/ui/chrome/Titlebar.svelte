@@ -33,7 +33,8 @@
       if (disposed) return;
       const win = getCurrentWindow();
       if (platform === 'linux') {
-        document.documentElement.classList.add('cherry-linux-window');
+        // Opaque-window diagnostic: bypass transparent canvas and corner masks.
+        document.documentElement.classList.add('cherry-linux-opaque');
         const unlisten = await listen<typeof linuxInsets>('linux-controls-insets', ({ payload }) => {
           linuxInsets = payload;
         });

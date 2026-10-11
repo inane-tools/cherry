@@ -16,10 +16,10 @@ pub fn init_frame(window: &tauri::WebviewWindow) -> Result<(), String> {
     titlebar.style_context().add_class("cherry-empty-titlebar");
     let css = gtk::CssProvider::new();
     css.load_from_data(b"
-        window.cherry-linux-native { background-color: transparent; }
+        window.cherry-linux-native { background-color: #050505; }
         window.cherry-linux-native decoration {
             background-color: transparent;
-            border-radius: 12px;
+            border-radius: 0;
             box-shadow: 0 6px 24px alpha(black, 0.35);
         }
         window.cherry-linux-native.maximized decoration,
