@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '$lib/ui/transitions';
   import { contextMenuStore, closeContextMenu } from '$lib/app/services/contextMenu';
 
   $: state = $contextMenuStore;
@@ -52,7 +52,7 @@
   <div
     bind:this={el}
     data-context-menu
-    class="cherry-popup-surface fixed z-[60] min-w-[13rem] overflow-hidden rounded-lg bg-[var(--color-elevated)]/98 py-1 shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+    class="fixed z-[60] min-w-[13rem] overflow-hidden rounded-lg bg-[var(--color-elevated)]/98 py-1 shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl"
     style="left: {x}px; top: {y}px;"
     role="menu"
     in:fly={{ y: -6, duration: 120 }}

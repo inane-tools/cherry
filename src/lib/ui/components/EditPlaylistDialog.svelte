@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '$lib/ui/transitions';
   import type { Thumbnail } from '$lib/core/models';
   import { bestThumbnail } from '$lib/core/models';
   import { getPlaylistMeta } from '$lib/infra/ytmusic/InnertubeClient';
@@ -106,7 +106,7 @@
 {#if state.open && playlist}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="cherry-popup-surface fixed inset-0 z-[70] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]"
+    class="fixed inset-0 z-[70] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]"
     role="presentation"
     onclick={closePlaylistEditor}
     in:fade={{ duration: 150 }}

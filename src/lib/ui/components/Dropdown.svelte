@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly } from '$lib/ui/transitions';
 
   /** A flat, borderless select. Values are strings; callers parse as needed. */
   export let value = '';

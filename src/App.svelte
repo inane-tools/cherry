@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly } from '$lib/ui/transitions';
   import { pageStore, startMouseNavigation, go } from '$lib/app/services/navigation';
   import { restoreSettings, settingsStore } from '$lib/app/services/settings';
   import { authStore, initAuth } from '$lib/app/services/auth';

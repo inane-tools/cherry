@@ -2,7 +2,7 @@
   // Floating queue popup, anchored above the player bar. The full-screen player
   // shows the queue inline instead (see PlayerBar), so this only appears in the
   // collapsed-bar layout.
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '$lib/ui/transitions';
   import QueueList from './QueueList.svelte';
   import QueueHeader from './QueueHeader.svelte';
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '$lib/ui/transitions';
   import { closeSearch, searchOpen } from '$lib/app/services/overlays';
   import { pageStore } from '$lib/app/services/navigation';
   import SearchView from '$lib/ui/views/SearchView.svelte';

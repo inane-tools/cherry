@@ -2,7 +2,7 @@
   // Moon button + popover for the sleep timer. Shows the remaining time while
   // a timed timer runs (ticking once a second only while one is running).
   import { onDestroy } from 'svelte';
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '$lib/ui/transitions';
   import {
     SLEEP_PRESETS,
     cancelSleepTimer,

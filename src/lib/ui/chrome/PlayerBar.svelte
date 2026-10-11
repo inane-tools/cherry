@@ -6,7 +6,7 @@
   import { trackMenu } from '$lib/app/services/menus';
   import { playerExpanded } from '$lib/app/services/layout';
   import { settingsStore } from '$lib/app/services/settings';
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '$lib/ui/transitions';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import UpNextPanel from './UpNextPanel.svelte';
