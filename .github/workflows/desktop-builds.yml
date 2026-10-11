@@ -46,12 +46,21 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev patchelf flatpak flatpak-builder
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev patchelf flatpak flatpak-builder gnome-keyring dbus-x11
       - run: npm ci
       - name: Build frontend for Rust context
         run: npm run build
       - name: Rust tests
+        if: runner.os != 'Linux'
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Rust tests with isolated Linux keyring
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            export XDG_DATA_HOME="$(mktemp -d)"
+            printf "%s" "cherry-ci-test-password" | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked --manifest-path src-tauri/Cargo.toml
+          '
       - name: Build installers
         run: npm run tauri -- build ${{ matrix.args }}
         env:
