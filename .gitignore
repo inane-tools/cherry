@@ -7,6 +7,12 @@ dist-ssr/
 # tauri
 src-tauri/target/
 src-tauri/gen/
+packaging/flatpak/payload/
+packaging/flatpak/build/
+packaging/flatpak/repo/
+packaging/flatpak/out/
+.flatpak-builder/
+packaging/flatpak/.flatpak-builder/
 
 # svelte / vite
 .svelte-kit/

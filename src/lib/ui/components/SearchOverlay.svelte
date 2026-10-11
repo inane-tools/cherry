@@ -4,8 +4,6 @@
   import { closeSearch, searchOpen } from '$lib/app/services/overlays';
   import { pageStore } from '$lib/app/services/navigation';
   import SearchView from '$lib/ui/views/SearchView.svelte';
-  import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
-  import DialogHeader from './DialogHeader.svelte';
 
   // Navigating from a result (or anywhere) closes the search popup. Skip the
   // initial emission so subscribing does not immediately close it.
@@ -32,7 +30,7 @@
 {#if $searchOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 z-30 flex items-start justify-center bg-scrim/60 p-4 pt-16 backdrop-blur-[3px]"
+    class="fixed inset-0 z-50 flex items-start justify-center bg-scrim/40 p-4 pt-[12vh]"
     role="presentation"
     onclick={closeSearch}
     in:fade={{ duration: 150 }}
@@ -40,7 +38,7 @@
   >
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div
-      class="relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
+      class="relative w-full max-w-2xl"
       role="dialog"
       aria-modal="true"
       aria-label="Search"
@@ -49,10 +47,7 @@
       in:fly={{ y: -12, duration: 180 }}
       out:fade={{ duration: 120 }}
     >
-      <DialogHeader title="Search" description="Find music or paste a YouTube link." onClose={closeSearch} />
-      <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1 px-6 pb-6">
-        <SearchView />
-      </div>
+      <SearchView compact onClose={closeSearch} />
     </div>
   </div>
 {/if}

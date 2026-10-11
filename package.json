@@ -1,11 +1,12 @@
 {
   "name": "cherry",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "private": true,
   "description": "Lightweight YouTube Music desktop client",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:linux": "bash scripts/linux-session.sh npm run tauri -- dev",
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",

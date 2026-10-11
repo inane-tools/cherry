@@ -13,7 +13,10 @@
 use std::path::PathBuf;
 
 const LEGACY_IDENTIFIER: &str = "com.xylo.app";
-const NEW_IDENTIFIER: &str = "com.cherry.app";
+#[cfg(not(target_os = "linux"))]
+pub const NEW_IDENTIFIER: &str = "com.cherry.app";
+#[cfg(target_os = "linux")]
+pub const NEW_IDENTIFIER: &str = "tools.inane.cherry";
 const LEGACY_STORE: &str = "xylo-settings.json";
 const NEW_STORE: &str = "cherry-settings.json";
 /// Records that the one-time carry-over has been decided. Without it, "Clear
@@ -31,8 +34,12 @@ pub fn app_data_dir(identifier: &str) -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 pub fn app_data_dir(identifier: &str) -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(|dir| PathBuf::from(dir).join("Library").join("Application Support").join(identifier))
+    std::env::var_os("HOME").map(|dir| {
+        PathBuf::from(dir)
+            .join("Library")
+            .join("Application Support")
+            .join(identifier)
+    })
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -46,8 +53,12 @@ pub fn app_data_dir(identifier: &str) -> Option<PathBuf> {
 /// Copy the settings store across if (and only if) the new location is empty
 /// and the old one exists. Never overwrites, so a second run is a no-op.
 pub fn run() {
-    let (Some(old_dir), Some(new_dir)) = (app_data_dir(LEGACY_IDENTIFIER), app_data_dir(NEW_IDENTIFIER))
-    else {
+    #[cfg(target_os = "linux")]
+    migrate_linux_identity();
+    let (Some(old_dir), Some(new_dir)) = (
+        app_data_dir(LEGACY_IDENTIFIER),
+        app_data_dir(NEW_IDENTIFIER),
+    ) else {
         return;
     };
     // Already decided once — never look again (so a later clear sticks).
@@ -76,4 +87,26 @@ pub fn run() {
         }
         Err(e) => eprintln!("[cherry] could not migrate settings: {e}"),
     }
+}
+
+/// Linux uses the domain-backed desktop/Flatpak ID from 1.5 onward. Carry over
+/// settings from earlier direct builds once, without undoing a later reset.
+#[cfg(target_os = "linux")]
+fn migrate_linux_identity() {
+    let (Some(old), Some(new)) = (app_data_dir("com.cherry.app"), app_data_dir(NEW_IDENTIFIER))
+    else {
+        return;
+    };
+    let marker = new.join(".migrated-from-cherry");
+    if marker.exists() || std::fs::create_dir_all(&new).is_err() {
+        return;
+    }
+    let source = old.join(NEW_STORE);
+    if source.exists() && !new.join(NEW_STORE).exists() {
+        if let Err(error) = std::fs::copy(source, new.join(NEW_STORE)) {
+            eprintln!("[cherry] could not migrate Linux settings: {error}");
+            return;
+        }
+    }
+    let _ = std::fs::write(marker, b"1");
 }

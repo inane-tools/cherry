@@ -46,9 +46,10 @@ measurements and the Windows landmines that were hit along the way.
 
 ## Changelog
 
-**v1.4.2 (Ashibetsu)** refines the folder, playlist and search popups to match
-Settings, updates button rounding, and fixes playback, sign-out, library loading
-and scrobble races. See
+**v1.5.0 (Sunagawa)** adds Spotlight-style search, optional window controls,
+native Linux/macOS decorations, and build pipelines for Linux, macOS and direct
+Flatpak distribution. See [platform support](docs/platforms.md) for validation
+status and Flathub requirements, and
 [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Requirements
@@ -72,6 +73,9 @@ npm test               # unit tests (Vitest)
 npm run build          # build the frontend to dist/
 npm run tauri build    # package a release (NSIS/MSI on Windows)
 ```
+
+Linux/macOS builds, native window controls, direct Flatpak packaging and the
+Flathub submission constraints are documented in [docs/platforms.md](docs/platforms.md).
 
 ## Project layout
 

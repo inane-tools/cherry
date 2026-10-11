@@ -20,8 +20,23 @@
   import { searchAll } from '$lib/infra/ytmusic/InnertubeClient';
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
+  import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
 
+  export let compact = false;
+  export let onClose: () => void = () => {};
+  let searchInput: HTMLInputElement;
+  let resultPanel: HTMLDivElement;
 
+  function onSearchKey(event: KeyboardEvent): void {
+    if (!compact || (event.key !== 'ArrowDown' && event.key !== 'ArrowUp')) return;
+    const choices = Array.from(resultPanel?.querySelectorAll<HTMLElement>('[role="button"], button') ?? []);
+    if (!choices.length) return;
+    const active = document.activeElement;
+    const index = choices.findIndex((choice) => choice === active);
+    event.preventDefault();
+    if (event.key === 'ArrowUp' && index <= 0) searchInput.focus();
+    else choices[Math.min(choices.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)))].focus();
+  }
   let q = get(searchQuery);
   $: results = $searchResultsStore;
   let loading = false;
@@ -33,12 +48,20 @@
   // Returning to the search page (Back) keeps the last results; if there are
   // none yet but a query exists, run it.
   onMount(() => {
+    if (compact) searchInput?.focus();
     if (q.trim() && !results) void run(q, true);
   });
 
   async function run(query: string, immediate = false) {
     const text = query.trim();
-    if (!text) return;
+    clearTimeout(debounce);
+    const id = ++seq;
+    if (!text) {
+      loading = false;
+      error = null;
+      searchResultsStore.set(null);
+      return;
+    }
     // A pasted YouTube / YouTube Music link opens that song or playlist rather
     // than searching for the URL text.
     const link = parseYouTubeLink(text);
@@ -54,13 +77,14 @@
     // a single clear message instead.
     if (!$authStore) {
       clearTimeout(debounce);
+      loading = false;
       error = SIGN_IN_REQUIRED;
       announceSignInRequired();
       return;
     }
     clearTimeout(debounce);
     const execute = async () => {
-      const id = ++seq;
+      if (id !== seq) return;
       loading = true;
       error = null;
       try {
@@ -96,6 +120,7 @@
     void run(req.query, true);
   });
   onDestroy(() => {
+    ++seq;
     unsubscribeSearch();
     clearTimeout(debounce);
   });
@@ -106,7 +131,6 @@
     // thing typed, not just the last committed search.
     searchQuery.set(q);
     const text = q;
-    if (!text.trim()) return;
     requestSearchSilently(text);
   }
 
@@ -119,6 +143,7 @@
 
   function play(list: Track[], i: number) {
     void playTracks(list, i);
+    if (compact) onClose();
   }
 
   function albumCover(album: Album): string {
@@ -139,25 +164,28 @@
   $: playlists = results?.playlists ?? [];
 </script>
 
-<div class="mx-auto max-w-[80rem]">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div onkeydown={onSearchKey} class={compact ? 'flex max-h-[76vh] flex-col gap-2' : 'mx-auto max-w-[80rem]'}>
   {#if !$authStore}
     <!-- App overlays a full-window AuthGate when signed out; nothing to render. -->
   {:else}
   <form
-    class="flex items-center gap-2"
+    class={compact ? 'flex shrink-0 items-center gap-3 rounded-2xl bg-[var(--color-popover)] px-5 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : 'flex items-center gap-2'}
     onsubmit={(e) => {
       e.preventDefault();
       requestSearch(q);
     }}
   >
+    {#if compact}<i class="bx bx-search shrink-0 text-2xl text-zinc-500" aria-hidden="true"></i>{/if}
     <div
-      class="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 transition-colors focus-within:border-[var(--color-accent)]/60"
+      class={compact ? 'flex min-w-0 flex-1 items-center gap-3' : 'flex h-10 min-w-0 flex-1 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 transition-colors focus-within:border-[var(--color-accent)]/60'}
     >
       <input
         bind:value={q}
+        bind:this={searchInput}
         oninput={onType}
-        placeholder="What do you want to listen to?"
-        class="min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-none placeholder:text-zinc-600"
+        placeholder={compact ? 'Search music or paste a YouTube link' : 'What do you want to listen to?'}
+        class="min-w-0 flex-1 bg-transparent text-zinc-100 outline-none placeholder:text-zinc-500 {compact ? 'text-[18px]' : 'text-[12px]'}"
         aria-label="Search music"
       />
       {#if q}
@@ -168,14 +196,18 @@
           onclick={() => {
             q = '';
             searchQuery.set('');
-            searchResultsStore.set(null);
-            error = null;
+            lastTyped = '';
+            void run('');
+            searchInput.focus();
           }}
         >
           <i class="bx bx-x"></i>
         </button>
       {/if}
     </div>
+    {#if compact}
+      <button type="button" onclick={onClose} aria-label="Close search" class="rounded-md bg-white/[0.06] px-1.5 py-1 text-[10px] text-zinc-500 hover:text-white">esc</button>
+    {:else}
     <button
       type="submit"
       class="cherry-btn-scrim flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)] text-lg text-white transition-colors hover:bg-[var(--color-accent2)]"
@@ -184,17 +216,30 @@
     >
       <i class="bx bx-search"></i>
     </button>
+    {/if}
   </form>
 
+  {#if !compact || loading || error || results}
+  <div bind:this={resultPanel} use:overlayScrollbar class={compact ? 'cherry-overlay-scroll min-h-0 overflow-y-auto rounded-2xl bg-[var(--color-popover)] px-4 pb-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : ''}>
   {#if loading}
-    <div class="mt-8">
+    <div class={compact ? 'pt-4' : 'mt-8'}>
       <TrackListSkeleton rows={6} showHeader={false} />
     </div>
   {:else if error}
-    <p class="mt-6 text-[13px] text-zinc-500">{error}</p>
+    <p class="mt-4 text-[12px] text-zinc-500">{error}</p>
   {:else if results}
+    {#if songs.length > 0}
+      <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
+        Songs
+      </h2>
+      <div class="flex flex-col gap-0.5">
+        {#each songs as t, i}
+          <TrackRow track={t} index={i} list={songs} onPlay={(_t, ii) => play(songs, ii)} />
+        {/each}
+      </div>
+    {/if}
     {#if artists.length > 0}
-      <h2 class="mb-3 mt-8 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
+      <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
         Artists
       </h2>
       <div class="flex flex-wrap gap-2">
@@ -225,10 +270,10 @@
     {/if}
 
     {#if albums.length > 0}
-      <h2 class="mb-3 mt-8 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
+      <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
         Albums
       </h2>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+      <div class="grid gap-2 {compact ? 'grid-cols-3 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-6'}">
         {#each albums as album}
           <button
             class="group flex flex-col gap-2 rounded-lg p-2 text-left transition-colors hover:bg-white/5"
@@ -257,10 +302,10 @@
     {/if}
 
     {#if playlists.length > 0}
-      <h2 class="mb-3 mt-8 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
+      <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
         Playlists
       </h2>
-      <div class="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8">
+      <div class="grid gap-2 {compact ? 'grid-cols-3 sm:grid-cols-4' : 'grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8'}">
         {#each playlists as playlist (playlist.browseId)}
           <button
             class="group flex flex-col gap-2 rounded-lg p-2 text-left transition-colors hover:bg-white/5"
@@ -291,16 +336,9 @@
       </div>
     {/if}
 
-    {#if songs.length > 0}
-      <h2 class="mb-3 mt-8 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
-        Songs
-      </h2>
-      <div class="flex flex-col gap-0.5">
-        {#each songs as t, i}
-          <TrackRow track={t} index={i} list={songs} onPlay={(_t, ii) => play(songs, ii)} />
-        {/each}
-      </div>
-    {/if}
+
+  {/if}
+  </div>
   {/if}
   {/if}
 </div>

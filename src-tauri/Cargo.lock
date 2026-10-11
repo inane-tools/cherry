@@ -508,10 +508,11 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "cherry"
-version = "1.4.2"
+version = "1.5.0"
 dependencies = [
  "base64 0.22.1",
  "discord-rich-presence",
+ "gtk",
  "keyring",
  "md5",
  "reqwest 0.12.28",
@@ -2290,7 +2291,6 @@ checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "byteorder",
  "dbus-secret-service",
- "linux-keyutils",
  "log",
  "secret-service",
  "security-framework 2.11.1",
@@ -2354,16 +2354,6 @@ version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6480ccc157a1389bb2e4891b24751b0f798ba640d22386f23143fbcc89da195a"
 dependencies = [
- "libc",
-]
-
-[[package]]
-name = "linux-keyutils"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83270a18e9f90d0707c41e9f35efada77b64c0e6f3f1810e71c8368a864d5590"
-dependencies = [
- "bitflags 2.13.2",
  "libc",
 ]
 
@@ -4480,8 +4470,6 @@ dependencies = [
 [[package]]
 name = "tauri-runtime-wry"
 version = "2.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e6fac707727b7a2f48e4ded90976324267371073edbb415ffb73bb0458d203f"
 dependencies = [
  "gtk",
  "http",

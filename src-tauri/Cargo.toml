@@ -1,6 +1,6 @@
 [package]
 name = "cherry"
-version = "1.4.2"
+version = "1.5.0"
 description = "Lightweight YouTube Music desktop client"
 authors = ["Cherry"]
 edition = "2021"
@@ -52,8 +52,16 @@ windows = { version = "0.61", features = [
 keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["linux-native-sync-persistent", "sync-secret-service", "crypto-rust"] }
+gtk = "0.18"
+# Secret Service works in Flatpak through filtered D-Bus access; the hybrid
+# kernel-keyring backend requires keyctl, which is blocked by the sandbox.
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# GTK overlay caption buttons change the webview's ancestors. Resolve the GTK
+# toplevel safely in Linux's mouse/touch resize handlers instead of panicking.
+[patch.crates-io]
+tauri-runtime-wry = { path = "vendor/tauri-runtime-wry" }

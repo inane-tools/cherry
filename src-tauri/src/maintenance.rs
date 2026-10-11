@@ -25,7 +25,9 @@ pub const SETTINGS_FILE: &str = "cherry-settings.json";
 const PENDING_CLEAR: &str = ".pending-clear";
 
 fn app_data_dir(app: &AppHandle) -> Option<PathBuf> {
-    app.path().resolve("", tauri::path::BaseDirectory::AppData).ok()
+    app.path()
+        .resolve("", tauri::path::BaseDirectory::AppData)
+        .ok()
 }
 
 /// Directory names a clear tries to remove (the WebView2 profile folders and
@@ -162,7 +164,7 @@ pub fn finish_pending_clear(dir: &std::path::Path) {
 /// WebView2 profile is not yet open): finish any clear the running app had to
 /// defer, using the same app-data resolution as `migrate`.
 pub fn run_startup_cleanup() {
-    let Some(dir) = crate::migrate::app_data_dir("com.cherry.app") else {
+    let Some(dir) = crate::migrate::app_data_dir(crate::migrate::NEW_IDENTIFIER) else {
         return;
     };
     finish_pending_clear(&dir);
@@ -200,7 +202,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("cherry-maintenance-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cherry-maintenance-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create temp dir");
         dir

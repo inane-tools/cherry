@@ -12,6 +12,7 @@ mod playlist_image;
 mod secrets;
 mod thumbar;
 mod webview_memory;
+mod window_controls;
 mod ytm_login;
 
 use std::sync::Mutex;
@@ -56,6 +57,14 @@ fn build_tray(app: &tauri::AppHandle) {
                 }
             }
         });
+    #[cfg(target_os = "linux")]
+    if let Ok(cache) = app.path().app_cache_dir() {
+        // Keep tray PNGs inside Flatpak's private cache, avoiding broad access
+        // to the host runtime directory.
+        if std::fs::create_dir_all(&cache).is_ok() {
+            builder = builder.temp_dir_path(cache);
+        }
+    }
     if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);
     }
@@ -82,6 +91,11 @@ fn append_webview2_args(extra: &str) {
 fn set_webview_zoom(window: tauri::WebviewWindow, scale: f64) -> Result<(), String> {
     let scale = scale.clamp(0.4, 2.5);
     window.set_zoom(scale).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn desktop_platform() -> &'static str {
+    std::env::consts::OS
 }
 
 fn main() {
@@ -168,19 +182,41 @@ fn main() {
             secrets::secret_load,
             webview_memory::set_webview_memory_low,
             set_webview_zoom,
+            desktop_platform,
+            window_controls::set_linux_window_controls,
         ])
         .on_window_event(|window, event| {
-            // Music app behavior: closing the main window minimizes to tray.
-            // Quit explicitly from the tray menu. Auxiliary windows
-            // (e.g. the login dialog) close normally.
+            // Auxiliary windows (e.g. the login dialog) close normally.
             if window.label() != "main" {
                 return;
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                // GNOME commonly has no tray host; closing must not strand an
+                // invisible process. Linux exits normally. macOS can reopen
+                // from the Dock and Windows has the tray menu.
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = api;
+                    return;
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Cherry");
+        .build(tauri::generate_context!())
+        .expect("error while building Cherry")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

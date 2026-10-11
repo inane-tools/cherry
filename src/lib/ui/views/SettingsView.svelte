@@ -874,6 +874,18 @@
         </div>
 
         <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Window controls</div>
+          <label class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-window shrink-0 text-sm text-zinc-500" aria-hidden="true"></i>Show window controls</span>
+            <Toggle
+              checked={$settingsStore.windowControls}
+              label="Show window controls"
+              onchange={(value) => updateSettings({ windowControls: value })}
+            />
+          </label>
+        </div>
+
+        <div>
           <div class="mb-2 text-[12px] font-semibold text-zinc-200">Background</div>
           <label class="flex items-center justify-between gap-4">
             <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-droplet shrink-0 text-sm text-zinc-500"></i>Accent gradients</span>

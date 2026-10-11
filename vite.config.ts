@@ -51,7 +51,8 @@ export default defineConfig({
     watch: { ignored: ['**/src-tauri/**'] },
   },
   build: {
-    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
+    // Match Tailwind 4's browser floor; older WebKit cannot render the UI.
+    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome111' : 'safari16.4',
     minify: !process.env.TAURI_ENV_DEBUG ? 'oxc' : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },

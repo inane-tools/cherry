@@ -4,6 +4,25 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-10-11
+
+### Added
+
+- Window-controls preference in Appearance, with native Linux/macOS decorations.
+- Native desktop build workflow for Windows NSIS, Linux DEB/AppImage and direct
+  Flatpak distribution. macOS configuration is prepared; builds are deferred.
+
+### Changed
+
+- Search uses a compact floating bar above scrollable results, with focus on
+  opening and songs first. The release codename advances to Sunagawa.
+- Linux uses Secret Service directly for sandbox-compatible credential storage.
+- Linux closes normally without relying on a tray host; macOS supports Dock reopen.
+
+### Fixed
+
+- Cleared, replaced or closed searches cannot restore stale responses.
+
 ## [1.4.2] — 2026-10-10
 
 ### Changed
@@ -286,6 +305,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.5.0]: https://github.com/inane-tools/cherry/releases/tag/v1.5.0
 [1.4.1]: https://github.com/inane-tools/cherry/releases/tag/v1.4.1
 [1.4.2]: https://github.com/inane-tools/cherry/releases/tag/v1.4.2
 [1.4.0]: https://github.com/inane-tools/cherry/releases/tag/v1.4.0

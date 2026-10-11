@@ -44,6 +44,17 @@ describe('settings repository', () => {
     expect(await repo.loadSettings()).toEqual(repo.DEFAULT_SETTINGS);
   });
 
+  it('keeps controls visible for pre-1.5 settings and remembers disabling them', async () => {
+    file.set('settings', { volume: 0.4, compactSidebar: true });
+    expect((await repo.loadSettings()).windowControls).toBe(true);
+    await repo.saveSettings({ windowControls: false });
+    repo.resetSettingsCache();
+    const restored = await repo.loadSettings();
+    expect(restored.windowControls).toBe(false);
+    expect(restored.volume).toBe(0.4);
+    expect(restored.compactSidebar).toBe(true);
+  });
+
   it('merges patches and never drops an earlier concurrent write', async () => {
     await Promise.all([repo.saveSettings({ volume: 0.3 }), repo.saveSettings({ shuffle: true })]);
     repo.resetSettingsCache();

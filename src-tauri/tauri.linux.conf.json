@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "tools.inane.cherry",
+  "app": {
+    "windows": [{ "label": "main", "title": "Cherry", "width": 1120, "height": 720, "minWidth": 420, "minHeight": 480, "decorations": false, "transparent": true, "dragDropEnabled": false, "center": true }]
+  },
+  "bundle": { "targets": ["deb", "appimage"] }
+}

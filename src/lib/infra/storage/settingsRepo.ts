@@ -38,6 +38,8 @@ export interface CherrySettings {
   collapsedFolders: string[];
   /** Slim the playlist rail (covers only, search as a button). */
   compactSidebar: boolean;
+  /** Show caption buttons, using GTK buttons on Linux and native decorations on macOS. */
+  windowControls: boolean;
   /** Width of the expanded sidebar in pixels (user-resizable by dragging). */
   sidebarWidth: number;
   /** Show the accent gradient washes (content background + player bar). */
@@ -95,6 +97,7 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   sidebarOrder: [],
   collapsedFolders: [],
   compactSidebar: false,
+  windowControls: true,
   sidebarWidth: 240,
   gradientsEnabled: true,
   tintedBackground: false,

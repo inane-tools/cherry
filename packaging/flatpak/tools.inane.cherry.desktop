@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Cherry
+Comment=Listen to your YouTube Music library
+Exec=cherry
+Icon=tools.inane.cherry
+Terminal=false
+Categories=AudioVideo;Audio;Music;Player;
+StartupWMClass=Cherry

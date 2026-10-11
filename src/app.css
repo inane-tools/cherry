@@ -91,6 +91,19 @@ body {
   background: var(--color-surface);
 }
 
+/* Linux uses a transparent native surface so the entire webview, including
+   floating overlays, can follow the rounded window outline. */
+html.cherry-linux-window body {
+  background: transparent;
+}
+html.cherry-linux-window #app {
+  background: var(--color-surface);
+  clip-path: inset(0 round 12px);
+}
+html.cherry-linux-window.cherry-window-expanded #app {
+  clip-path: none;
+}
+
 /* Red gradient from the top of the window, tinted by the album art colour.
    `color-mix` keeps it derived from the animatable accent, so changing track
    fades the whole wash rather than snapping. */

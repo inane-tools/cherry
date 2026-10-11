@@ -1,0 +1,25 @@
+# For direct distribution only. AI-assisted packaging; do not submit to Flathub.
+app-id: tools.inane.cherry
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: cherry
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network
+  - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --own-name=org.mpris.MediaPlayer2.cherry
+  - --own-name=tools.inane.cherry.SingleInstance
+modules:
+  - name: cherry
+    buildsystem: simple
+    build-commands:
+      - cp -a bin lib share /app/
+    sources:
+      - type: dir
+        path: payload

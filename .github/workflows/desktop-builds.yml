@@ -1,0 +1,68 @@
+name: Desktop builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, 'codex/**']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  installers:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            args: --bundles nsis
+          - os: ubuntu-24.04
+            name: linux-x64
+            args: --bundles deb,appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev patchelf flatpak flatpak-builder
+      - run: npm ci
+      - name: Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build installers
+        run: npm run tauri -- build ${{ matrix.args }}
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+      - name: Build self-distributed Flatpak
+        if: runner.os == 'Linux'
+        run: bash packaging/flatpak/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cherry-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            packaging/flatpak/out/*.flatpak

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { isTauri } from '$lib/app/services/platform';
+  import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
+  import { isTauri, invokeSafe } from '$lib/app/services/platform';
+  import { settingsStore } from '$lib/app/services/settings';
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
   import { back, canGoBack, go } from '$lib/app/services/navigation';
@@ -16,6 +19,61 @@
   export let onMenu: () => void = () => {};
 
   let maximized = false;
+  let platform = '';
+  let linuxInsets = { left: 0, right: 0 };
+
+  onMount(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let stopSettings: (() => void) | undefined;
+    let stopResize: (() => void) | undefined;
+    let stopInsets: (() => void) | undefined;
+    void (async () => {
+      platform = await invokeSafe<string>('desktop_platform') ?? '';
+      if (disposed) return;
+      const win = getCurrentWindow();
+      if (platform === 'linux') {
+        document.documentElement.classList.add('cherry-linux-window');
+        const unlisten = await listen<typeof linuxInsets>('linux-controls-insets', ({ payload }) => {
+          linuxInsets = payload;
+        });
+        if (disposed) { unlisten(); return; }
+        stopInsets = unlisten;
+      }
+      if (platform === 'linux' || platform === 'macos') {
+        // GTK buttons on Linux and native decorations on macOS. Queue
+        // changes so rapid toggles cannot leave the wrong frame on screen.
+        let frameUpdate = Promise.resolve();
+        let lastVisible: string | undefined;
+        stopSettings = settingsStore.subscribe(({ windowControls, uiZoom }) => {
+          const key = `${windowControls}:${uiZoom}`;
+          if (lastVisible === key) return;
+          lastVisible = key;
+          frameUpdate = frameUpdate.then(async () => {
+            if (disposed) return;
+            if (platform === 'linux') {
+              const insets = await invokeSafe<typeof linuxInsets>('set_linux_window_controls', { visible: windowControls, zoom: uiZoom });
+              if (!disposed && insets) linuxInsets = insets;
+            } else {
+              await win.setDecorations(windowControls);
+            }
+          }).catch(console.error);
+        });
+      }
+      const updateWindowShape = async () => {
+        maximized = await win.isMaximized().catch(() => maximized);
+        const fullscreen = await win.isFullscreen().catch(() => false);
+        if (!disposed && platform === 'linux') {
+          document.documentElement.classList.toggle('cherry-window-expanded', maximized || fullscreen);
+        }
+      };
+      await updateWindowShape();
+      const unlisten = await win.onResized(updateWindowShape);
+      if (disposed) unlisten();
+      else stopResize = unlisten;
+    })().catch(console.error);
+    return () => { disposed = true; stopSettings?.(); stopResize?.(); stopInsets?.(); };
+  });
 
   $: profile = $activeChannelStore;
   $: accountName = profile?.name || $authStore?.accountLabel || 'Guest';
@@ -65,6 +123,8 @@
 <header
   onmousedown={onBarMouseDown}
   class="absolute inset-x-0 top-0 z-40 flex h-12 items-center gap-2 pl-2"
+  style:padding-left={platform === 'linux' ? `${Math.max(8, linuxInsets.left / $settingsStore.uiZoom)}px` : undefined}
+  style:padding-right={platform === 'linux' ? `${linuxInsets.right / $settingsStore.uiZoom || 12}px` : undefined}
 >
   <!-- Left: back + menu, shown only in the narrow layout (where the sidebar is a
        drawer). Hidden on the welcome screen. -->
@@ -93,7 +153,7 @@
   {/if}
 
   <!-- Right: account + native window controls. -->
-  <div class="ml-auto flex h-full shrink-0 items-center justify-end gap-2">
+  <div class="ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls ? '' : 'pr-3'}">
     {#if !minimal}
       <button
         class="group relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--color-avatar)] transition-colors"
@@ -114,7 +174,7 @@
       </button>
     {/if}
 
-    {#if isTauri()}
+    {#if isTauri() && platform === 'windows' && $settingsStore.windowControls}
       <!-- Native Windows caption buttons: Segoe system glyphs
            (E921 minimise, E922 maximise, E923 restore, E8BB close).
            `z-40` keeps them clickable above the sign-in gate, which covers the
