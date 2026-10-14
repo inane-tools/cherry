@@ -7,6 +7,11 @@ dist-ssr/
 # tauri
 src-tauri/target/
 src-tauri/gen/
+# Desktop icon generation also emits unused mobile/UWP assets.
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/Square*Logo.png
+src-tauri/icons/StoreLogo.png
 packaging/flatpak/payload/
 packaging/flatpak/build/
 packaging/flatpak/repo/
@@ -17,6 +22,20 @@ packaging/flatpak/.flatpak-builder/
 # svelte / vite
 .svelte-kit/
 vite.config.*.timestamp*
+.vite/
+coverage/
+*.tsbuildinfo
+# Local environment files, design exports and release downloads.
+.env
+.env.*
+!.env.example
+/Frame *.png
+/logo.png
+/release-artifacts/
+/artifacts/
+/_*-qa.html
+/src/_*-qa.ts
+/src/_*-qa.svelte
 
 # os / editor
 .DS_Store

@@ -85,6 +85,13 @@ npm run tauri -- dev   # desktop app with hot reload
 npm run dev:linux      # Linux dev launcher; prevents duplicate media players
 ```
 
+The editable logo source is `src/lib/assets/logo.png`. The copy in
+`public/logo.png` is the browser favicon; `src-tauri/icons` contains generated
+desktop launcher/installer assets. Regenerate those with
+`npm run tauri -- icon src/lib/assets/logo.png`. Mobile/UWP output, root-level
+Figma exports, build output and downloaded release artifacts are ignored.
+Keep installed dependencies and Rust compilation caches locally for faster builds.
+
 Other scripts:
 
 ```bash
