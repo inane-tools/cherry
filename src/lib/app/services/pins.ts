@@ -50,6 +50,18 @@ export function isPinned(browseId: string): boolean {
   return get(pinnedStore).some((p) => p.browseId === browseId);
 }
 
+/** Reorder within the pin group; this never unpins or moves into a folder. */
+export async function reorderPin(browseId: string, beforeId: string | null): Promise<void> {
+  const current = get(pinnedStore);
+  const pin = current.find((item) => item.browseId === browseId);
+  if (!pin || beforeId === browseId || (beforeId !== null && !current.some((item) => item.browseId === beforeId))) return;
+  const next = current.filter((item) => item.browseId !== browseId);
+  const at = beforeId === null ? next.length : next.findIndex((item) => item.browseId === beforeId);
+  next.splice(at, 0, pin);
+  pinnedStore.set(next);
+  await updateSettings({ pinnedPlaylists: next });
+}
+
 /** Pin or unpin a playlist, persisting the change. */
 export async function togglePin(playlist: Playlist): Promise<void> {
   const current = get(pinnedStore);

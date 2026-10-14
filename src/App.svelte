@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { fade, fly } from '$lib/ui/transitions';
   import { pageStore, startMouseNavigation, go } from '$lib/app/services/navigation';
@@ -9,6 +9,7 @@
   import { loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
   import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
+  import { startTray } from '$lib/app/services/tray';
   import { startMemoryTrimming } from '$lib/app/services/memory';
   import { startScrobbling } from '$lib/app/services/scrobble';
   import { startShortcuts } from '$lib/app/services/shortcuts';
@@ -25,14 +26,18 @@
   } from '$lib/app/services/layout';
   import { initFolders } from '$lib/app/services/folders';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
+  import { washTransition } from '$lib/ui/actions/washTransition';
   import logoUrl from '$lib/assets/logo.png';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
   import Sidebar from '$lib/ui/chrome/Sidebar.svelte';
   import PlayerBar from '$lib/ui/chrome/PlayerBar.svelte';
+  import QueueSidebar from '$lib/ui/chrome/QueueSidebar.svelte';
+  import { queueSidebarVisible } from '$lib/app/services/queueSidebar';
   import AuthGate from '$lib/ui/components/AuthGate.svelte';
   import ContextMenu from '$lib/ui/components/ContextMenu.svelte';
   import PlaylistPickerDialog from '$lib/ui/components/PlaylistPickerDialog.svelte';
   import EditPlaylistDialog from '$lib/ui/components/EditPlaylistDialog.svelte';
+  import DeletePlaylistDialog from '$lib/ui/components/DeletePlaylistDialog.svelte';
   import FolderDialog from '$lib/ui/components/FolderDialog.svelte';
   import SongCreditsDialog from '$lib/ui/components/SongCreditsDialog.svelte';
   import SettingsOverlay from '$lib/ui/components/SettingsOverlay.svelte';
@@ -41,8 +46,12 @@
   import PlaylistView from '$lib/ui/views/PlaylistView.svelte';
   import ArtistView from '$lib/ui/views/ArtistView.svelte';
   import AlbumView from '$lib/ui/views/AlbumView.svelte';
+  import BrowseView from '$lib/ui/views/BrowseView.svelte';
 
   let ready = false;
+  let stopTray = () => {};
+  let destroyed = false;
+  onDestroy(() => { destroyed = true; stopTray(); });
   let mainEl: HTMLElement | undefined;
 
   // Apply the stored theme/accent as early as possible (defaults until settings
@@ -125,6 +134,7 @@
     // background so startup is not serialised behind several IPC round trips.
     void startMediaKeyListener();
     await initAuth();
+    void startTray().then((stop) => { if (destroyed) stop(); else stopTray = stop; });
     warmup();
     // Apply the stored Discord app id immediately: without this, presence only
     // started working after the save button was pressed in Settings.
@@ -170,7 +180,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions : only prevents the native menu -->
-<div class="cherry-wash relative flex h-full flex-col text-zinc-100" oncontextmenu={suppressNativeContextMenu}>
+<div use:washTransition class="cherry-wash relative flex h-full flex-col text-zinc-100" oncontextmenu={suppressNativeContextMenu}>
   <div class="flex min-h-0 flex-1">
     <!-- Playlist rail: full window height, never covered by the top bar or player.
          Hidden while signed out — there is no library to show, and the welcome
@@ -185,6 +195,8 @@
       <!-- On the welcome screen only the native window controls remain; the bar
            itself stays draggable. -->
       <Titlebar minimal={signedOut} narrow={$narrowLayout} onMenu={toggleSidebarDrawer} />
+      <div class="flex min-h-0 flex-1">
+      <div class="relative flex min-w-0 flex-1 flex-col">
       <main
         bind:this={mainEl}
         use:overlayScrollbar={{ topInset: 48 }}
@@ -216,6 +228,8 @@
                   <ArtistView />
                 {:else if $pageStore.view === 'album'}
                   <AlbumView />
+                {:else if $pageStore.view === 'browse' || $pageStore.view === 'explore'}
+                  <BrowseView />
                 {:else}
                   <HomeView />
                 {/if}
@@ -245,6 +259,11 @@
           </div>
         </div>
       {/if}
+      </div>
+      {#if ready && !signedOut && $queueSidebarVisible}
+        <QueueSidebar />
+      {/if}
+      </div>
     </div>
   </div>
 
@@ -256,7 +275,7 @@
        Settings is the only view allowed through, since that is where sign-in
        lives. -->
   {#if signedOut}
-    <div class="cherry-wash cherry-gate absolute inset-0 z-30">
+    <div use:washTransition class="cherry-wash cherry-gate absolute inset-0 z-30">
       <AuthGate title="Welcome to Cherry :3" />
     </div>
   {/if}
@@ -286,6 +305,7 @@
   <!-- Playlist add/create and edit dialogs (one instance each). -->
   <PlaylistPickerDialog />
   <EditPlaylistDialog />
+<DeletePlaylistDialog />
   <FolderDialog />
   <SongCreditsDialog />
 

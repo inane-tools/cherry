@@ -129,7 +129,7 @@ First verify the development app, then build the release and direct Flatpak:
 ```bash
 npm run tauri -- build --bundles deb
 bash packaging/flatpak/build.sh
-flatpak install --user packaging/flatpak/out/Cherry_1.5.0_x86_64.flatpak
+flatpak install --user packaging/flatpak/out/Cherry_1.6.0_x86_64.flatpak
 flatpak run tools.inane.cherry
 ```
 

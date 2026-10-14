@@ -12,7 +12,7 @@ vi.mock('./player', () => ({ playTracks: vi.fn(), playTracksShuffled: vi.fn() })
 vi.mock('$lib/infra/storage/cache', () => ({ cacheClear: vi.fn() }));
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
   getActiveChannel: vi.fn(() => 'channel'),
-  getLibraryPlaylists: vi.fn(), getHomeSections: vi.fn(),
+  getLibraryPlaylists: vi.fn(), getHomeSections: vi.fn(), getHomePage: vi.fn(),
   getPlaylistMeta: vi.fn(async () => null), streamCollectionTracks: vi.fn(),
 }));
 
@@ -46,9 +46,29 @@ beforeEach(() => {
   vi.mocked(api.getActiveChannel).mockReturnValue('channel');
   vi.mocked(api.getLibraryPlaylists).mockResolvedValue([playlist('new')]);
   vi.mocked(api.getHomeSections).mockResolvedValue([section('new')]);
+  vi.mocked(api.getHomePage).mockImplementation(async () => ({ sections: await api.getHomeSections(), continuation: null }));
 });
 
 describe('account and channel loads', () => {
+  it('loads extra Home sections, removes duplicates, and stops repeated continuation tokens', async () => {
+    vi.mocked(api.getHomePage).mockResolvedValueOnce({ sections: [section('first')], continuation: 'next' }).mockResolvedValueOnce({ sections: [section('first'), section('second')], continuation: 'next' });
+    await service.loadHome();
+    await service.loadMoreHome();
+    expect(get(service.homeSectionsStore).map((s) => s.title)).toEqual(['first', 'second']);
+    expect(get(service.homeContinuationStore)).toBeNull();
+  });
+
+  it('ignores stale filter results when another Home filter is selected', async () => {
+    const first = deferred<Awaited<ReturnType<typeof api.getHomePage>>>();
+    vi.mocked(api.getHomePage).mockReturnValueOnce(first.promise).mockResolvedValueOnce({ sections: [section('focus')], continuation: null });
+    const pending = service.loadHome();
+    await settle();
+    await service.selectHomeFilter({ label: 'Focus', browseId: 'FEmusic_home', params: 'focus' });
+    first.resolve({ sections: [section('old')], continuation: 'old-token' });
+    await pending;
+    expect(get(service.homeSectionsStore)).toEqual([section('focus')]);
+    expect(get(service.homeContinuationStore)).toBeNull();
+  });
   it('does not append streamed playlist pages after sign-out', async () => {
     const song = (videoId: string): Track => ({ videoId, title: videoId, artists: [], thumbnails: [] });
     const stream = deferred<Track[]>();

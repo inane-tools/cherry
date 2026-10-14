@@ -17,6 +17,7 @@ import { addablePlaylistsStore } from './addablePlaylists';
 import { authStore } from './auth';
 import { notify } from './contextMenu';
 import { playlistStore } from './playlists';
+import { prependSidebarItem } from './folders';
 
 /** True when the user created (or can edit) the playlist. */
 export function isPlaylistOwned(browseId: string): boolean {
@@ -50,6 +51,7 @@ export async function savePlaylist(playlist: Playlist): Promise<boolean> {
     playlistStore.update((list) =>
       list.some((p) => p.browseId === playlist.browseId) ? list : [playlist, ...list],
     );
+    await prependSidebarItem(playlist.browseId);
     cacheClear(`library:${getActiveChannel()}:`);
     notify(`Saved “${playlist.title}”`);
     return true;

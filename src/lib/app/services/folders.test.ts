@@ -18,6 +18,23 @@ beforeEach(() => {
 });
 
 describe('folders', () => {
+  it('puts new folders and saved playlists ahead of existing unpinned entries', async () => {
+    folders.sidebarOrderStore.set(['old-playlist', 'older-playlist']);
+    const id = (await folders.createFolder('New folder'))!;
+    expect(get(folders.sidebarOrderStore)).toEqual([id, 'old-playlist', 'older-playlist']);
+    await folders.prependSidebarItem('new-playlist');
+    expect(get(folders.sidebarOrderStore)).toEqual(['new-playlist', id, 'old-playlist', 'older-playlist']);
+    await folders.prependSidebarItem('new-playlist');
+    expect(get(folders.sidebarOrderStore).filter((item) => item === 'new-playlist')).toHaveLength(1);
+  });
+
+  it('detaches a re-added playlist from any stale folder placement', async () => {
+    const id = (await folders.createFolder('Folder'))!;
+    await folders.movePlaylist('re-added', id, null);
+    await folders.prependSidebarItem('re-added');
+    expect(folders.folderFor('re-added')).toBeNull();
+    expect(get(folders.sidebarOrderStore)[0]).toBe('re-added');
+  });
   it('creates, renames and deletes folders', async () => {
     const id = (await folders.createFolder('  Chill  '))!;
     expect(get(folders.foldersStore)).toEqual([{ id, name: 'Chill', playlistIds: [] }]);

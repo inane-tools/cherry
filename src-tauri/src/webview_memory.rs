@@ -1,7 +1,7 @@
 //! Trim WebView2's memory while the window is not in use.
 //!
-//! Chromium keeps its whole working set alive even when the window is hidden to
-//! the tray, which is why an idle Cherry can sit at a few hundred MB. WebView2
+//! Chromium keeps its whole working set alive even when the window is
+//! minimized, which is why an idle Cherry can sit at a few hundred MB. WebView2
 //! exposes `MemoryUsageTargetLevel`: in the `Low` state it releases caches
 //! aggressively, and switching back to `Normal` on focus keeps the UI snappy.
 //! So the app trims when it loses focus and restores the moment it is used

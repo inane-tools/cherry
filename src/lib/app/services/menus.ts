@@ -18,6 +18,7 @@ import { authStore } from './auth';
 import { announceSignInRequired } from './gate';
 import { getDefaultPlaylist, removeTrackFrom, saveTrack, setDefaultPlaylist } from './playlistEdit';
 import { isPlaylistOwned, isPlaylistSaved, ownershipKnown, savePlaylist, unsavePlaylist } from './playlistLibrary';
+import { requestPlaylistDeletion } from './playlistDelete';
 import {
   deleteFolder,
   folderFor,
@@ -146,6 +147,7 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
         icon: 'bx bx-pencil',
         action: () => openPlaylistEditor(playlist),
       });
+      items.push({ label: 'Delete playlist…', icon: 'bx bx-trash', destructive: true, action: () => requestPlaylistDeletion(playlist) });
       items.push({
         label: isDefault ? 'Clear default playlist' : 'Set as default playlist',
         icon: isDefault ? 'bx bx-check-circle' : 'bx bx-target-lock',

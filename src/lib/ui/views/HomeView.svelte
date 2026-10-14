@@ -1,22 +1,18 @@
 <script lang="ts">
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
-  import { homeLoading, homeSectionsStore, loadHome } from '$lib/app/services/playlists';
-  import { exploreLoading, exploreSectionsStore, loadExplore } from '$lib/app/services/explore';
-  import { entriesOf, selectCarouselEntry } from '$lib/app/services/browse';
+  import { homeLoading, homeSectionsStore, homeContinuationStore, homeMoreLoading, homeMoreError, homeFiltersStore, homeFilterStore, selectHomeFilter, loadHome, loadMoreHome, refreshHome } from '$lib/app/services/playlists';
+  import { entriesOf, selectCarouselEntry, playCarouselEntry } from '$lib/app/services/browse';
   import type { HomeSection } from '$lib/infra/ytmusic/rawHome';
   import type { CarouselEntry } from '$lib/ui/components/carouselTypes';
   import Carousel from '$lib/ui/components/Carousel.svelte';
 
   $: sections = $homeSectionsStore;
-  $: explore = $exploreSectionsStore;
   // Sections YouTube serves that we deliberately don't render: "Listen together"
   // is a row of 24/7 stations.
   const HIDDEN_SECTIONS = /listen together|station/i;
-  // "Listen again" is the hero when present; otherwise the first section that
-  // has anything to show.
+  // Preserve the server's section order. Stations remain hidden until supported.
   $: heroSection =
-    sections.find((s) => !HIDDEN_SECTIONS.test(s.title) && /listen again/i.test(s.title)) ??
     sections.find((s) => !HIDDEN_SECTIONS.test(s.title) && (s.cards.length > 0 || s.songs.length > 0));
   $: restSections = sections.filter((s) => s !== heroSection && !HIDDEN_SECTIONS.test(s.title));
 
@@ -45,21 +41,16 @@
   $: greet = greeting();
   $: firstName = ($activeChannelStore?.name ?? '').trim().split(/\s+/)[0] ?? '';
 
-  // Explore is loaded lazily — only once its section scrolls near the viewport —
-  // so it never competes with the startup home/library fetches (and never fires
-  // before the brand channel is resolved). An action (not onMount) so it also
-  // attaches when the section appears after signing in.
-  function lazyExplore(node: HTMLElement) {
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        void loadExplore();
-        io.disconnect();
-      },
-      { rootMargin: '600px' },
-    );
-    io.observe(node);
-    return { destroy: () => io.disconnect() };
+
+  function lazyHomeMore(node: HTMLElement) {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && !$homeMoreError) {
+        observer.disconnect();
+        void loadMoreHome();
+      }
+    }, { rootMargin: '400px' });
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
   }
 </script>
 
@@ -67,9 +58,23 @@
   {#if !$authStore}
     <!-- App overlays a full-window AuthGate when signed out; nothing to render. -->
   {:else}
-    <h1 class="my-6 text-[26px] font-extrabold tracking-tight text-white sm:text-[32px]">
+    <div class="my-6 flex items-center justify-between gap-4">
+    <h1 class="min-w-0 flex-1 break-words text-[26px] font-extrabold tracking-tight text-white sm:text-[32px]">
       {greet}{firstName ? `, ${firstName}` : ''}
     </h1>
+    <div class="flex shrink-0 items-center gap-2">
+      <button class="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white disabled:opacity-40" disabled={$homeLoading || $homeMoreLoading} title="Refresh recommendations" aria-label="Refresh recommendations" onclick={refreshHome}><i class="bx bx-refresh text-xl"></i></button>
+    </div>
+    </div>
+
+    {#if $homeFiltersStore.length}
+      <div class="cherry-carousel -mr-6 mb-7 flex gap-2 overflow-x-auto pr-6">
+        <button class="shrink-0 rounded-lg px-4 py-2 text-[13px] font-semibold {!$homeFilterStore ? 'bg-white text-black' : 'bg-white/5 text-zinc-200 hover:bg-white/10'}" aria-pressed={!$homeFilterStore} onclick={() => selectHomeFilter(null)}>All</button>
+        {#each $homeFiltersStore.filter((filter) => filter.params) as filter}
+          <button class="shrink-0 rounded-lg px-4 py-2 text-[13px] font-semibold {$homeFilterStore?.params === filter.params ? 'bg-white text-black' : 'bg-white/5 text-zinc-200 hover:bg-white/10'}" aria-pressed={$homeFilterStore?.params === filter.params} onclick={() => selectHomeFilter(filter)}>{filter.label}</button>
+        {/each}
+      </div>
+    {/if}
 
     {#if $homeLoading && sections.length === 0}
       <div>
@@ -110,13 +115,16 @@
     {:else}
       {#if heroSection && entriesFor(heroSection).length > 0}
         <section class="mb-8">
-          <h2 class="mb-3 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
+          <h2 class="mb-3 pr-24 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
             {heroSection.title || 'Listen again'}
           </h2>
           <Carousel
             hero
             entries={entriesFor(heroSection)}
             onSelect={(entry) => selectCarouselEntry(heroSection, entry)}
+            onPlay={(entry) => playCarouselEntry(heroSection, entry)}
+            layout={heroSection.layout ?? 'cards'}
+            rows={heroSection.rows ?? 3}
           />
         </section>
       {/if}
@@ -124,34 +132,20 @@
       {#each restSections as section}
         {#if entriesFor(section).length > 0}
           <section class="mb-8">
-            <h2 class="mb-3 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
+            <h2 class="mb-3 pr-24 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
               {section.title || 'For you'}
             </h2>
-            <Carousel entries={entriesFor(section)} onSelect={(entry) => selectCarouselEntry(section, entry)} />
+            <Carousel entries={entriesFor(section)} layout={section.layout ?? 'cards'} rows={section.rows ?? 3} onSelect={(entry) => selectCarouselEntry(section, entry)} onPlay={(entry) => playCarouselEntry(section, entry)} />
           </section>
         {/if}
       {/each}
     {/if}
 
-    <!-- Explore (formerly its own page) lives under the home feed and loads
-         lazily when this sentinel nears the viewport. -->
-    <div use:lazyExplore aria-hidden="true"></div>
-    {#if explore.length > 0}
-      {#each explore as section}
-        {#if entriesFor(section).length > 0}
-          <section class="mb-8">
-            <h2 class="mb-3 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
-              {section.title || 'Browse'}
-            </h2>
-            <Carousel entries={entriesFor(section)} onSelect={(entry) => selectCarouselEntry(section, entry)} />
-          </section>
-        {/if}
-      {/each}
-    {:else if $exploreLoading}
-      <div class="flex flex-wrap gap-3">
-        {#each Array.from({ length: 10 }) as _s}
-          <div class="h-32 w-48 animate-pulse rounded-lg bg-white/5"></div>
-        {/each}
+    {#if $homeContinuationStore}
+      {#key $homeContinuationStore}<div use:lazyHomeMore aria-hidden="true"></div>{/key}
+      <div class="flex flex-col items-center gap-2 py-6">
+        {#if $homeMoreError}<p class="text-[12px] text-zinc-400">{$homeMoreError}</p>{/if}
+        <button class="rounded-full bg-white/5 px-5 py-2 text-[12px] text-zinc-200 hover:bg-white/10 disabled:opacity-40" disabled={$homeMoreLoading} onclick={loadMoreHome}>{$homeMoreLoading ? 'Loading recommendations…' : $homeMoreError ? 'Try again' : 'More recommendations'}</button>
       </div>
     {/if}
   {/if}

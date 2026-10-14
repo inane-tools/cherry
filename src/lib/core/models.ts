@@ -104,7 +104,7 @@ export interface PlaylistFolder {
   playlistIds: BrowseId[];
 }
 
-export type AppView = 'home' | 'search' | 'playlist' | 'artist' | 'album' | 'settings';
+export type AppView = 'home' | 'explore' | 'search' | 'playlist' | 'artist' | 'album' | 'settings';
 
 /** Signed-in YouTube identity (a brand channel, not the raw Google account). */
 export interface AccountProfile {
@@ -130,6 +130,14 @@ export function bestThumbnail(ts: Thumbnail[], size = 256): string {
   return (sorted.find((t) => (t.width ?? 0) >= size) ?? sorted[sorted.length - 1]).url;
 }
 
+/** Preferred artwork followed by the other supplied sizes as fallbacks. */
+export function thumbnailSources(ts: Thumbnail[], size = 256): string[] {
+  return [...new Set([
+    bestThumbnail(ts, size),
+    ...[...ts].sort((a, b) => (b.width ?? 0) - (a.width ?? 0)).map((t) => t.url),
+  ].filter(Boolean))];
+}
+
 /**
  * Upgrade a YouTube / Google thumbnail URL to a larger size.
  *
@@ -143,7 +151,7 @@ export function hiResThumbnail(url: string, size = 1080): string {
   if (!url) return url;
   // i.ytimg.com/vi/<id>/<name>.jpg  →  maxresdefault.jpg
   const ytimg = url.match(/^(https?:\/\/i\.ytimg\.com\/(?:vi|vi_webp)\/[^/]+\/)[^/?#]+/);
-  if (ytimg) return `${ytimg[1]}maxresdefault.jpg${url.slice(ytimg[0].length)}`;
+  if (ytimg) return `${ytimg[1]}maxresdefault.${ytimg[1].includes('/vi_webp/') ? 'webp' : 'jpg'}${url.slice(ytimg[0].length)}`;
   // Google CDN: =w544-h544-l90-rj  →  =w1080-h1080-l90-rj
   if (/=w\d+-h\d+/.test(url)) return url.replace(/=w\d+-h\d+/, `=w${size}-h${size}`);
   return url;

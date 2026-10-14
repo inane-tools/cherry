@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { artwork } from '$lib/ui/actions/artwork';
+  import { thumbnailSources } from '$lib/core/models';
   import { bestThumbnail } from '$lib/core/models';
   import {
     albumError,
@@ -62,7 +64,7 @@
     <header class="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start">
       <div class="h-44 w-44 shrink-0 overflow-hidden rounded-lg bg-white/5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
         {#if cover}
-          <img src={cover} alt="" class="h-full w-full object-cover" />
+          <img use:artwork={{ urls: thumbnailSources(data?.thumbnails?.length ? data.thumbnails : (album?.thumbnails ?? []), 512) }} alt="" class="h-full w-full object-cover" />
         {:else}
           <div class="flex h-full w-full items-center justify-center text-zinc-600">
             <i class="bx bx-album text-5xl"></i>
@@ -71,8 +73,8 @@
       </div>
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-zinc-300">Album</span>
-          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+          <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-semibold text-zinc-300">Album</span>
+          <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-medium text-zinc-400">
             {#if $albumLoading && tracks.length === 0}
               <span class="inline-block h-2.5 w-9 animate-pulse rounded bg-white/10 align-middle"></span>
             {:else}
@@ -80,7 +82,7 @@
             {/if}
           </span>
           {#if totalLabel}
-            <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400">{totalLabel}</span>
+            <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-medium text-zinc-400">{totalLabel}</span>
           {/if}
         </div>
         <h1 class="mt-2 line-clamp-2 text-2xl font-extrabold tracking-tight text-white sm:text-4xl">
@@ -100,7 +102,7 @@
         {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
             disabled={tracks.length === 0}
             onclick={() => playTracks(tracks, 0)}
           >
@@ -108,7 +110,7 @@
             Play
           </button>
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-lg bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
+            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
               ? 'text-[var(--color-accent2)]'
               : 'text-zinc-200'} hover:bg-white/10 disabled:opacity-40"
             disabled={tracks.length === 0}

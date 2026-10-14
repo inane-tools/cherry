@@ -11,6 +11,7 @@
 
   let open = false;
   let root: HTMLDivElement | undefined;
+  let menu: HTMLDivElement | undefined;
 
   $: current = options.find((option) => option.value === value)?.label ?? '';
 
@@ -21,7 +22,58 @@
 
   function onWindowClick(event: MouseEvent): void {
     if (!open) return;
-    if (root && !root.contains(event.target as Node)) open = false;
+    const target = event.target as Node;
+    if (root && !root.contains(target) && !menu?.contains(target)) open = false;
+  }
+
+  // Render outside the section's animated clipping container and the overlay's
+  // scroll viewport. Coordinates use CSS pixels, including native webview zoom.
+  function floatingMenu(node: HTMLDivElement) {
+    menu = node;
+    document.body.appendChild(node);
+
+    function position(): void {
+      if (!root) return;
+      const anchor = root.getBoundingClientRect();
+      const margin = 8;
+      const gap = 4;
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+      node.style.maxWidth = `${Math.max(0, viewportWidth - margin * 2)}px`;
+      node.style.minWidth = `${Math.min(anchor.width, viewportWidth - margin * 2)}px`;
+      const below = Math.max(0, viewportHeight - anchor.bottom - gap - margin);
+      const above = Math.max(0, anchor.top - gap - margin);
+      const upwards = node.scrollHeight > below && above > below;
+      node.style.maxHeight = `${upwards ? above : below}px`;
+      const bounds = node.getBoundingClientRect();
+      node.style.left = `${Math.max(margin, Math.min(anchor.right - bounds.width, viewportWidth - bounds.width - margin))}px`;
+      node.style.top = `${upwards ? anchor.top - gap - bounds.height : anchor.bottom + gap}px`;
+    }
+
+    function onScroll(event: Event): void {
+      // Keep scrolling inside a long menu usable; close when its anchor moves.
+      if (!node.contains(event.target as Node)) open = false;
+    }
+
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(node);
+    if (root) observer.observe(root);
+    window.addEventListener('resize', position);
+    document.addEventListener('scroll', onScroll, true);
+    // Capture also sees clicks inside Settings, whose dialog stops bubbling.
+    document.addEventListener('click', onWindowClick, true);
+
+    return {
+      destroy() {
+        observer.disconnect();
+        window.removeEventListener('resize', position);
+        document.removeEventListener('scroll', onScroll, true);
+        document.removeEventListener('click', onWindowClick, true);
+        menu = undefined;
+        node.remove();
+      },
+    };
   }
 
   function onKey(event: KeyboardEvent): void {
@@ -29,7 +81,7 @@
   }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onKey} />
+<svelte:window onkeydown={onKey} />
 
 <div bind:this={root} class="relative inline-block max-w-full">
   <button
@@ -53,7 +105,8 @@
 
   {#if open}
     <div
-      class="absolute right-0 z-30 mt-1 min-w-full overflow-hidden rounded-xl bg-[var(--color-elevated)] p-1 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+      use:floatingMenu
+      class="fixed z-[60] overflow-y-auto rounded-xl bg-[var(--color-elevated)] p-1 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
       role="listbox"
       in:fly={{ y: -4, duration: 120 }}
       out:fade={{ duration: 90 }}

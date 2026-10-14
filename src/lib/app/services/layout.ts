@@ -8,6 +8,8 @@ const NARROW_MAX_WIDTH = 820;
 
 /** True when the window is too narrow for the inline playlist rail. */
 export const narrowLayout = writable(false);
+/** Available width in CSS pixels, accounting for the app's zoom. */
+export const layoutWidth = writable(0);
 /** Whether the drawer rail is open in narrow mode. */
 export const sidebarDrawerOpen = writable(false);
 /** Whether the player bar is expanded into the bottom card. */
@@ -23,6 +25,7 @@ export function toggleSidebarDrawer(): void {
 /** Begin tracking the window width. Returns a cleanup function. */
 export function startLayoutTracking(): () => void {
   const update = () => {
+    layoutWidth.set(window.innerWidth);
     const narrow = window.innerWidth < NARROW_MAX_WIDTH;
     narrowLayout.set(narrow);
     // Leaving narrow mode should never leave the drawer "open" behind the rail.

@@ -11,7 +11,7 @@
 // `themeColor.ts`.
 
 import { isTauri } from './platform';
-import { clampLuminance, dominantColour, fromHex, mix, toHex, vividify, type Rgb } from './themeColor';
+import { clampLuminance, dominantColour, fromHex, mix, toHex, vividify, washCompanion, type Rgb } from './themeColor';
 
 const DEFAULT_PAIR = {
   accent: { r: 255, g: 77, b: 94 } as Rgb,
@@ -64,7 +64,7 @@ function lighten(c: Rgb, amount: number): Rgb {
  * get too light. `--color-accent2` is mostly used as text, so it stays light
  * enough to read on the dark theme and dark enough to read on the light one.
  */
-function applyAccent(): void {
+function applyAccent(preview = false): void {
   const root = document.documentElement.style;
   const accent = lightMode
     ? clampLuminance(lighten(current.accent, 0.15), 0.4, 0.62)
@@ -74,6 +74,8 @@ function applyAccent(): void {
     : clampLuminance(current.accent2, 0.55, 1);
   root.setProperty('--color-accent', toHex(accent));
   root.setProperty('--color-accent2', toHex(accent2));
+  if (preview) return;
+  root.setProperty('--color-wash-secondary', toHex(washCompanion(accent)));
   applySurfaceTint();
 }
 
@@ -125,7 +127,7 @@ function applySurfaceTint(): void {
 }
 
 /** Set the accent (and its lighter companion) from an RGB colour. */
-function setAccent(colour: Rgb, vivid: boolean): void {
+function setAccent(colour: Rgb, vivid: boolean, preview = false): void {
   const base = vivid ? vividify(colour) : colour;
   current = {
     accent: base,
@@ -135,7 +137,7 @@ function setAccent(colour: Rgb, vivid: boolean): void {
       b: Math.min(255, base.b * 1.25 + 30),
     },
   };
-  applyAccent();
+  applyAccent(preview);
 }
 
 /** Reset to the built-in accent (only meaningful while following the artwork). */
@@ -148,6 +150,11 @@ export function resetArtworkTheme(): void {
 /** Apply a fixed custom accent colour (hex). */
 export function applyCustomAccent(hex: string): void {
   setAccent(fromHex(hex) ?? DEFAULT_PAIR.accent, false);
+}
+
+/** Lightweight drag preview; defer backdrop and surface tint until release. */
+export function previewCustomAccent(hex: string): void {
+  setAccent(fromHex(hex) ?? DEFAULT_PAIR.accent, false, true);
 }
 
 /** Adopt the dominant colour of `artworkUrl` as the app accent. */

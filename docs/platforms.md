@@ -1,10 +1,10 @@
 # Linux and macOS builds
 
-Cherry 1.5.0 is Sunagawa. The desktop-builds workflow checks the frontend and
+Cherry 1.6.0 is Shibetsu. The desktop-builds workflow checks the frontend and
 builds Windows NSIS and Linux DEB/AppImage/Flatpak on native GitHub runners.
 It uploads artifacts only and does not publish releases. macOS is deferred.
 
-[v1.5.0 Sunagawa](https://github.com/inane-tools/cherry/releases/tag/v1.5.0)
+[v1.6.0 Shibetsu](https://github.com/inane-tools/cherry/releases/tag/v1.6.0)
 ships Windows NSIS and Linux x86_64 Flatpak/AppImage. Linux has been tested on
 Fedora KDE in VMware and on Steam Deck. Some animation flicker may remain;
 popups and artwork fades use frame-by-frame updates and hover feedback is
@@ -34,8 +34,9 @@ and aborts on Cherry's GTK overlay. Copy this directory together with Cargo.toml
 and Cargo.lock when testing local changes on another computer. Keep the VM's
 `src-tauri/target` directory so incremental builds can reuse compiled dependencies.
 
-Linux closes normally because GNOME commonly lacks a tray host. Windows hides
-to the tray; macOS can reopen from the Dock. Auxiliary windows close normally.
+Closing the main window exits Cherry normally. Minimizing keeps the window on
+the taskbar; Cherry does not hide or minimize to the tray. The tray menu remains
+available while the app is running. Auxiliary windows close normally.
 
 ## Linux
 
@@ -83,7 +84,7 @@ After the Ubuntu x86_64 build, install flatpak and flatpak-builder, then:
 
 ```sh
 bash packaging/flatpak/build.sh
-flatpak install --user packaging/flatpak/out/Cherry_1.5.0_x86_64.flatpak
+flatpak install --user packaging/flatpak/out/Cherry_1.6.0_x86_64.flatpak
 flatpak run tools.inane.cherry
 ```
 

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { fly, fade } from '$lib/ui/transitions';
   import type { Playlist } from '$lib/core/models';
-  import { bestThumbnail } from '$lib/core/models';
+  import { bestThumbnail, thumbnailSources } from '$lib/core/models';
+  import { artwork } from '$lib/ui/actions/artwork';
   import { addablePlaylistsStore, addablePlaylistsLoading, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import { addTracksTo, createNewPlaylist } from '$lib/app/services/playlistEdit';
   import { closePlaylistPicker, playlistPickerStore } from '$lib/app/services/playlistPicker';
@@ -138,7 +139,7 @@
               >
                 <span class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-white/5">
                   {#if bestThumbnail(playlist.thumbnails, 96)}
-                    <img src={bestThumbnail(playlist.thumbnails, 96)} alt="" class="h-full w-full object-cover" />
+                    <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96) }} alt="" class="h-full w-full object-cover" />
                   {:else}
                     <span class="flex h-full w-full items-center justify-center text-zinc-600"><i class="bx bx-music text-lg"></i></span>
                   {/if}

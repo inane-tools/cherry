@@ -65,11 +65,11 @@
       <button
         class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors {item.disabled
           ? 'cursor-default text-zinc-600'
-          : 'text-zinc-200 hover:bg-white/5 hover:text-white'}"
+          : item.destructive ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300' : 'text-zinc-200 hover:bg-white/5 hover:text-white'}"
         role="menuitem"
         onclick={() => run(item)}
       >
-        <i class="{item.icon ?? 'bx bx-right-arrow-alt'} text-base {item.disabled ? '' : 'text-white'}"></i>
+        <i class="{item.icon ?? 'bx bx-right-arrow-alt'} text-base {item.disabled || item.destructive ? '' : 'text-white'}"></i>
         <span class="truncate">{item.label}</span>
       </button>
     {/each}

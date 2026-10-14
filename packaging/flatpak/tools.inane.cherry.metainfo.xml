@@ -17,5 +17,14 @@
   <url type="vcs-browser">https://github.com/inane-tools/cherry</url>
   <requires><internet>always</internet></requires>
   <content_rating type="oars-1.1" />
-  <releases><release version="1.5.0" date="2026-10-11" /></releases>
+  <releases>
+    <release version="1.6.0" date="2026-10-14">
+      <description>
+        <p>Shibetsu brings a refreshed Home feed, a separate Explore page and an optional queue sidebar.</p>
+        <p>Manage owned playlists with editing and confirmed deletion, use expanded tray controls and Windows playlist shortcuts, and enjoy refreshed artwork and accent gradients.</p>
+        <p>Fixes playlist library writes, artwork recovery, settings dropdown clipping and expanded-player navigation.</p>
+      </description>
+    </release>
+    <release version="1.5.0" date="2026-10-11" />
+  </releases>
 </component>

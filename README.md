@@ -24,13 +24,18 @@ Cherry is a YouTube Music desktop client, it features a completely custom fronte
   localStorage. Cherry also handles multiple brand accounts, as one YouTube account can have many, it is really easy to switch between them in Settings.
 - **Edit your library** - Currently you can create playlists, add or remove songs, rename, edit
   descriptions and set a **custom cover image**; pick a **default save
-  playlist**; and **save / unsave** playlists you did not create. (This functionality is still work in progress so there are still certain things you cannot do, like deleting playlists)
+  playlist**; **save / unsave** playlists you did not create; and **delete your
+  own playlists** with an explicit permanent-deletion confirmation.
 - **Queue control** - jump to any track (dropping the ones before it),
-  drag-reorder, remove tracks, and clear.
+  drag-reorder, remove tracks, and clear. Keep the queue in a right sidebar
+  when there is room, with the player queue button available in smaller windows.
+- **Home & Explore** - browse recommendations, filter the Home feed, and open
+  moods, genres, charts and new releases from the separate Explore page.
 - **Paste a link** - drop a YouTube / YouTube Music song or playlist URL into the
   search box to open it.
 - **OS media integration** - SMTC / MPRIS / Now Playing, taskbar preview
-  buttons, hardware media keys, and album-art-driven theming.
+  buttons, hardware media keys, and album-art-driven theming. Tray controls and
+  Windows taskbar shortcuts provide quick playback of pinned/recent playlists.
 - **Light & dark themes** - follow the system or pick one, with the accent taken
   from the album art or a custom colour and optional background gradients. The
   window title follows the current track.
@@ -46,21 +51,22 @@ measurements and the Windows landmines that were hit along the way.
 
 ## Changelog
 
-**v1.5.0 (Sunagawa)** adds Spotlight-style search, optional window controls,
-native GTK controls on Linux, and Linux Flatpak/AppImage downloads alongside
-the Windows NSIS installer. Linux controls follow Cherry's theme and live app
-scaling; popup and artwork animations have rendering workarounds for WebKit.
-macOS builds are deferred. See [platform support](docs/platforms.md) and
+**v1.6.0 (Shibetsu)** refreshes Home with more YouTube Music layouts, filters
+and pagination, separates Explore into its own page, and adds an optional queue
+sidebar. It also adds confirmed playlist deletion, expanded tray controls and
+Windows playlist shortcuts, with improved artwork recovery and accent gradients.
+Windows NSIS and Linux Flatpak/AppImage are supported; macOS builds are deferred.
+See [platform support](docs/platforms.md) and
 [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Download
 
-Get **[v1.5.0 Sunagawa](https://github.com/inane-tools/cherry/releases/tag/v1.5.0)**:
+Get **[v1.6.0 Shibetsu](https://github.com/inane-tools/cherry/releases/tag/v1.6.0)**:
 
-- **Windows:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.5.0/Cherry_1.5.0_x64-setup.exe).
-- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.5.0/Cherry_1.5.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.5.0/Cherry_1.5.0_amd64.AppImage).
+- **Windows:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.6.0/Cherry_1.6.0_x64-setup.exe).
+- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.6.0/Cherry_1.6.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.6.0/Cherry_1.6.0_amd64.AppImage).
 
-Install the downloaded Flatpak with `flatpak install --user Cherry_1.5.0_x86_64.flatpak`,
+Install the downloaded Flatpak with `flatpak install --user Cherry_1.6.0_x86_64.flatpak`,
 then run `flatpak run tools.inane.cherry`. For AppImage, make the downloaded file
 executable before opening it. See [platform support](docs/platforms.md) for
 Linux keyring requirements and known limitations.

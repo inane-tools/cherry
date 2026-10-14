@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import type { Album, AppView, ArtistRef, Playlist, SearchResults } from '$lib/core/models';
 import { openSearch, openSettings } from './overlays';
+import { playerExpanded } from './layout';
 
 /**
  * A navigable page. Entity pages (playlist/artist/album) carry the entity that
@@ -9,11 +10,13 @@ import { openSearch, openSettings } from './overlays';
  */
 export type Page =
   | { view: 'home' }
+  | { view: 'explore' }
   | { view: 'search' }
   | { view: 'settings' }
   | { view: 'playlist'; entity: Playlist }
   | { view: 'artist'; entity: ArtistRef }
-  | { view: 'album'; entity: Album };
+  | { view: 'album'; entity: Album }
+  | { view: 'browse'; entity: { browseId: string; title: string; params?: string } };
 
 export const pageStore = writable<Page>({ view: 'home' });
 export const canGoBack = writable(false);
@@ -35,6 +38,8 @@ function pageKey(page: Page): string {
       return page.entity.browseId;
     case 'album':
       return page.entity.browseId;
+    case 'browse':
+      return `${page.entity.browseId}:${page.entity.params ?? ''}`;
     case 'artist':
       return page.entity.browseId ?? page.entity.name;
     default:
@@ -44,6 +49,9 @@ function pageKey(page: Page): string {
 
 /** Navigate to a page, remembering where we came from. */
 export function openPage(page: Page): void {
+  // Explicit navigation reveals the requested page, including Home when it
+  // is already current. Floating Search/Settings overlays can stay over the player.
+  playerExpanded.set(false);
   const current = get(pageStore);
   // Re-opening the same page should not add history (otherwise Back appears
   // broken: one press just returns to the identical page).
@@ -63,7 +71,7 @@ export function openPage(page: Page): void {
 }
 
 /** Simple view navigation (home / overlay search / settings). */
-export function go(view: Extract<AppView, 'home' | 'search' | 'settings'>): void {
+export function go(view: Extract<AppView, 'home' | 'explore' | 'search' | 'settings'>): void {
   // Settings and Search are floating overlays, not pages.
   if (view === 'settings') return openSettings();
   if (view === 'search') return openSearch();
@@ -74,6 +82,7 @@ export function go(view: Extract<AppView, 'home' | 'search' | 'settings'>): void
 export function back(): void {
   const previous = history.pop();
   if (!previous) return;
+  playerExpanded.set(false);
   future = [get(pageStore), ...future].slice(0, MAX_HISTORY);
   pageStore.set(previous);
   syncHistoryFlags();
@@ -83,8 +92,21 @@ export function back(): void {
 export function forward(): void {
   const next = future.shift();
   if (!next) return;
+  playerExpanded.set(false);
   history = [...history, get(pageStore)].slice(-MAX_HISTORY);
   pageStore.set(next);
+  syncHistoryFlags();
+}
+
+/** A deleted playlist must not reappear through Back/Forward. */
+export function forgetPlaylistPage(browseId: string): void {
+  const keep = (page: Page) => page.view !== 'playlist' || page.entity.browseId !== browseId;
+  history = history.filter(keep);
+  future = future.filter(keep);
+  if (!keep(get(pageStore))) {
+    playerExpanded.set(false);
+    pageStore.set({ view: 'home' });
+  }
   syncHistoryFlags();
 }
 

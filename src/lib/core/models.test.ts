@@ -31,7 +31,7 @@ describe('hiResThumbnail', () => {
       'https://i.ytimg.com/vi/abc123/maxresdefault.jpg?sqp=x',
     );
     expect(hiResThumbnail('https://i.ytimg.com/vi_webp/abc/mqdefault.webp')).toBe(
-      'https://i.ytimg.com/vi_webp/abc/maxresdefault.jpg',
+      'https://i.ytimg.com/vi_webp/abc/maxresdefault.webp',
     );
   });
   it('rewrites Google CDN size parameters', () => {

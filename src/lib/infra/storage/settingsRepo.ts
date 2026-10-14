@@ -26,6 +26,8 @@ export interface CherrySettings {
   channelPageId: string;
   /** Playlists pinned to the top bar. */
   pinnedPlaylists: PinnedPlaylist[];
+  /** Recently opened or played playlists for Windows taskbar shortcuts. */
+  recentPlaylists: PinnedPlaylist[];
   /** Playlists grouped into folders in the sidebar. */
   playlistFolders: PlaylistFolder[];
   /**
@@ -38,6 +40,8 @@ export interface CherrySettings {
   collapsedFolders: string[];
   /** Slim the playlist rail (covers only, search as a button). */
   compactSidebar: boolean;
+  /** Keep the queue in a right sidebar when there is room. */
+  queueSidebar: boolean;
   /** Show caption buttons, using GTK buttons on Linux and native decorations on macOS. */
   windowControls: boolean;
   /** Width of the expanded sidebar in pixels (user-resizable by dragging). */
@@ -93,10 +97,12 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   discordStatusDisplay: 'details',
   channelPageId: '',
   pinnedPlaylists: [],
+  recentPlaylists: [],
   playlistFolders: [],
   sidebarOrder: [],
   collapsedFolders: [],
   compactSidebar: false,
+  queueSidebar: false,
   windowControls: true,
   sidebarWidth: 240,
   gradientsEnabled: true,

@@ -19,7 +19,12 @@ export interface HomeCard {
   subtitle?: string;
   pageType?: string;
   thumbnails: Thumbnail[];
+  playback?: HomePlayback;
+  params?: string;
+  navigation?: boolean;
 }
+
+export interface HomePlayback { videoId?: string; playlistId?: string; params?: string }
 
 export interface HomeSong {
   videoId: string;
@@ -32,7 +37,12 @@ export interface HomeSection {
   title: string;
   cards: HomeCard[];
   songs: HomeSong[];
+  order?: string[];
+  layout?: 'cards' | 'songs' | 'buttons';
+  rows?: number;
 }
+
+export interface HomeFilter { label: string; browseId: string; params?: string }
 
 /** Header shared by artist / album / (playlist) browse pages. */
 export interface PageHeader {
@@ -243,7 +253,7 @@ function artistLine(renderer: Json): string | undefined {
  * misclassified songs as "artist cards" (with a song title).
  */
 function extractTwoRow(renderer: Json): { card?: HomeCard; song?: HomeSong } {
-  const endpoint = renderer?.navigationEndpoint;
+  const endpoint = renderer?.navigationEndpoint ?? renderer?.onTap;
   const title = textOf(renderer?.title);
   if (!title) return {};
 
@@ -254,7 +264,10 @@ function extractTwoRow(renderer: Json): { card?: HomeCard; song?: HomeSong } {
     };
   }
 
-  const browseId: string | undefined = endpoint?.browseEndpoint?.browseId;
+  const overlayWatch = findFirst(renderer?.overlay ?? renderer?.thumbnailOverlay, (value) => value?.watchEndpoint || value?.watchPlaylistEndpoint);
+  const watch = endpoint?.watchPlaylistEndpoint ?? overlayWatch?.watchEndpoint ?? overlayWatch?.watchPlaylistEndpoint;
+  const playback = watch && (watch.playlistId || watch.videoId) ? { videoId: watch.videoId, playlistId: watch.playlistId, params: watch.params } : undefined;
+  const browseId: string | undefined = endpoint?.browseEndpoint?.browseId ?? (playback?.playlistId ? playback.playlistId.startsWith('VL') ? playback.playlistId : `VL${playback.playlistId}` : undefined);
   if (browseId) {
     return {
       card: {
@@ -264,6 +277,9 @@ function extractTwoRow(renderer: Json): { card?: HomeCard; song?: HomeSong } {
         pageType: endpoint?.browseEndpoint?.browseEndpointContextSupportedConfigs
           ?.browseEndpointContextMusicConfig?.pageType,
         thumbnails: thumbnailsOf(renderer),
+        playback,
+        params: endpoint?.browseEndpoint?.params,
+        navigation: renderer.navigation === true,
       },
     };
   }
@@ -279,7 +295,7 @@ function extractResponsive(renderer: Json): { card?: HomeCard; song?: HomeSong }
   // Songs carry a watch endpoint in the first column runs, or on the overlay
   // play button.
   const watch = findFirst(
-    firstColumn ?? renderer?.overlay,
+    [firstColumn, renderer?.navigationEndpoint, renderer?.overlay, renderer?.playlistItemData?.videoId ? { watchEndpoint: { videoId: renderer.playlistItemData.videoId } } : null],
     (value) => typeof value?.watchEndpoint?.videoId === 'string',
   );
   const videoId: string | undefined = watch?.watchEndpoint?.videoId;
@@ -310,6 +326,7 @@ function extractResponsive(renderer: Json): { card?: HomeCard; song?: HomeSong }
 function sectionTitle(shelf: Json): string {
   return (
     textOf(shelf?.header?.musicCarouselShelfBasicHeaderRenderer?.title) ??
+    textOf(shelf?.header?.musicCardShelfHeaderBasicRenderer?.title) ??
     textOf(shelf?.header?.musicShelfRenderer?.title) ??
     textOf(shelf?.header?.title) ??
     textOf(shelf?.title) ??
@@ -323,26 +340,25 @@ export function scanHome(raw: Json): HomeSection[] {
   const seenTitles = new Set<string>();
 
   const pending: { node: Json; depth: number }[] = [{ node: raw, depth: 0 }];
-  let cursor = 0;
   let visited = 0;
 
-  while (cursor < pending.length && visited < MAX_NODES) {
-    const { node, depth } = pending[cursor++];
+  while (pending.length > 0 && visited < MAX_NODES) {
+    const { node, depth } = pending.pop()!;
     visited++;
     if (!node || typeof node !== 'object' || depth > MAX_DEPTH) continue;
 
     if (Array.isArray(node)) {
-      for (const child of node) {
+      for (const child of [...node].reverse()) {
         if (child && typeof child === 'object') pending.push({ node: child, depth: depth + 1 });
       }
       continue;
     }
 
-    for (const [key, value] of Object.entries(node)) {
+    for (const [key, value] of Object.entries(node).reverse()) {
       if (
         (key === 'musicCarouselShelfRenderer' ||
           key === 'musicShelfRenderer' ||
-          key === 'musicPlaylistShelfRenderer') &&
+          key === 'musicPlaylistShelfRenderer' || key === 'musicCardShelfRenderer' || key === 'gridRenderer' || key === 'musicGridRenderer') &&
         value &&
         typeof value === 'object'
       ) {
@@ -350,26 +366,36 @@ export function scanHome(raw: Json): HomeSection[] {
         const title = sectionTitle(shelf);
         const cards: HomeCard[] = [];
         const songs: HomeSong[] = [];
-        const contents: Json[] = shelf?.contents ?? [];
-        for (const entry of contents) {
-          const twoRow = entry?.musicTwoRowItemRenderer;
-          if (twoRow) {
-            const { card, song } = extractTwoRow(twoRow);
-            if (card) cards.push(card);
-            if (song) songs.push(song);
+        const order: string[] = [];
+        const contents: Json[] = [...(key === 'musicCardShelfRenderer' ? [{ musicMultiRowListItemRenderer: shelf }] : []), ...(shelf?.contents ?? shelf?.items ?? [])];
+        const entries = [...contents].reverse();
+        let scanned = 0;
+        while (entries.length && scanned++ < 5000) {
+          const entry = entries.pop();
+          if (!entry || typeof entry !== 'object') continue;
+          const responsive = entry.musicResponsiveListItemRenderer;
+          const navigation = entry.musicNavigationButtonRenderer;
+          const twoRow = entry.musicTwoRowItemRenderer ?? entry.musicMultiRowListItemRenderer ?? (navigation ? { title: navigation.buttonText, navigationEndpoint: navigation.clickCommand, navigation: true } : null);
+          if (responsive || twoRow) {
+            const { card, song } = responsive ? extractResponsive(responsive) : extractTwoRow(twoRow);
+            const itemKey = song ? `s:${song.videoId}` : card ? `c:${card.browseId}${card.params ? `:${card.params}` : ''}` : '';
+            if (itemKey && !order.includes(itemKey)) {
+              order.push(itemKey);
+              if (song) songs.push(song);
+              if (card) cards.push(card);
+            }
             continue;
           }
-          const responsive = entry?.musicResponsiveListItemRenderer;
-          if (responsive) {
-            const { card, song } = extractResponsive(responsive);
-            if (song) songs.push(song);
-            else if (card) cards.push(card);
+          // Some shelves group rows under columns or other item containers.
+          for (const child of (Array.isArray(entry) ? [...entry] : Object.values(entry)).reverse()) {
+            if (child && typeof child === 'object') entries.push(child);
           }
         }
-        const dedupeKey = `${title}|${cards.length}|${songs.length}`;
+        const dedupeKey = `${title}|${order.join('|')}`;
         if ((cards.length > 0 || songs.length > 0) && !seenTitles.has(dedupeKey)) {
           seenTitles.add(dedupeKey);
-          sections.push({ title, cards, songs });
+          const rows = Number.parseInt(shelf.numItemsPerColumn, 10);
+          sections.push({ title, cards, songs, order, ...(Number.isFinite(rows) ? { rows: Math.max(1, Math.min(6, rows)) } : {}), layout: songs.length > 0 && cards.length === 0 ? 'songs' : cards.length > 0 && cards.every((card) => card.navigation) ? 'buttons' : 'cards' });
         }
         continue;
       }
@@ -378,4 +404,38 @@ export function scanHome(raw: Json): HomeSection[] {
   }
 
   return sections;
+}
+
+/** Only follow the feed's continuation, not a single carousel's own token. */
+export function homeContinuation(raw: Json): string | null {
+  const section = findFirst(raw, (value) => value?.sectionListRenderer || value?.sectionListContinuation);
+  const owner = section?.sectionListRenderer ?? section?.sectionListContinuation;
+  for (const item of owner?.continuations ?? []) {
+    const token = item?.nextContinuationData?.continuation ?? item?.reloadContinuationData?.continuation;
+    if (typeof token === 'string') return token;
+  }
+  for (const item of owner?.contents ?? []) {
+    const token = item?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+    if (typeof token === 'string') return token;
+  }
+  const actions = raw?.onResponseReceivedActions ?? raw?.onResponseReceivedEndpoints ?? [];
+  for (const action of actions) {
+    for (const item of action?.appendContinuationItemsAction?.continuationItems ?? []) {
+      const token = item?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+      if (typeof token === 'string') return token;
+    }
+  }
+  return null;
+}
+
+export function scanHomeFilters(raw: Json): HomeFilter[] {
+  const cloud = findFirst(raw, (value) => value?.chipCloudRenderer);
+  const filters: HomeFilter[] = [];
+  for (const item of cloud?.chipCloudRenderer?.chips ?? []) {
+    const chip = item.chipCloudChipRenderer;
+    const label = textOf(chip?.text);
+    const endpoint = chip?.navigationEndpoint?.browseEndpoint;
+    if (label && endpoint?.browseId === 'FEmusic_home') filters.push({ label, browseId: endpoint.browseId, params: endpoint.params });
+  }
+  return filters;
 }

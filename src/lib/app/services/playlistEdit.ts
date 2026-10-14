@@ -28,6 +28,7 @@ import { errorMessage, invokeStrict } from './platform';
 import { openPlaylistPicker } from './playlistPicker';
 import { openPlaylistStore, openPlaylistTracks, playlistStore } from './playlists';
 import { settingsStore, updateSettings } from './settings';
+import { prependSidebarItem } from './folders';
 
 function requireSession(): boolean {
   if (get(authStore)) return true;
@@ -120,6 +121,7 @@ export async function createNewPlaylist(title: string, tracks: Track[] = []): Pr
     const optimistic: Playlist = { browseId: id, title: name, thumbnails: [] };
     playlistStore.update((list) => [optimistic, ...list.filter((p) => p.browseId !== id)]);
     addPlaylistLocally(optimistic);
+    await prependSidebarItem(id);
     invalidateLibrary();
     notify(
       tracks.length > 0 ? `Created “${name}” with ${tracks.length} songs` : `Created “${name}”`,

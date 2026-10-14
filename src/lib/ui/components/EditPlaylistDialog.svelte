@@ -1,7 +1,8 @@
 <script lang="ts">
   import { fly, fade } from '$lib/ui/transitions';
   import type { Thumbnail } from '$lib/core/models';
-  import { bestThumbnail } from '$lib/core/models';
+  import { bestThumbnail, thumbnailSources } from '$lib/core/models';
+  import { artwork } from '$lib/ui/actions/artwork';
   import { getPlaylistMeta } from '$lib/infra/ytmusic/InnertubeClient';
   import { authStore } from '$lib/app/services/auth';
   import { updatePlaylistDetails, setPlaylistImage } from '$lib/app/services/playlistEdit';
@@ -134,7 +135,7 @@
               class="group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-lg bg-[var(--color-art)]"
             >
               {#if cover}
-                <img src={cover} alt="" class="h-full w-full object-cover" />
+                <img use:artwork={{ urls: preview ? [preview] : thumbnailSources([...(playlist?.thumbnails ?? []), ...metaThumbs], 256) }} alt="" class="h-full w-full object-cover" />
               {:else}
                 <span class="flex h-full w-full items-center justify-center text-zinc-600">
                   <i class="bx bx-music text-3xl"></i>

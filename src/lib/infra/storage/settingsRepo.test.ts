@@ -44,6 +44,15 @@ describe('settings repository', () => {
     expect(await repo.loadSettings()).toEqual(repo.DEFAULT_SETTINGS);
   });
 
+  it('adds recent-playlist defaults to older settings and persists shortcuts', async () => {
+    file.set('settings', { volume: 0.4 });
+    expect((await repo.loadSettings()).recentPlaylists).toEqual([]);
+    const recentPlaylists = [{ browseId: 'VLPIN', title: 'Playlist', thumbnail: '' }];
+    await repo.saveSettings({ recentPlaylists });
+    repo.resetSettingsCache();
+    expect((await repo.loadSettings()).recentPlaylists).toEqual(recentPlaylists);
+  });
+
   it('keeps controls visible for pre-1.5 settings and remembers disabling them', async () => {
     file.set('settings', { volume: 0.4, compactSidebar: true });
     expect((await repo.loadSettings()).windowControls).toBe(true);

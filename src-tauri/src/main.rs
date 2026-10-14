@@ -4,6 +4,7 @@ mod auth_store;
 mod devtools;
 mod discord;
 mod http_proxy;
+mod jump_list;
 mod lastfm;
 mod maintenance;
 mod media_controls;
@@ -11,28 +12,22 @@ mod migrate;
 mod playlist_image;
 mod secrets;
 mod thumbar;
+mod tray_menu;
 mod webview_memory;
 mod window_controls;
 mod ytm_login;
 
 use std::sync::Mutex;
 use tauri::{
-    menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, WindowEvent,
+    Emitter, Manager,
 };
 
 fn build_tray(app: &tauri::AppHandle) {
-    let show = MenuItem::with_id(app, "show", "Show Cherry", true, None::<&str>);
-    let toggle = MenuItem::with_id(app, "toggle", "Play / Pause", true, None::<&str>);
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>);
-    let (Ok(show), Ok(toggle), Ok(quit)) = (show, toggle, quit) else {
+    let Ok(menu) = tray_menu::menu(app, &tray_menu::TrayState::default()) else {
         return;
     };
-    let Ok(menu) = Menu::with_items(app, &[&show, &toggle, &quit]) else {
-        return;
-    };
-    let mut builder = TrayIconBuilder::new()
+    let mut builder = TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
         .tooltip("Cherry")
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -42,11 +37,10 @@ fn build_tray(app: &tauri::AppHandle) {
                     let _ = w.set_focus();
                 }
             }
-            "toggle" => {
-                let _ = app.emit("media-key://playpause", ());
-            }
             "quit" => app.exit(0),
-            _ => {}
+            action => {
+                let _ = app.emit("tray://action", action);
+            }
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::DoubleClick { .. } = event {
@@ -130,7 +124,10 @@ fn main() {
     maintenance::run_startup_cleanup();
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(id) = jump_list::playlist_argument(&args) {
+                jump_list::dispatch(app, id);
+            }
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
@@ -141,6 +138,7 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(media_controls::MediaState(Mutex::new(None)))
         .manage(discord::DiscordState::default())
+        .manage(jump_list::PlaylistLaunch::default())
         .setup(|app| {
             #[cfg(target_os = "linux")]
             if let Some(window) = app.get_webview_window("main") {
@@ -159,6 +157,11 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            tray_menu::update_tray,
+            jump_list::update_jump_list,
+            jump_list::take_playlist_launch,
+            jump_list::jump_artwork_cached,
+            jump_list::cache_jump_artwork,
             auth_store::auth_save,
             auth_store::auth_load,
             auth_store::auth_clear,
@@ -189,27 +192,6 @@ fn main() {
             desktop_platform,
             window_controls::set_linux_window_controls,
         ])
-        .on_window_event(|window, event| {
-            // Auxiliary windows (e.g. the login dialog) close normally.
-            if window.label() != "main" {
-                return;
-            }
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                // GNOME commonly has no tray host; closing must not strand an
-                // invisible process. Linux exits normally. macOS can reopen
-                // from the Dock and Windows has the tray menu.
-                #[cfg(target_os = "linux")]
-                {
-                    let _ = api;
-                    return;
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    let _ = window.hide();
-                    api.prevent_close();
-                }
-            }
-        })
         .build(tauri::generate_context!())
         .expect("error while building Cherry")
         .run(|app, event| {

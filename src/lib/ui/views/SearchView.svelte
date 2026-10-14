@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { artwork } from '$lib/ui/actions/artwork';
+  import { thumbnailSources } from '$lib/core/models';
   import { get } from 'svelte/store';
   import { onDestroy, onMount } from 'svelte';
   import type { Album, ArtistRef, Playlist, Track } from '$lib/core/models';
@@ -283,7 +285,7 @@
             <div class="aspect-square w-full overflow-hidden rounded-lg bg-white/5">
               {#if albumCover(album)}
                 <img
-                  src={albumCover(album)}
+                  use:artwork={{ urls: thumbnailSources(album.thumbnails, 320) }}
                   alt=""
                   class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
                   loading="lazy"
@@ -316,7 +318,7 @@
             <div class="aspect-square w-full overflow-hidden rounded-lg bg-white/5">
               {#if playlistCover(playlist)}
                 <img
-                  src={playlistCover(playlist)}
+                  use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 320) }}
                   alt=""
                   class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
                   loading="lazy"

@@ -3,8 +3,8 @@
 // Folders live in settings (`playlistFolders`) and contain playlists in order.
 // The sidebar's top level is a single user-organised list (`sidebarOrder`) that
 // mixes playlists and folders — there is no forced grouping. Ids that are not in
-// the order are appended in library order when rendered, so new playlists show
-// up without any bookkeeping.
+// the order are appended in library order when rendered. Newly created/saved
+// items are explicitly prepended; pinned playlists render above this order.
 
 import { get, writable } from 'svelte/store';
 import type { PlaylistFolder } from '$lib/core/models';
@@ -51,8 +51,7 @@ export async function createFolder(name: string): Promise<string | null> {
   const trimmed = name.trim();
   if (!trimmed) return null;
   const folder: PlaylistFolder = { id: uid(), name: trimmed, playlistIds: [] };
-  // Left out of `sidebarOrder` so it appends at the end until moved.
-  await persist([...get(foldersStore), folder], get(sidebarOrderStore));
+  await persist([folder, ...get(foldersStore)], [folder.id, ...get(sidebarOrderStore)]);
   return folder.id;
 }
 
@@ -61,6 +60,12 @@ export async function renameFolder(id: string, name: string): Promise<void> {
   if (!trimmed) return;
   const folders = get(foldersStore).map((f) => (f.id === id ? { ...f, name: trimmed } : f));
   await persist(folders, get(sidebarOrderStore));
+}
+
+/** Newly created/saved entries lead the unpinned sidebar group. */
+export async function prependSidebarItem(id: string): Promise<void> {
+  const folders = get(foldersStore).map((folder) => ({ ...folder, playlistIds: withoutId(folder.playlistIds, id) }));
+  await persist(folders, [id, ...withoutId(get(sidebarOrderStore), id)]);
 }
 
 export async function deleteFolder(id: string): Promise<void> {
@@ -94,6 +99,7 @@ export async function movePlaylist(
   beforeId: string | null,
   order?: string[],
 ): Promise<void> {
+  if ((get(settingsStore).pinnedPlaylists ?? []).some((pin) => pin.browseId === browseId)) return;
   const folders = get(foldersStore).map((f) => ({
     ...f,
     playlistIds: withoutId(f.playlistIds, browseId),

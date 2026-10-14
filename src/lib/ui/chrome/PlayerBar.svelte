@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { artwork } from '$lib/ui/actions/artwork';
   import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted, toggleShuffle } from '$lib/app/services/player';
   import { shuffleMode, upNext } from '$lib/app/services/queue';
-  import { bestThumbnail, hiResThumbnail, trackDisplayArtists } from '$lib/core/models';
+  import { bestThumbnail, hiResThumbnail, thumbnailSources, trackDisplayArtists } from '$lib/core/models';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
   import { playerExpanded } from '$lib/app/services/layout';
+  import { queueSidebarVisible } from '$lib/app/services/queueSidebar';
   import { settingsStore } from '$lib/app/services/settings';
   import { fly, fade } from '$lib/ui/transitions';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
@@ -18,6 +21,8 @@
 
   let upNextOpen = false;
   let volOpen = false;
+  $: showQueueButton = !$queueSidebarVisible && ($settingsStore.playerShowQueue || $settingsStore.queueSidebar);
+  $: if ($queueSidebarVisible) upNextOpen = false;
 
   $: st = $playerStore;
   $: pct = st.durationSeconds > 0 ? (st.positionSeconds / st.durationSeconds) * 100 : 0;
@@ -25,11 +30,9 @@
   // A larger source for the full-screen background (falls back to `cover`).
   $: bgCover = cover ? hiResThumbnail(cover, 1080) : '';
   // The square art is shown large enough that the mid-res cover looks soft, so
-  // upscale to a hi-res source (falls back through `onArtError`).
+  // upscale to a hi-res source, with the supplied sizes as fallbacks.
   $: squareCover = cover ? hiResThumbnail(cover, 720) : '';
-  // A guaranteed-loadable thumbnail for when the upscaled background URL 404s
-  // (not every video has a `maxresdefault`, and `cover` itself can be that URL).
-  $: fallbackCover = st.track ? bestThumbnail(st.track.thumbnails, 320) : '';
+  $: coverSources = thumbnailSources(st.track?.thumbnails ?? [], 512);
   // First track in the play order after the current one (for the "Next up" chip).
   $: nextItem = $upNext[0] ?? null;
   $: nextArt = nextItem ? bestThumbnail(nextItem.track.thumbnails, 96) : '';
@@ -56,7 +59,7 @@
   let squareArtUrl = '';
 
   $: {
-    const id = st.track?.videoId ?? null;
+    const id = st.track ? `${st.track.videoId}:${bgCover}` : null;
     if (id !== artTrackId) {
       artTrackId = id;
       pendingLoaded = false;
@@ -79,37 +82,20 @@
     squareLoaded = false;
   }
 
-  function onPendingLoad(): void {
+  function onPendingLoad(event: Event): void {
     pendingLoaded = true;
     const url = pendingArt;
+    const loadedUrl = (event.currentTarget as HTMLImageElement).currentSrc || (event.currentTarget as HTMLImageElement).src;
     if (promoteTimer) clearTimeout(promoteTimer);
     promoteTimer = setTimeout(() => {
       promoteTimer = null;
-      if (pendingArt === url) baseArt = url;
+      if (pendingArt === url) baseArt = loadedUrl;
     }, 520);
   }
 
-  /**
-   * Album-art fallback chain. The pending <img> is keyed per track, so
-   * `dataset.tried` starts empty each time — the old code kept the flag across
-   * tracks, which made a later track skip the mid-res fallback and show broken
-   * art.
-   */
-  function onArtError(e: Event): void {
-    const img = e.currentTarget as HTMLImageElement;
-    const candidates = [cover, fallbackCover].filter(Boolean);
-    let tried: string[] = [];
-    try {
-      tried = img.dataset.tried ? (JSON.parse(img.dataset.tried) as string[]) : [];
-    } catch {
-      tried = [];
-    }
-    if (!tried.includes(img.src)) tried.push(img.src);
-    const next = candidates.find((url) => !tried.includes(url));
-    img.dataset.tried = JSON.stringify(tried);
-    if (next) img.src = next;
-    else img.style.visibility = 'hidden';
-  }
+  onDestroy(() => {
+    if (promoteTimer) clearTimeout(promoteTimer);
+  });
 
   function fmt(s: number): string {
     if (!Number.isFinite(s) || s < 0) return '0:00';
@@ -158,25 +144,23 @@
     {#if cover}
       {#if baseArt}
         <img
-          src={baseArt}
+          use:artwork={{ urls: [baseArt] }}
           alt=""
           class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover {squareArt
             ? 'scale-110 blur-3xl'
             : ''}"
-          onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
         />
       {/if}
       {#if pendingArt}
         {#key artTrackId}
           <img
-            src={pendingArt}
+            use:artwork={{ urls: [pendingArt, ...coverSources] }}
             alt=""
             use:frameOpacity={{ visible: pendingLoaded, duration: 500 }}
             class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover transition-opacity duration-500 {squareArt
               ? 'scale-110 blur-3xl'
               : ''} {pendingLoaded ? 'opacity-100' : 'opacity-0'}"
             onload={onPendingLoad}
-            onerror={onArtError}
           />
         {/key}
       {/if}
@@ -193,7 +177,7 @@
         >
           <span class="h-9 w-9 shrink-0 bg-white/5">
             {#if nextArt}
-              <img src={nextArt} alt="" class="h-full w-full object-cover" />
+              <img use:artwork={{ urls: thumbnailSources(nextItem?.track.thumbnails ?? [], 96) }} alt="" class="h-full w-full object-cover" />
             {:else}
               <span class="flex h-full w-full items-center justify-center text-zinc-600">
                 <i class="bx bx-music"></i>
@@ -236,14 +220,13 @@
           >
             {#key squareCover}
               <img
-                src={squareCover}
+                use:artwork={{ urls: [squareCover, ...coverSources] }}
                 alt=""
                 use:frameOpacity={{ visible: squareLoaded, duration: 300 }}
                 class="h-full w-full object-cover transition-opacity duration-300 {squareLoaded
                   ? 'opacity-100'
                   : 'opacity-0'}"
                 onload={() => (squareLoaded = true)}
-                onerror={onArtError}
               />
             {/key}
           </div>
@@ -332,7 +315,7 @@
         {/if}
         {#if $settingsStore.playerShowRepeat}<RepeatButton size="lg" />{/if}
         {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton size="lg" />{/if}
-        {#if $settingsStore.playerShowQueue}
+        {#if showQueueButton}
           <button
             class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen
               ? 'text-[var(--color-accent2)]'
@@ -412,7 +395,7 @@
         oncontextmenu={onTrackContext}
       >
         {#if cover}
-          <img src={cover} alt="" class="h-full w-full object-cover" />
+          <img use:artwork={{ urls: coverSources }} alt="" class="h-full w-full object-cover" />
         {:else}
           <div class="flex h-full w-full items-center justify-center text-zinc-600">
             <i class="bx bx-music text-2xl"></i>
@@ -521,7 +504,7 @@
 
         <!-- Right (small) / third (wide): queue + volume -->
         <div class="order-3 -mr-2 flex items-center gap-1 sm:order-3">
-          {#if $settingsStore.playerShowQueue}
+          {#if showQueueButton}
             <button
               data-upnext-toggle
               class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"

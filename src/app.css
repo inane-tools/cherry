@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
-/* Registered so the accent can be *transitioned* when the album art changes.
-   Custom properties are not animatable by default; @property opts them in. */
+/* Typed inherited theme tokens. Colour changes are immediate; the visible
+   backdrop is crossfaded by washTransition instead of interpolating tokens. */
 @property --color-accent {
   syntax: '<color>';
   inherits: true;
@@ -12,10 +12,14 @@
   inherits: true;
   initial-value: #ff8a5c;
 }
+@property --color-wash-secondary {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #cb4dff;
+}
 
-/* Surface tokens are registered too, so the "tinted surfaces" option (and the
-   accent it follows) can fade in/out instead of snapping. Initial values match
-   the dark theme, where the transition normally runs. */
+/* Surface defaults match the dark theme and are overridden by light mode
+   or accent tinting. */
 @property --color-surface {
   syntax: '<color>';
   inherits: true;
@@ -119,21 +123,23 @@ html.cherry-linux-window.cherry-window-expanded #app {
 }
 
 
-/* Red gradient from the top of the window, tinted by the album art colour.
-   `color-mix` keeps it derived from the animatable accent, so changing track
-   fades the whole wash rather than snapping. */
+/* Broad overlapping colour washes across the top, fading into the tinted
+   surface. Fixed vertical radii keep the fade consistent at any window height.
+   Both colours transition with the artwork or custom accent. */
 :root {
+  --color-wash-secondary: #cb4dff;
+  --cherry-wash-primary-strength: 38%;
+  --cherry-wash-secondary-strength: 28%;
   --cherry-wash-image:
     radial-gradient(
-      115% 60% at 50% -14%,
-      color-mix(in srgb, var(--color-accent) 58%, transparent) 0%,
-      color-mix(in srgb, var(--color-accent) 28%, transparent) 42%,
-      transparent 74%
+      90% 460px at 95% -120px,
+      color-mix(in srgb, var(--color-accent) var(--cherry-wash-primary-strength), transparent) 0%,
+      transparent 88%
     ),
     radial-gradient(
-      75% 45% at 88% -10%,
-      color-mix(in srgb, var(--color-accent2) 34%, transparent) 0%,
-      transparent 72%
+      85% 420px at 5% -100px,
+      color-mix(in srgb, var(--color-wash-secondary) var(--cherry-wash-secondary-strength), transparent) 0%,
+      transparent 90%
     );
 }
 
@@ -142,6 +148,16 @@ html.cherry-linux-window.cherry-window-expanded #app {
 .cherry-wash {
   background-color: var(--color-surface);
   background-image: var(--cherry-wash-image);
+}
+.cherry-wash[data-wash-transition] {
+  isolation: isolate;
+  background-image: none;
+}
+.cherry-wash-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
 }
 
 /* Full-window sign-in gate: the app's own background colour, made opaque so
@@ -186,25 +202,9 @@ html.no-gradients .cherry-playerbar {
   backdrop-filter: blur(6px);
 }
 
-/* Animate the accent itself; everything derived from it follows along. The
-   surface tokens are included so the tint fades with it. */
-html {
-  transition:
-    --color-accent 700ms ease,
-    --color-accent2 700ms ease,
-    --color-surface 700ms ease,
-    --color-card 700ms ease,
-    --color-elevated 700ms ease,
-    --color-field 700ms ease,
-    --color-popover 700ms ease,
-    --color-art 700ms ease;
-}
-
-/* Paused while the colour picker is being dragged, so the accent tracks the
-   picker instantly instead of easing behind it. */
-html.no-accent-transition {
-  transition: none;
-}
+/* Keep colour tokens immediate. Animating inherited custom properties forces
+   gradient and blurred-surface repaints across the whole app every frame.
+   washTransition crossfades painted background layers instead. */
 
 /* "Loading a track" equaliser inside the play button. */
 @keyframes cherry-eq-bar {
@@ -438,18 +438,8 @@ html.light {
   --color-emerald-300: #047857;
   --color-red-400: #dc2626;
 
-  --cherry-wash-image:
-    radial-gradient(
-      115% 60% at 50% -14%,
-      color-mix(in srgb, var(--color-accent) 30%, transparent) 0%,
-      color-mix(in srgb, var(--color-accent) 12%, transparent) 42%,
-      transparent 74%
-    ),
-    radial-gradient(
-      75% 45% at 88% -10%,
-      color-mix(in srgb, var(--color-accent2) 18%, transparent) 0%,
-      transparent 72%
-    );
+  --cherry-wash-primary-strength: 25%;
+  --cherry-wash-secondary-strength: 18%;
 }
 
 /* Native form controls (selects, colour picker, scrollbars) follow the theme. */

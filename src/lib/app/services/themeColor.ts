@@ -18,6 +18,21 @@ export function hueOf({ r, g, b }: Rgb): number {
   return (hue * 60 + 360) % 360;
 }
 
+/** Nearby hue for the background wash, preserving the accent's saturation. */
+export function washCompanion(c: Rgb): Rgb {
+  const high = Math.max(c.r, c.g, c.b);
+  const low = Math.min(c.r, c.g, c.b);
+  const chroma = high - low;
+  const hue = ((hueOf(c) - 50 + 360) % 360) / 60;
+  const x = chroma * (1 - Math.abs(hue % 2 - 1));
+  const sectors = [
+    [chroma, x, 0], [x, chroma, 0], [0, chroma, x],
+    [0, x, chroma], [x, 0, chroma], [chroma, 0, x],
+  ];
+  const [r, g, b] = sectors[Math.floor(hue)];
+  return { r: r + low, g: g + low, b: b + low };
+}
+
 export function saturation({ r, g, b }: Rgb): number {
   const max = Math.max(r, g, b);
   return max === 0 ? 0 : (max - Math.min(r, g, b)) / max;

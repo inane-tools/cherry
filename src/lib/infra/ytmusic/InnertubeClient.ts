@@ -31,7 +31,7 @@ import { CherryError } from '$lib/core/errors';
 import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
-import { scanHome, scanPageHeader, isNoiseSegment, type HomeSection } from './rawHome';
+import { scanHome, scanPageHeader, homeContinuation, scanHomeFilters, isNoiseSegment, type HomeSection, type HomeFilter } from './rawHome';
 import { innertubeFetch } from './tauriFetch';
 import { installEvaluator } from './evaluator';
 
@@ -721,16 +721,23 @@ export async function pickPrimaryChannel(session: AuthSession): Promise<AccountP
 
 /** The real YouTube Music home feed: carousel shelves of cards and songs. */
 export async function getHomeSections(session?: AuthSession | null): Promise<HomeSection[]> {
-  return cached(`home:${getActiveChannel()}`, TTL.home, () => runHomeSections(session));
+  return (await getHomePage(session)).sections;
 }
 
-async function runHomeSections(session?: AuthSession | null): Promise<HomeSection[]> {
-  const client = await getInnertube(session, { retrievePlayer: false });
-  const response: AnyNode = await client.actions.execute('/browse', {
-    browseId: 'FEmusic_home',
-    client: 'YTMUSIC',
-  });
-  return scanHome(response?.data);
+export interface HomeFeedPage { sections: HomeSection[]; continuation: string | null; filters?: HomeFilter[] }
+
+export async function getHomePage(session?: AuthSession | null, continuation?: string, filter?: HomeFilter | null): Promise<HomeFeedPage> {
+  return getBrowsePage('FEmusic_home', session, filter?.params, continuation);
+}
+
+export async function getBrowsePage(browseId: string, session?: AuthSession | null, params?: string, continuation?: string): Promise<HomeFeedPage> {
+  return cached(`${browseId === 'FEmusic_home' ? 'home' : 'browse'}:${getActiveChannel()}:${sessionKey(session)}:${browseId}:${params ?? ''}:${continuation ?? 'first'}`, TTL.home, async () => {
+    const client = await getInnertube(session, { retrievePlayer: false });
+    const response: AnyNode = await client.actions.execute('/browse', {
+      ...(continuation ? { continuation } : { browseId, ...(params ? { params } : {}) }), client: 'YTMUSIC',
+    });
+    return { sections: scanHome(response?.data), continuation: homeContinuation(response?.data), filters: scanHomeFilters(response?.data) };
+  }, { shouldCache: (page) => page.sections.length > 0 });
 }
 
 /** Browse a `FEmusic_*` page and return its shelves (used by Explore). */
@@ -1145,7 +1152,10 @@ export async function addPlaylistToLibrary(
   session?: AuthSession | null,
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
-  await client.playlist.addToLibrary(editPlaylistId(browseId));
+  const result = await client.actions.execute('like/like', {
+    target: { playlistId: editPlaylistId(browseId) }, client: 'YTMUSIC',
+  });
+  assertPlaylistMutation(result, 'save the playlist');
 }
 
 /** Remove a saved playlist from your library. */
@@ -1154,7 +1164,24 @@ export async function removePlaylistFromLibrary(
   session?: AuthSession | null,
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
-  await client.playlist.removeFromLibrary(editPlaylistId(browseId));
+  const result = await client.actions.execute('like/removelike', {
+    target: { playlistId: editPlaylistId(browseId) }, client: 'YTMUSIC',
+  });
+  assertPlaylistMutation(result, 'remove the playlist from your library');
+}
+
+function assertPlaylistMutation(result: AnyNode, action: string): void {
+  if (!result?.success || result?.status_code >= 400 || result?.data?.error) {
+    throw new CherryError('internal', `YouTube Music could not ${action}${result?.data?.error?.message ? `: ${result.data.error.message}` : '.'}`);
+  }
+}
+
+export async function deleteOwnedPlaylist(browseId: string, session: AuthSession): Promise<void> {
+  const client = await getInnertube(session, { retrievePlayer: false });
+  const result = await client.actions.execute('playlist/delete', {
+    playlistId: editPlaylistId(browseId), client: 'YTMUSIC',
+  });
+  assertPlaylistMutation(result, 'delete the playlist');
 }
 
 /**

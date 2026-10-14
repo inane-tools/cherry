@@ -19,7 +19,7 @@
   } from '$lib/app/services/account';
   import { settingsStore, updateSettings } from '$lib/app/services/settings';
   import type { CherrySettings } from '$lib/infra/storage/settingsRepo';
-  import { applyCustomAccent } from '$lib/app/services/theme';
+  import { applyCustomAccent, previewCustomAccent } from '$lib/app/services/theme';
   import { setDefaultPlaylist } from '$lib/app/services/playlistEdit';
   import { addablePlaylistsStore, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import { beginAuth, completeAuth } from '$lib/app/services/lastfm';
@@ -228,18 +228,34 @@
     ...$addablePlaylistsStore.map((p) => ({ value: p.browseId, label: p.title })),
   ];
 
-  // The colour picker fires `input` continuously while dragging. Apply the
-  // colour live (with the accent transition paused) and only persist on release,
-  // so the UI tracks the picker instead of lagging behind a 700 ms ease and a
-  // settings write per frame.
+  // Coalesce picker events, preview controls only, and repaint tinted surfaces
+  // and the backdrop once the chosen colour is committed.
+  let accentFrame = 0;
+  let pendingAccent = '';
   function previewAccent(value: string): void {
-    document.documentElement.classList.add('no-accent-transition');
-    applyCustomAccent(value);
+    if (!pendingAccent) document.documentElement.classList.add('no-accent-transition');
+    pendingAccent = value;
+    if (accentFrame) return;
+    accentFrame = requestAnimationFrame(() => {
+      accentFrame = 0;
+      previewCustomAccent(pendingAccent);
+    });
   }
   function commitAccent(value: string): void {
+    cancelAnimationFrame(accentFrame);
+    accentFrame = 0;
+    pendingAccent = '';
     document.documentElement.classList.remove('no-accent-transition');
+    applyCustomAccent(value);
     void updateSettings({ accentColor: value });
   }
+  onDestroy(() => {
+    cancelAnimationFrame(accentFrame);
+    if (pendingAccent) {
+      document.documentElement.classList.remove('no-accent-transition');
+      applyCustomAccent(get(settingsStore).accentColor);
+    }
+  });
 
   async function setDefaultPlaylistById(id: string): Promise<void> {
     const playlist = get(addablePlaylistsStore).find((p) => p.browseId === id) ?? null;
@@ -913,6 +929,14 @@
               checked={$settingsStore.compactSidebar}
               label="Compact sidebar"
               onchange={(value) => updateSettings({ compactSidebar: value })}
+            />
+          </label>
+          <label class="mt-3 flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-list-ul shrink-0 text-sm text-zinc-500"></i>Always show queue (when there’s room)</span>
+            <Toggle
+              checked={$settingsStore.queueSidebar}
+              label="Always show queue (when there’s room)"
+              onchange={(value) => updateSettings({ queueSidebar: value })}
             />
           </label>
         </div>

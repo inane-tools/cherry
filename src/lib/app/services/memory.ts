@@ -1,7 +1,7 @@
 // WebView2 memory trimming.
 //
-// Chromium keeps its full working set even when the window is hidden to the
-// tray. When the window loses focus we ask WebView2 for its "low" memory target
+// Chromium keeps its full working set even when the window is minimized.
+// When the window loses focus we ask WebView2 for its "low" memory target
 // level (aggressive cache release), and restore "normal" on focus so the UI
 // stays smooth while it is actually being used.
 

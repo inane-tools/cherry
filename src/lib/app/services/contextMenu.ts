@@ -11,6 +11,8 @@ export interface ContextMenuItem {
   /** Boxicons class, e.g. `bx bx-play`. */
   icon?: string;
   disabled?: boolean;
+  /** Clearly mark actions that permanently delete something. */
+  destructive?: boolean;
   /** Draw a divider *above* this item. */
   separatorBefore?: boolean;
   action: () => void | Promise<void>;

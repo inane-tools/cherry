@@ -4,6 +4,71 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-10-14
+
+Shibetsu — a refreshed Home experience, more playlist controls and desktop integration.
+
+### Added
+
+- Optional persistent queue sidebar with the same surface as the library rail.
+  Queue content stays below the topbar, including with the expanded player.
+  The player queue button returns when the window or app scale leaves too little room.
+- Owned playlists can be deleted from their page or context menu, with an
+  explicit permanent-deletion confirmation.
+- Tray menu shows the current song, artist and album, with previous/next,
+  shuffle, repeat and pinned-playlist controls.
+- Windows taskbar Jump List includes pinned and recently used playlists, with
+  artwork icons and playback shortcuts that work when Cherry is running or launching.
+
+### Fixed
+
+- Accent and theme changes no longer interpolate inherited colour tokens for
+  700 ms. The backdrop uses a short crossfade, avoiding repeated gradient
+  repaints and lag behind the colour picker.
+- Accent-picker drag events are coalesced into one control preview per frame;
+  expensive surface tinting and backdrop changes apply on release.
+- Saving/removing playlists uses the correct structured Innertube target,
+  fixing HTTP 400 responses. Rejected writes no longer report success locally.
+- Expanded artwork keeps the image URL that actually loaded after a fallback,
+  and retries failed images on connection recovery or returning to the app.
+- Playlist artwork falls back through available sizes and refreshes stale
+  library artwork URLs after repeated failures.
+- Expanded player closes when navigating to a page, including pressing Home
+  again, opening a search result, or going Back/Forward.
+- Settings dropdown menus no longer get clipped by collapsible sections or the
+  Settings scroll area. Menus open upward when needed to fit the window.
+
+### Changed
+
+- Softer two-colour top backdrop, with a matching secondary hue derived from
+  the active accent and the existing surface tinting preserved.
+- Rounded metadata chips and action buttons in playlist and album views, plus
+  an artist subtitle chip. Queue headers align the title, count chip and buttons.
+- Owned-playlist editing and deletion live in a three-dot menu beside Play and
+  Shuffle; other playlists retain their save/remove library button.
+- Song credits uses the shared sheet header, spacing and typography, with one
+  close control instead of a redundant footer button.
+- Explore is a separate page, opened from the sidebar below Home. Compact
+  song-row play overlays are slightly transparent without blur.
+- New folders, created playlists and newly saved playlists appear first below
+  pins. Pins can be reordered only within their group; their thumbnails no
+  longer start native image drags.
+- Folder icons show the first four playlist covers in a rounded, inset grid,
+  with an accent-tinted frame, clear dividers and a centered folder glyph.
+- Home keeps YouTube's section/item ordering, supports additional card formats,
+  filter chips, navigation buttons and paginated recommendations. Song shelves
+  use the server's row count; unsupported stations remain hidden.
+- Carousels keep the left inset and right-edge layout, scroll by whole columns,
+  and show flat controls above the row. Hover play buttons start playback while
+  clicking the rest of a collection card opens it.
+- Refreshed Cherry's icon across the app, desktop launchers and installers.
+- Release codename advances automatically to Shibetsu for the 1.6 series.
+
+### Removed
+
+- Close-to-tray behavior; closing the main window exits normally.
+- Tray seek, mute and volume controls, and the playback-status line.
+
 ## [1.5.0] — 2026-10-11
 
 ### Added
@@ -315,6 +380,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.6.0]: https://github.com/inane-tools/cherry/releases/tag/v1.6.0
 [1.5.0]: https://github.com/inane-tools/cherry/releases/tag/v1.5.0
 [1.4.1]: https://github.com/inane-tools/cherry/releases/tag/v1.4.1
 [1.4.2]: https://github.com/inane-tools/cherry/releases/tag/v1.4.2

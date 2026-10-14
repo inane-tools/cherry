@@ -1,17 +1,23 @@
 import { get, writable } from 'svelte/store';
 import type { Playlist, Track } from '$lib/core/models';
-import { getActiveChannel, getHomeSections, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
-import type { HomeSection } from '$lib/infra/ytmusic/rawHome';
+import { getActiveChannel, getHomePage, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
+import type { HomeSection, HomeFilter } from '$lib/infra/ytmusic/rawHome';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
 import { initChannel } from './account';
 import { openPage } from './navigation';
 import { enqueue } from './queue';
 import { playTracks, playTracksShuffled } from './player';
+import { rememberPlaylist } from './playlistShortcuts';
 
 export const playlistStore = writable<Playlist[]>([]);
 export const homeSectionsStore = writable<HomeSection[]>([]);
 export const homeLoading = writable(false);
+export const homeContinuationStore = writable<string | null>(null);
+export const homeMoreLoading = writable(false);
+export const homeMoreError = writable('');
+export const homeFiltersStore = writable<HomeFilter[]>([]);
+export const homeFilterStore = writable<HomeFilter | null>(null);
 export const libraryLoading = writable(false);
 export const libraryError = writable<string | null>(null);
 
@@ -24,13 +30,33 @@ export const openPlaylistError = writable<string | null>(null);
 
 let inflight: Promise<void> | null = null;
 let homeInflight: Promise<void> | null = null;
+let moreInflight: Promise<void> | null = null;
+let homeGeneration = 0;
+const homeTokens = new Set<string>();
 let generation = 0;
+let lastArtworkRefresh = -Infinity;
+
+/** Recover stale artwork URLs without resetting the channel or current page. */
+export function refreshPlaylistArtwork(): void {
+  if (!get(authStore) || inflight || Date.now() - lastArtworkRefresh < 60_000) return;
+  lastArtworkRefresh = Date.now();
+  cacheClear('library:');
+  void loadLibrary();
+}
 
 function invalidateLoads(): number {
   generation++;
   openSeq++;
   inflight = null;
   homeInflight = null;
+  moreInflight = null;
+  homeGeneration++;
+  homeFilterStore.set(null);
+  homeFiltersStore.set([]);
+  homeTokens.clear();
+  homeContinuationStore.set(null);
+  homeMoreLoading.set(false);
+  homeMoreError.set('');
   libraryLoading.set(false);
   homeLoading.set(false);
   openPlaylistLoading.set(false);
@@ -90,8 +116,9 @@ export function loadHome(): Promise<void> {
   }
   if (homeInflight) return homeInflight;
   const id = generation;
+  const homeId = ++homeGeneration;
   let channel: string | undefined;
-  const stale = () => id !== generation || get(authStore)?.cookie !== session.cookie
+  const stale = () => id !== generation || homeId !== homeGeneration || get(authStore)?.cookie !== session.cookie
     || (channel !== undefined && channel !== getActiveChannel());
   homeInflight = (async () => {
     homeLoading.set(true);
@@ -99,22 +126,75 @@ export function loadHome(): Promise<void> {
       await initChannel();
       if (stale()) return;
       channel = getActiveChannel();
-      const sections = await getHomeSections(session);
+      const page = await getHomePage(session, undefined, get(homeFilterStore));
       if (stale()) return;
-      homeSectionsStore.set(sections);
+      homeSectionsStore.set(page.sections);
+      homeTokens.clear();
+      homeContinuationStore.set(page.continuation);
+      homeMoreError.set('');
+      if (page.filters?.length) homeFiltersStore.set(page.filters);
     } catch (e) {
       if (stale()) return;
       // eslint-disable-next-line no-console
       console.error('[cherry] home feed failed:', e);
       homeSectionsStore.set([]);
     } finally {
-      if (id === generation) {
+      if (id === generation && homeId === homeGeneration) {
         homeLoading.set(false);
         homeInflight = null;
       }
     }
   })();
   return homeInflight;
+}
+
+/** Load another feed page on demand; discard responses from an old account. */
+export function loadMoreHome(): Promise<void> {
+  const session = get(authStore);
+  const token = get(homeContinuationStore);
+  if (!session || !token || homeTokens.has(token)) return Promise.resolve();
+  if (moreInflight) return moreInflight;
+  const id = generation;
+  const homeId = homeGeneration;
+  const channel = getActiveChannel();
+  const stale = () => id !== generation || homeId !== homeGeneration || get(authStore)?.cookie !== session.cookie || getActiveChannel() !== channel;
+  homeMoreLoading.set(true);
+  homeMoreError.set('');
+  let run: Promise<void> | undefined;
+  run = (async () => {
+    try {
+      const page = await getHomePage(session, token, get(homeFilterStore));
+      if (stale()) return;
+      homeTokens.add(token);
+      const key = (section: HomeSection) => JSON.stringify([section.title, section.cards.map((c) => c.browseId), section.songs.map((s) => s.videoId)]);
+      homeSectionsStore.update((sections) => {
+        const seen = new Set(sections.map(key));
+        return [...sections, ...page.sections.filter((section) => { const identity = key(section); if (seen.has(identity)) return false; seen.add(identity); return true; })];
+      });
+      homeContinuationStore.set(page.continuation && !homeTokens.has(page.continuation) && homeTokens.size < 20 ? page.continuation : null);
+    } catch { if (!stale()) homeMoreError.set('Could not load more recommendations. Try again.'); }
+    finally { if (!stale()) homeMoreLoading.set(false); if (moreInflight === run) moreInflight = null; }
+  })();
+  moreInflight = run;
+  return run;
+}
+
+export function refreshHome(): Promise<void> {
+  cacheClear(`home:${getActiveChannel()}:`);
+  return loadHome();
+}
+
+export function selectHomeFilter(filter: HomeFilter | null): Promise<void> {
+  homeGeneration++;
+  homeInflight = null;
+  moreInflight = null;
+  homeTokens.clear();
+  homeContinuationStore.set(null);
+  homeMoreLoading.set(false);
+  homeMoreError.set('');
+  homeFilterStore.set(filter);
+  homeSectionsStore.set([]);
+  return loadHome();
 }
 
 /**
@@ -152,6 +232,7 @@ export async function refreshLibrary(): Promise<void> {
  * restores the page without a redundant reload.
  */
 export function openPlaylist(playlist: Playlist): void {
+  rememberPlaylist(playlist);
   openPage({ view: 'playlist', entity: playlist });
 }
 
@@ -184,6 +265,7 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
       if (fresh.length === 0) return;
       if (!started) {
         started = true;
+        rememberPlaylist(playlist);
         if (shuffle) void playTracksShuffled(fresh);
         else void playTracks(fresh, 0);
       } else {

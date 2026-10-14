@@ -7,7 +7,7 @@
     loadArtistPage,
   } from '$lib/app/services/catalog';
   import { pageStore } from '$lib/app/services/navigation';
-  import { entriesOf, selectCarouselEntry } from '$lib/app/services/browse';
+  import { entriesOf, selectCarouselEntry, playCarouselEntry } from '$lib/app/services/browse';
   import Carousel from '$lib/ui/components/Carousel.svelte';
 
   $: page = $pageStore;
@@ -41,7 +41,7 @@
       </div>
       <div class="min-w-0">
         {#if data?.subtitle}
-          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">{data.subtitle}</div>
+          <div class="w-fit rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-semibold text-zinc-400">{data.subtitle}</div>
         {/if}
         <h1 class="mt-1 line-clamp-2 text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
           {name}
@@ -63,10 +63,10 @@
     {:else}
       {#each sections as section}
         <section class="mb-8">
-          <h2 class="mb-3 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
+          <h2 class="mb-3 pr-24 text-[17px] font-bold tracking-tight text-white sm:text-[19px]">
             {section.title || 'More'}
           </h2>
-          <Carousel entries={entriesOf(section)} onSelect={(entry) => selectCarouselEntry(section, entry)} />
+          <Carousel entries={entriesOf(section)} layout={section.layout ?? 'cards'} rows={section.rows ?? 3} onSelect={(entry) => selectCarouselEntry(section, entry)} onPlay={(entry) => playCarouselEntry(section, entry)} />
         </section>
       {/each}
     {/if}

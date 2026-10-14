@@ -14,7 +14,7 @@ src/
   lib/ui/            chrome/ (Titlebar/Sidebar/PlayerBar) components/ views/
   App.svelte main.ts app.css
 src-tauri/src/
-  main.rs            plugins, tray, single-instance, close-to-tray (main window only)
+  main.rs            plugins, tray, single-instance, normal window close behavior
   media_controls.rs  SMTC/MPRIS/NowPlaying via souvlaki → `media-key://…` events
   discord.rs         Rich Presence; application id configured at runtime
                      (a compile-time-only id silently disabled the feature)
@@ -209,7 +209,10 @@ actually needs deciphering.
   The queue is a popup anchored to the player bar (`UpNextPanel.svelte`) in the
   collapsed-bar layout; in the full-screen player it is shown **inline** in the
   middle of the card instead (both render the shared `QueueList.svelte`). There
-  is no Library page.
+  is also an optional right queue sidebar sharing the playlist rail's surface.
+  Its contents start below the titlebar; it reserves page/player space and
+  falls back to the queue button when the CSS viewport is too narrow.
+  There is no Library page.
 - **Home carousels:** plain horizontal scrollers (no edge fades) that bleed to
   the right window edge (`-mr-6`); the left edge stays on the content padding.
   Navigation arrows appear on hover.
@@ -265,20 +268,18 @@ actually needs deciphering.
 - **Icons:** Boxicons everywhere (`bx`/`bxs`/`bxl`). The only exception is the
   native window caption glyphs in the title bar, which stay Segoe Fluent Icons
   to look like real Windows controls.
-- **Pages:** Home (the `FEmusic_home` feed; the `FEmusic_explore` shelves —
-  moods & genres, new albums & singles, top songs — are appended beneath it, so
-  Explore is *not* a separate page), Search, Playlist, Artist
+- **Pages:** Home (`FEmusic_home`), Explore (`FEmusic_explore`, opened from the
+  sidebar below Home), Search, Playlist, Artist
   (`FEmusic`/`UC…` browse + `scanPageHeader`) and Album (`MPR…`) — the artist
   and album pages share the playlist page's header/track-list layout, with
   circular artist art and a clickable artist link on albums. Cards in every
   shelf open the matching page; songs play.
-- **Home:** the real `FEmusic_home` feed rendered as carousels. Album/playlist
-  cards and song rows are normalised into one `CarouselEntry` shape, so a
-  section always scrolls as a carousel regardless of which renderer YouTube
-  used for it. "Listen again" is the hero row. The "Listen together"
-  (24/7 stations) shelf is filtered out via `HIDDEN_SECTIONS`, and the Explore
-  shelves (`FEmusic_explore`) are appended beneath the home feed, so Explore is
-  not a separate page.
+- **Home:** the `FEmusic_home` feed preserves section/item order and uses cover
+  carousels, compact song columns or navigation buttons according to the
+  renderers YouTube supplies. Hover play buttons start playback separately from
+  opening collection cards. Filter chips and feed continuations load additional
+  recommendations. Unsupported stations stay hidden. Explore has its own page
+  for `FEmusic_explore`, including moods, genres, charts and new releases.
 
 Note for anyone verifying visually on a scaled display: the WebView surface is
 larger than the OS window when `devicePixelRatio > 1` (e.g. 1.25), so

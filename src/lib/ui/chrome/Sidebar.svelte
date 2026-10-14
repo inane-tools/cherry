@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { artwork } from '$lib/ui/actions/artwork';
+  import { thumbnailSources } from '$lib/core/models';
   import { flip } from 'svelte/animate';
   import { fade, slide } from 'svelte/transition';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
@@ -10,6 +12,7 @@
     libraryError,
     libraryLoading,
     refreshLibrary,
+    refreshPlaylistArtwork,
     playlistStore,
   } from '$lib/app/services/playlists';
   import { back, canGoBack, go, pageStore } from '$lib/app/services/navigation';
@@ -27,7 +30,7 @@
     toggleFolder,
   } from '$lib/app/services/folders';
   import { openFolderDialog } from '$lib/app/services/folderDialog';
-  import { pinnedStore } from '$lib/app/services/pins';
+  import { pinnedStore, reorderPin } from '$lib/app/services/pins';
   import { settingsStore, updateSettings } from '$lib/app/services/settings';
   import { closeSidebarDrawer } from '$lib/app/services/layout';
 
@@ -80,7 +83,7 @@
     folder: f,
     items: f.playlistIds
       .map((id) => playlists.find((p) => p.browseId === id))
-      .filter((p): p is Playlist => Boolean(p)),
+      .filter((p): p is Playlist => Boolean(p) && !pinnedIds.has(p!.browseId)),
   }));
   $: topItems = buildTopItems($sidebarOrderStore, playlists, assignedIds, folderEntries, pinnedOrder);
 
@@ -91,7 +94,8 @@
     folders: { folder: PlaylistFolder; items: Playlist[] }[],
     pinnedOrder: string[],
   ): TopItem[] {
-    const topPlaylists = list.filter((p) => !assigned.has(p.browseId));
+    const pinSet = new Set(pinnedOrder);
+    const topPlaylists = list.filter((p) => !assigned.has(p.browseId) || pinSet.has(p.browseId));
     const playlistById = new Map(topPlaylists.map((p) => [p.browseId, p]));
     const folderById = new Map(folders.map((f) => [f.folder.id, f]));
     const out: TopItem[] = [];
@@ -138,9 +142,11 @@
   // (not via helper functions) because this component uses legacy reactivity —
   // the compiler only tracks variables referenced directly in the template.
   type DragState =
+    | { kind: 'pin'; id: string; topIndex: number }
     | { kind: 'playlist'; id: string; topIndex: number; folderId: string | null; childIndex: number }
     | { kind: 'folder'; id: string; topIndex: number };
   type DropState =
+    | { kind: 'pin'; index: number }
     | { kind: 'top'; index: number }
     | { kind: 'in-folder'; folderId: string; index: number }
     | { kind: 'folder'; folderId: string };
@@ -160,11 +166,11 @@
     folderId: string | null,
     childIndex: number,
   ): void {
-    drag = { kind: 'playlist', id, topIndex, folderId, childIndex };
+    drag = pinnedIds.has(id) ? { kind: 'pin', id, topIndex } : { kind: 'playlist', id, topIndex, folderId, childIndex };
     drop = null;
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', id);
+      event.dataTransfer.setData(drag.kind === 'pin' ? 'application/x-cherry-pin' : 'text/plain', id);
     }
   }
   function startFolderDrag(event: DragEvent, id: string, topIndex: number): void {
@@ -182,6 +188,19 @@
 
   function onDragOver(event: DragEvent): void {
     if (!drag) return;
+    if (drag.kind === 'pin') {
+      const row = (event.target as HTMLElement | null)?.closest?.('[data-top-id]') as HTMLElement | null;
+      if (!row || !pinnedIds.has(row.dataset.topId ?? '')) {
+        drop = null;
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      const index = Number(row.dataset.topIndex) + (belowMid(event, row) ? 1 : 0);
+      drop = index === drag.topIndex || index === drag.topIndex + 1 ? null : { kind: 'pin', index };
+      return;
+    }
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 
@@ -218,7 +237,8 @@
     // (nearest item midpoint) rather than the single hovered row, so landing in
     // a gap or on blank space inserts next to the closest item instead of
     // snapping to the bottom.
-    const index = topIndexAt(event);
+    const pinCount = topItems.filter((item) => item.type === 'playlist' && pinnedIds.has(item.id)).length;
+    const index = Math.max(pinCount, topIndexAt(event));
     if (drag.topIndex >= 0 && (index === drag.topIndex || index === drag.topIndex + 1)) {
       drop = null;
       return;
@@ -247,6 +267,14 @@
     const order = topItems.map((t) => t.id);
     endDrag();
     if (!target) return;
+
+    if (cur.kind === 'pin') {
+      if (target.kind !== 'pin') return;
+      const before = topItems[target.index]?.id ?? null;
+      void reorderPin(cur.id, before && pinnedIds.has(before) ? before : null);
+      return;
+    }
+    if (target.kind === 'pin') return;
 
     if (target.kind === 'folder') {
       if (cur.kind === 'playlist') void movePlaylistToFolder(cur.id, target.folderId, order);
@@ -348,16 +376,11 @@
   {#if compact}
     <div class="relative flex justify-center">
       <button
-        class="relative h-10 w-10 overflow-hidden rounded-lg bg-white/5 transition {pinnedIds.has(
-          playlist.browseId,
-        )
-          ? 'cursor-default'
-          : 'cursor-grab active:cursor-grabbing'} {drag?.kind ===
-        'playlist' && drag?.id === playlist.browseId
+        class="relative h-10 w-10 cursor-grab select-none overflow-hidden rounded-lg bg-white/5 transition active:cursor-grabbing {(drag?.kind === 'playlist' || drag?.kind === 'pin') && drag?.id === playlist.browseId
           ? 'opacity-40'
           : ''}"
         aria-label={playlist.title}
-        draggable={!pinnedIds.has(playlist.browseId)}
+        draggable="true"
         ondragstart={(e) => startPlaylistDrag(e, playlist.browseId, topIndex, folderId, childIndex)}
         ondragend={endDrag}
         onclick={() => openPlaylist(playlist)}
@@ -366,7 +389,7 @@
         onmouseleave={hideTip}
       >
         {#if playlist.thumbnails[0]}
-          <img src={playlist.thumbnails[0].url} alt="" class="h-full w-full object-cover" loading="lazy" />
+          <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96), onfailure: refreshPlaylistArtwork }} draggable="false" alt="" class="h-full w-full object-cover" loading="lazy" />
         {:else}
           <span class="flex h-full w-full items-center justify-center text-[var(--color-accent2)]">
             <i class="bx bx-music"></i>
@@ -384,13 +407,11 @@
   {:else}
     <div class="relative flex items-center {folderId ? 'mx-1' : 'mx-2'}">
       <button
-        class="{rowClass} {pinnedIds.has(playlist.browseId)
-          ? 'cursor-default'
-          : 'cursor-grab active:cursor-grabbing'} {drag?.kind === 'playlist' && drag?.id === playlist.browseId
+        class="{rowClass} cursor-grab select-none active:cursor-grabbing {(drag?.kind === 'playlist' || drag?.kind === 'pin') && drag?.id === playlist.browseId
           ? 'opacity-40'
           : ''}"
         title={playlist.title}
-        draggable={!pinnedIds.has(playlist.browseId)}
+        draggable="true"
         ondragstart={(e) => startPlaylistDrag(e, playlist.browseId, topIndex, folderId, childIndex)}
         ondragend={endDrag}
         onclick={() => openPlaylist(playlist)}
@@ -398,7 +419,7 @@
       >
         <span class="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-white/5">
           {#if playlist.thumbnails[0]}
-            <img src={playlist.thumbnails[0].url} alt="" class="h-full w-full object-cover" loading="lazy" />
+            <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96), onfailure: refreshPlaylistArtwork }} draggable="false" alt="" class="h-full w-full object-cover" loading="lazy" />
           {:else}
             <span class="flex h-full w-full items-center justify-center text-[11px] text-[var(--color-accent2)]">
               <i class="bx bx-music"></i>
@@ -445,6 +466,27 @@
   {/if}
 {/snippet}
 
+{#snippet folderArtwork(items: Playlist[])}
+  {#if items.length > 0}
+    <span class="pointer-events-none relative grid h-full w-full grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden rounded-[inherit] bg-[var(--color-accent)]/25 p-[3px]" aria-hidden="true">
+      {#each [0, 1, 2, 3] as index}
+        <span class="relative min-h-0 min-w-0 overflow-hidden rounded-[5px] bg-[var(--color-art)]">
+          {#if items[index]?.thumbnails?.length}
+            <img use:artwork={{ urls: thumbnailSources(items[index].thumbnails, 96) }} src={thumbnailSources(items[index].thumbnails, 96)[0]} alt="" draggable="false" class="h-full w-full object-cover" />
+          {:else if items[index]}
+            <i class="bx bx-music flex h-full items-center justify-center text-[10px] text-zinc-500"></i>
+          {/if}
+        </span>
+      {/each}
+      <span class="absolute inset-0 flex items-center justify-center bg-scrim/40 text-[var(--color-accent2)]">
+        <i class="bx bxs-folder"></i>
+      </span>
+    </span>
+  {:else}
+    <i class="bx bxs-folder" aria-hidden="true"></i>
+  {/if}
+{/snippet}
+
 {#snippet folderBlock(folder: PlaylistFolder, items: Playlist[], topIndex: number)}
   {#if compact}
     <!-- Compact: the icon and its members share one outlined block. -->
@@ -474,7 +516,7 @@
           onmouseenter={(e) => showTip(e, folder.name, `${items.length} playlists`)}
           onmouseleave={hideTip}
         >
-          <i class="bx {drop?.kind === 'folder' && drop?.folderId === folder.id ? 'bxs-folder-open' : 'bxs-folder'}"></i>
+          {@render folderArtwork(items)}
         </button>
       </div>
       {#if !$collapsedFolders.has(folder.id) && items.length > 0}
@@ -508,7 +550,7 @@
             ? 'bg-[var(--color-accent)]/25 text-[var(--color-accent2)]'
             : 'bg-white/5 text-[var(--color-accent2)]'}"
         >
-          <i class="bx {drop?.kind === 'folder' && drop?.folderId === folder.id ? 'bxs-folder-open' : 'bxs-folder'}"></i>
+          {@render folderArtwork(items)}
         </span>
         <span class="min-w-0 flex-1">
           <span class="block truncate font-medium">{folder.name}</span>
@@ -586,6 +628,15 @@
       </button>
       <button
         class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Explore"
+        onclick={() => go('explore')}
+        onmouseenter={(e) => showTip(e, 'Explore')}
+        onmouseleave={hideTip}
+      >
+        <i class="bx bx-compass"></i>
+      </button>
+      <button
+        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
         aria-label="Search"
         onclick={() => go('search')}
         onmouseenter={(e) => showTip(e, 'Search')}
@@ -627,6 +678,16 @@
           <i class="bx bx-home text-xl"></i>
         </span>
         <span class="truncate">Home</span>
+      </button>
+      <button
+        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
+        aria-label="Explore"
+        onclick={() => go('explore')}
+      >
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
+          <i class="bx bx-compass text-xl"></i>
+        </span>
+        <span class="truncate">Explore</span>
       </button>
       <button
         class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
@@ -700,7 +761,7 @@
           data-top-index={i}
           animate:flip={{ duration: 180 }}
         >
-          {#if drop?.kind === 'top' && drop?.index === i}
+          {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === i}
             <span
               class="pointer-events-none absolute inset-x-2 -top-0.5 z-10 h-0.5 rounded-full bg-[var(--color-accent)]"
               transition:fade={{ duration: 120 }}
@@ -713,7 +774,7 @@
           {/if}
         </div>
       {/each}
-      {#if drop?.kind === 'top' && drop?.index === topItems.length}
+      {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === topItems.length}
         <div
           class="mx-2 h-0.5 shrink-0 rounded-full bg-[var(--color-accent)]"
           transition:fade={{ duration: 120 }}

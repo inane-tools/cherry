@@ -11,4 +11,8 @@ export interface CarouselEntry {
   subtitle?: string;
   thumbnails: Thumbnail[];
   kind: 'card' | 'song';
+  canPlay?: boolean;
+  round?: boolean;
+  browseId?: string;
+  browseParams?: string;
 }
