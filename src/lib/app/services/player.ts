@@ -44,6 +44,7 @@ const DISCORD_MIN_GAP_MS = 4100;
 let discordLastPush = 0;
 let discordTimer: ReturnType<typeof setTimeout> | null = null;
 let discordDirty = false;
+let discordWork: Promise<void> = Promise.resolve();
 let seekPushTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** How long a paused track may linger before the OS/Discord status is cleared. */
@@ -55,6 +56,8 @@ let pauseClearTimer: ReturnType<typeof setTimeout> | null = null;
  * is only paused. Cleared as soon as playback resumes or a new track loads.
  */
 let statusSuppressed = false;
+/** Restoring metadata alone must never advertise listening on Discord. */
+let discordAwaitingPlayback = false;
 
 /**
  * Drop the OS media session and Discord presence once a track has been paused
@@ -74,7 +77,7 @@ function schedulePauseClear(): void {
     if (get(playerStore).status !== 'paused') return;
     statusSuppressed = true;
     void invokeSafe('media_cleared');
-    void invokeSafe('discord_clear_presence');
+    void refreshDiscord();
   }, PAUSE_CLEAR_MS);
 }
 
@@ -106,6 +109,7 @@ function ensureAudio(): HTMLAudioElement {
       }));
     });
     audio.addEventListener('play', () => {
+      discordAwaitingPlayback = false;
       playerStore.update((p) => ({ ...p, status: 'playing', error: undefined }));
       cancelPauseClear();
       // Force: resume must reach Discord immediately, including fresh timers.
@@ -180,6 +184,7 @@ function cueCurrent(): void {
     durationSeconds: item?.track.durationSeconds ?? 0,
   }));
   if (!item) resetArtworkTheme();
+  if (item) schedulePauseClear();
   void pushOsState();
 }
 
@@ -390,6 +395,7 @@ export async function restorePlayback(): Promise<void> {
   if (!item) return;
   // Make sure the audio element exists so `toggle()` can reuse it.
   ensureAudio();
+  discordAwaitingPlayback = true;
   playerStore.update((p) => ({
     ...p,
     status: 'paused',
@@ -400,6 +406,7 @@ export async function restorePlayback(): Promise<void> {
   // A paused UI needs a real source before it can seek; the stream is resolved
   // lazily by `toggle()`, so hold the position and apply it on load instead.
   pendingResume = position > 0 ? { videoId: item.track.videoId, seconds: position } : null;
+  schedulePauseClear();
   // Record it too: otherwise the next queue save would persist position 0 and
   // quitting without pressing play would lose where the user was.
   rememberPosition(position);
@@ -665,7 +672,7 @@ async function pushMediaState(): Promise<void> {
 
 async function pushOsState(): Promise<void> {
   await pushMediaState();
-  queueDiscord();
+  await queueDiscord();
 }
 
 /**
@@ -676,10 +683,12 @@ async function pushOsState(): Promise<void> {
  * converges on the right track instead of being dropped by Discord's
  * SET_ACTIVITY rate limit and leaving the presence stuck.
  */
-function queueDiscord(): void {
-  // A long pause already cleared the presence; the keep-alive must not bring
-  // it back while the same track is merely paused.
-  if (statusSuppressed) return;
+function queueDiscord(): void | Promise<void> {
+  // Clears bypass the playback rate-limit gap and follow any in-flight write.
+  const st = get(playerStore);
+  if (discordAwaitingPlayback || statusSuppressed || !get(settingsStore).discordEnabled || !st.track || st.status === 'idle' || st.status === 'error') {
+    return refreshDiscord();
+  }
   discordDirty = true;
   if (discordTimer) return;
   const wait = Math.max(0, DISCORD_MIN_GAP_MS - (Date.now() - discordLastPush));
@@ -689,25 +698,32 @@ function queueDiscord(): void {
   }, wait);
 }
 
-async function flushDiscord(): Promise<void> {
+function flushDiscord(): Promise<void> {
+  const task = discordWork.then(sendDiscordState);
+  discordWork = task.catch(() => {});
+  return task;
+}
+
+async function sendDiscordState(): Promise<void> {
+  if (!isTauri()) return;
+  // Read state after importing IPC and after prior writes finish, so an old
+  // snapshot cannot restore presence after Stop, disable, or a long pause.
+  const { invoke } = await import('@tauri-apps/api/core');
   discordDirty = false;
   discordLastPush = Date.now();
   const st = get(playerStore);
   const settings = get(settingsStore);
   const track = st.track;
-  if (!settings.discordEnabled || !track) {
-    await invokeSafe('discord_clear_presence');
-    return;
-  }
-  // A long pause already cleared the presence; don't re-advertise a track that
-  // is only paused. (Disabling Discord above still clears it.)
-  if (statusSuppressed) return;
-  const artwork = bestThumbnail(track.thumbnails, 512);
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    if (discordAwaitingPlayback || !settings.discordEnabled || !track || statusSuppressed || st.status === 'idle' || st.status === 'error') {
+      await invoke('discord_clear_presence');
+      return;
+    }
+    const artwork = bestThumbnail(track.thumbnails, 512);
     await invoke('discord_set_presence', {
       payload: {
         title: track.title,
+        videoId: track.videoId,
         artist: track.artists.map((a) => a.name).join(', ') || 'Unknown artist',
         album: track.album?.name ?? '',
         artwork,
@@ -751,7 +767,6 @@ let mediaTimer: ReturnType<typeof setInterval> | null = null;
 export function startPresenceKeepAlive(): void {
   if (presenceTimer) return;
   presenceTimer = setInterval(() => {
-    if (!get(playerStore).track) return;
     queueDiscord();
   }, 15000);
   // Windows does not advance the SMTC timeline itself, so the taskbar preview

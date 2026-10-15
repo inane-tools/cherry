@@ -51,6 +51,9 @@ measurements and the Windows landmines that were hit along the way.
 
 ## Changelog
 
+**v1.6.1 (Shibetsu)** fixes Discord presence clearing and adds links to the
+current song on album artwork and to inane.tools on the Cherry badge.
+
 **v1.6.0 (Shibetsu)** refreshes Home with more YouTube Music layouts, filters
 and pagination, separates Explore into its own page, and adds an optional queue
 sidebar. It also adds confirmed playlist deletion, expanded tray controls and

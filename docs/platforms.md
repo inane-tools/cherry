@@ -1,6 +1,6 @@
 # Linux and macOS builds
 
-Cherry 1.6.0 is Shibetsu. The desktop-builds workflow checks the frontend and
+Cherry 1.6.1 is Shibetsu. The desktop-builds workflow checks the frontend and
 builds Windows NSIS and Linux DEB/AppImage/Flatpak on native GitHub runners.
 It uploads artifacts only and does not publish releases. macOS is deferred.
 

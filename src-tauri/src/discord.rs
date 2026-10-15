@@ -79,6 +79,8 @@ pub struct PresencePayload {
     #[serde(default)]
     pub artwork: String,
     #[serde(default)]
+    pub video_id: String,
+    #[serde(default)]
     pub is_playing: bool,
     /// True for paused / ended, but not for the brief loading state.
     #[serde(default)]
@@ -117,13 +119,17 @@ fn ensure_connected(inner: &mut DiscordInner) -> Result<(), String> {
     Ok(())
 }
 
-/// Configure the application id. Passing an empty string disables presence.
+/// Configure the application id. An empty string selects Cherry's built-in id.
 #[tauri::command]
 pub fn discord_set_app_id(state: State<DiscordState>, app_id: String) -> Result<DiscordStatus, String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     let app_id = app_id.trim().to_string();
     if guard.app_id != app_id {
         // Different application id → the existing IPC client is invalid.
+        if let Some(client) = guard.client.as_mut() {
+            let _ = client.clear_activity();
+            let _ = client.close();
+        }
         guard.reset();
         guard.app_id = app_id;
     }
@@ -253,6 +259,11 @@ fn build_activity(payload: &PresencePayload) -> serde_json::Value {
     // only used as hover text when we know it — no placeholder app label.
     if payload.artwork.starts_with("https://") {
         let mut assets = serde_json::json!({ "large_image": payload.artwork });
+        if !payload.video_id.trim().is_empty() {
+            let mut song_url = url::Url::parse("https://www.youtube.com/watch").expect("static YouTube URL");
+            song_url.query_pairs_mut().append_pair("v", &payload.video_id);
+            assets["large_url"] = serde_json::Value::String(song_url.into());
+        }
         if !payload.album.trim().is_empty() {
             assets["large_text"] = serde_json::Value::String(truncate(&payload.album, 128));
         }
@@ -262,6 +273,8 @@ fn build_activity(payload: &PresencePayload) -> serde_json::Value {
         let icon = DEFAULT_ICON.trim();
         if !icon.is_empty() {
             assets["small_image"] = serde_json::Value::String(icon.to_string());
+            assets["small_text"] = serde_json::Value::String("Cherry · inane.tools".into());
+            assets["small_url"] = serde_json::Value::String("https://inane.tools".into());
         }
         activity["assets"] = assets;
     }
@@ -297,12 +310,19 @@ fn build_activity(payload: &PresencePayload) -> serde_json::Value {
 #[tauri::command]
 pub fn discord_clear_presence(state: State<DiscordState>) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(client) = guard.client.as_mut() {
-        if client.clear_activity().is_err() {
-            guard.reset();
-        }
-    }
-    Ok(())
+    let result = if let Some(client) = guard.client.as_mut() {
+        clear_client(client)
+    } else { Ok(()) };
+    // Disconnect even on failure: Discord then drops the connection's activity,
+    // and a later Play must establish a fresh session rather than reuse stale IPC.
+    guard.reset();
+    result
+}
+
+fn clear_client(client: &mut impl DiscordIpc) -> Result<(), String> {
+    let cleared = client.clear_activity().map_err(|e| e.to_string());
+    let closed = client.close().map_err(|e| e.to_string());
+    cleared.and(closed)
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -347,11 +367,44 @@ mod tests {
             artist: "Some Artist".into(),
             album: "Some Album".into(),
             artwork: "https://example.com/art.jpg".into(),
+            video_id: "song-id".into(),
             is_playing: true,
             is_paused: false,
             position_secs: 12,
             duration_secs: 200,
             status_display: status_display.into(),
+        }
+    }
+
+    #[test]
+    fn artwork_and_badge_link_to_the_song_and_website() {
+        let activity = build_activity(&payload("details"));
+        assert_eq!(activity["assets"]["large_url"], "https://www.youtube.com/watch?v=song-id");
+        assert_eq!(activity["assets"]["small_url"], "https://inane.tools");
+        assert_eq!(activity["assets"]["small_text"], "Cherry · inane.tools");
+        let mut missing_id = payload("details");
+        missing_id.video_id.clear();
+        assert!(build_activity(&missing_id)["assets"].get("large_url").is_none());
+    }
+
+    struct ClearClient { id: String, fail: bool, closed: bool }
+    impl DiscordIpc for ClearClient {
+        fn get_client_id(&self) -> &String { &self.id }
+        fn connect_ipc(&mut self) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }
+        fn write(&mut self, _: &[u8]) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }
+        fn read(&mut self, _: &mut [u8]) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }
+        fn clear_activity(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+            if self.fail { Err("send failed".into()) } else { Ok(()) }
+        }
+        fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> { self.closed = true; Ok(()) }
+    }
+
+    #[test]
+    fn clear_disconnects_even_if_the_clear_write_fails() {
+        for fail in [false, true] {
+            let mut client = ClearClient { id: "test".into(), fail, closed: false };
+            assert_eq!(clear_client(&mut client).is_err(), fail);
+            assert!(client.closed);
         }
     }
 

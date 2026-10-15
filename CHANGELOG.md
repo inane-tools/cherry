@@ -4,6 +4,26 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] — 2026-10-15
+
+Shibetsu maintenance update.
+
+### Fixed
+
+- Restoring a paused song at startup does not publish Discord presence until
+  audio playback actually begins.
+- Discord clears bypass the playback update delay, run after in-flight updates,
+  and disconnect the IPC session so stale presence cannot linger or be restored
+  by a pending update. Failed clears are reported and retried by the keep-alive.
+- Restored and cued paused tracks now start the same one-minute presence cleanup
+  timer as normal pauses. Playback errors clear presence instead of advertising
+  a track that cannot play.
+
+### Changed
+
+- Clicking Discord's album artwork opens the current song on YouTube; clicking
+  the small Cherry icon opens inane.tools.
+
 ## [1.6.0] — 2026-10-14
 
 Shibetsu — a refreshed Home experience, more playlist controls and desktop integration.
@@ -380,6 +400,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.6.1]: https://github.com/inane-tools/cherry/releases/tag/v1.6.1
 [1.6.0]: https://github.com/inane-tools/cherry/releases/tag/v1.6.0
 [1.5.0]: https://github.com/inane-tools/cherry/releases/tag/v1.5.0
 [1.4.1]: https://github.com/inane-tools/cherry/releases/tag/v1.4.1
