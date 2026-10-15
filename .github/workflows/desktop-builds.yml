@@ -33,7 +33,7 @@ jobs:
             args: --bundles nsis
           - os: ubuntu-24.04
             name: linux-x64
-            args: --bundles deb,appimage
+            args: --bundles appimage
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +42,12 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.name }}-release
+          cache-on-failure: true
       - name: Linux libraries
         if: runner.os == 'Linux'
         run: |
@@ -50,19 +56,21 @@ jobs:
       - run: npm ci
       - name: Build frontend for Rust context
         run: npm run build
+        env:
+          TAURI_ENV_PLATFORM: ${{ runner.os == 'Windows' && 'windows' || 'linux' }}
       - name: Rust tests
         if: runner.os != 'Linux'
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+        run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml
       - name: Rust tests with isolated Linux keyring
         if: runner.os == 'Linux'
         run: |
           dbus-run-session -- bash -euo pipefail -c '
             export XDG_DATA_HOME="$(mktemp -d)"
             printf "%s" "cherry-ci-test-password" | gnome-keyring-daemon --unlock --components=secrets
-            cargo test --locked --manifest-path src-tauri/Cargo.toml
+            cargo test --release --locked --manifest-path src-tauri/Cargo.toml
           '
       - name: Build installers
-        run: npm run tauri -- build ${{ matrix.args }}
+        run: npm run tauri -- build --config src-tauri/tauri.ci.conf.json ${{ matrix.args }}
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
       - name: Build self-distributed Flatpak
@@ -72,8 +80,9 @@ jobs:
         with:
           name: cherry-${{ matrix.name }}
           if-no-files-found: error
+          # Installers are already compressed; ZIP compression adds CPU time.
+          compression-level: 0
           path: |
             src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
             packaging/flatpak/out/*.flatpak

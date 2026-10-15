@@ -1,8 +1,14 @@
 # Linux and macOS builds
 
 Cherry 1.6.1 is Shibetsu. The desktop-builds workflow checks the frontend and
-builds Windows NSIS and Linux DEB/AppImage/Flatpak on native GitHub runners.
+builds Windows NSIS and Linux AppImage/Flatpak on native GitHub runners.
 It uploads artifacts only and does not publish releases. macOS is deferred.
+
+CI caches Rust dependencies and runs native tests in the release profile so
+packaging reuses their compiled dependencies. The frontend builds once before
+native tests; `tauri.ci.conf.json` skips the duplicate build hook during packaging.
+Use that override only after building the frontend. Local Tauri builds keep
+their normal frontend build hook. Flatpak reuses the Linux release executable.
 
 [v1.6.0 Shibetsu](https://github.com/inane-tools/cherry/releases/tag/v1.6.0)
 ships Windows NSIS and Linux x86_64 Flatpak/AppImage. Linux has been tested on
@@ -48,7 +54,7 @@ On Ubuntu 24.04:
 ```sh
 sudo apt-get install libwebkit2gtk-4.1-dev build-essential libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev patchelf
 npm ci
-npm run tauri -- build --bundles deb,appimage
+npm run tauri -- build --bundles appimage
 ```
 
 The Linux desktop ID is `tools.inane.cherry`. Settings from earlier direct

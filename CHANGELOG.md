@@ -21,6 +21,9 @@ Shibetsu maintenance update.
 
 ### Changed
 
+- Installer CI produces only Windows NSIS and Linux AppImage/Flatpak, caches
+  Rust dependencies, shares release-profile compilation with native tests,
+  and builds the frontend once per installer job.
 - Clicking Discord's album artwork opens the current song on YouTube; clicking
   the small Cherry icon opens inane.tools.
 

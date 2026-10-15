@@ -4,5 +4,5 @@
   "app": {
     "windows": [{ "label": "main", "title": "Cherry", "width": 1120, "height": 720, "minWidth": 420, "minHeight": 480, "decorations": true, "visible": false, "transparent": true, "dragDropEnabled": false, "center": true }]
   },
-  "bundle": { "targets": ["deb", "appimage"] }
+  "bundle": { "targets": ["appimage"] }
 }
