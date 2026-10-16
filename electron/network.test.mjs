@@ -42,3 +42,9 @@ test('uses browser defaults without overriding a requested mobile player identit
   assert.equal(headers.get('origin'), 'https://music.youtube.com');
   assert.equal(apiHeaders(media, { 'user-agent': 'Android VR' }, 'Chrome').get('user-agent'), 'Android VR');
 });
+
+test('browser-side signed requests use the same origin as the authentication hash', () => {
+ const headers=apiHeaders('https://www.youtube.com/youtubei/v1/account/accounts_list', { authorization:'SAPISIDHASH synthetic' }, 'Chrome');
+ assert.equal(headers.get('origin'),'https://www.youtube.com');
+ assert.equal(headers.get('x-origin'),'https://www.youtube.com');
+});

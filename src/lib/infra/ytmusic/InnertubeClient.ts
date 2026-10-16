@@ -11,7 +11,7 @@
 //   YouTube Music") or pasted manually. Stored in the OS keychain.
 //   Anonymous mode works for search; anonymous *playback* falls back to
 //   TV/ANDROID player clients when YouTube bot-walls the WEB client.
-// - In Electron, youtubei.js traffic relays through Rust (CORS-free); the
+// - In Electron, youtubei.js traffic relays through the main process (CORS-free); the
 //   Cookie header rides along like any other header.
 // - All raw-API access stays in this file + mappers.ts. Services/UI only
 //   see stable core models.
@@ -27,6 +27,7 @@ import type {
   Thumbnail,
   Track,
 } from '$lib/core/models';
+import { signingCookieHeader, accountIndex, authIdentity } from './authContext';
 import { CherryError } from '$lib/core/errors';
 import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
@@ -66,9 +67,9 @@ const TTL = {
 /**
  * Persistent youtubei.js cache (IndexedDB in the webview).
  *
- * Without it every client creation re-downloads the session config and the
- * multi-megabyte player JS. With it those are fetched once and reused across
- * restarts — the single biggest request/startup saving.
+ * The multi-megabyte player JS is reused across restarts. Session config is
+ * intentionally refreshed: youtubei.js can retain a previous brand identity
+ * when restoring its shared session entry for a personal-account request.
  */
 let ytCache: unknown | null = null;
 let ytCacheResolved = false;
@@ -130,7 +131,7 @@ function cacheKey(
   retrievePlayer: boolean,
   channel: string,
 ): string {
-  return `${session?.cookie ?? ''}::${channel}::${retrievePlayer ? 'p' : 'np'}`;
+  return `${authIdentity(session)}::${channel}::${retrievePlayer ? 'p' : 'np'}`;
 }
 
 export function resetInnertubeClient(): void {
@@ -165,13 +166,16 @@ export async function getInnertube(
       const client = (await Innertube.create({
         lang: 'en',
         location: 'GB',
-        cookie: session?.cookie,
+        cookie: session?.cookie ? signingCookieHeader(session.cookie) : undefined,
+        account_index: accountIndex(session),
         retrieve_player: retrievePlayer,
         ...(channel ? { on_behalf_of_user: channel } : {}),
         // In Electron, direct fetch() to Google is CORS-blocked in the webview;
         // relay through the Electron main process. No-op outside Electron.
         fetch: innertubeFetch(),
         cache: getYtCache(Platform),
+        // Keep the player cache, but never restore another channel's session.
+        enable_session_cache: false,
       } as never)) as AnyInnertube;
       return client;
     } catch (e) {
@@ -692,7 +696,7 @@ export async function getAccountProfile(session: AuthSession): Promise<AccountPr
  */
 /** Non-reversible key for a session, so caches don't store the cookie itself. */
 function sessionKey(session?: AuthSession | null): string {
-  const cookie = session?.cookie ?? '';
+  const cookie = authIdentity(session);
   let hash = 5381;
   for (let i = 0; i < cookie.length; i++) {
     hash = ((hash << 5) + hash + cookie.charCodeAt(i)) | 0;
@@ -718,7 +722,7 @@ async function runGetChannels(session: AuthSession): Promise<AccountProfile[]> {
   const profiles: AccountProfile[] = [];
   for (const item of items) {
     const name = item?.account_name?.text ?? item?.account_name ?? null;
-    if (!name) continue;
+    if (!name || item?.is_disabled) continue;
     const handle = item?.channel_handle?.text ?? item?.channel_handle ?? null;
     const photos: AnyNode[] = item?.account_photo ?? [];
     const sorted = [...photos].sort((a, b) => (a?.width ?? 0) - (b?.width ?? 0));
@@ -733,7 +737,7 @@ async function runGetChannels(session: AuthSession): Promise<AccountProfile[]> {
       handle: handle ? String(handle) : undefined,
       avatarUrl: avatarUrl || undefined,
       pageId,
-      isChannel: Boolean(item?.has_channel),
+      isChannel: Boolean(item?.has_channel || pageId),
       isSelected: Boolean(item?.is_selected),
     });
   }
@@ -780,7 +784,7 @@ export async function pickPrimaryChannel(session: AuthSession): Promise<AccountP
     }),
   );
 
-  scored.sort((a, b) => b.count - a.count);
+  scored.sort((a, b) => b.count - a.count || Number(!!b.channel.isSelected) - Number(!!a.channel.isSelected));
   return scored[0]?.channel ?? channels[0];
 }
 

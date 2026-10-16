@@ -70,7 +70,10 @@ export function apiHeaders(value, input, userAgent) {
   for (const name of ['host', 'connection', 'content-length', 'transfer-encoding', 'upgrade']) headers.delete(name);
   if (!headers.has('user-agent')) headers.set('user-agent', userAgent);
   if (['youtube.com', 'google.com', 'googleapis.com', 'googlevideo.com', 'ytimg.com', 'ggpht.com'].some(host => url.hostname === host || url.hostname.endsWith('.' + host))) {
-    if (!headers.has('origin')) headers.set('origin', 'https://music.youtube.com');
+    // youtubei.js v18 hashes SAPISID against www.youtube.com, including for Music.
+    const signed = /^SAPISIDHASH\s/.test(headers.get('authorization') ?? '');
+    if (!headers.has('origin')) headers.set('origin', signed ? 'https://www.youtube.com' : 'https://music.youtube.com');
+    if (signed && !headers.has('x-origin')) headers.set('x-origin', headers.get('origin'));
   }
   return headers;
 }

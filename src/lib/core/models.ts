@@ -93,6 +93,9 @@ export interface StreamInfo {
 /** YouTube Music web session: the raw `Cookie` header from music.youtube.com
  *  (captured automatically from the embedded login window, or pasted). */
 export interface AuthSession {
+  /** Google account slot from the login page, distinct from a brand page ID. */
+  accountIndex?: number;
+  selectedChannelId?: string;
   /** No secure OS storage: this sign-in lasts until the app exits. */
   persistence?: 'memory';
   kind: 'cookie';

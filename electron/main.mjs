@@ -68,15 +68,30 @@ async function boundedBytes(response, max = 32 * 1024 * 1024) {
 }
 const loginSession = () => session.fromPartition('persist:youtube-login');
 let loginAttempt = false;
+let loginContext = {};
 const secureAuth = createAuthPersistence({
   available: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
   read: () => secretRead('auth'), write: value => secretWrite('auth', value), clear: () => secretWrite('auth', null),
 });
-async function capturedSession() { return captureYouTubeSession(loginSession().cookies); }
+async function captureLoginContext() {
+  if (!login || login.isDestroyed() || new URL(login.webContents.getURL() || 'about:blank').origin !== 'https://music.youtube.com') return;
+  let timeout;
+  const value = await Promise.race([
+    login.webContents.executeJavaScript("globalThis.ytcfg?.get ? ({ accountIndex: Number(globalThis.ytcfg.get('SESSION_INDEX') ?? 0), selectedChannelId: String(globalThis.ytcfg.get('DELEGATED_SESSION_ID') ?? '') }) : null"),
+    new Promise(resolve => { timeout = setTimeout(() => resolve(null), 1000); }),
+  ]).catch(() => null).finally(() => clearTimeout(timeout));
+  if (value && Number.isInteger(value.accountIndex) && value.accountIndex >= 0) loginContext = value;
+}
+async function capturedSession() {
+  await captureLoginContext();
+  if (!Number.isInteger(loginContext.accountIndex)) throw new Error('Waiting for the YouTube Music account page to finish loading.');
+  return captureYouTubeSession(loginSession().cookies, Date.now(), loginContext);
+}
 function browserAgent() { return app.userAgentFallback.replace(/\s(?:Electron|Cherry[^ /]*)\/[^ ]+/g, ''); }
 function openLogin() {
   loginAttempt = true;
   if (login && !login.isDestroyed()) { login.focus(); return; }
+  loginContext = {};
   const ses = loginSession(); permissions(ses);
   login = new BrowserWindow({ title: 'Sign in to YouTube Music', width: 1020, height: 780, parent: window,
     webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false } });
@@ -84,6 +99,13 @@ function openLogin() {
   login.webContents.on('will-navigate', (event, url) => { if (!valid(url)) event.preventDefault(); });
   login.webContents.on('will-redirect', (event, url) => { if (!valid(url)) event.preventDefault(); });
   login.webContents.setWindowOpenHandler(({ url }) => { if (valid(url)) void login.loadURL(url); return { action: 'deny' }; });
+  let closing = false;
+  login.webContents.on('did-finish-load', () => { void captureLoginContext(); });
+  login.on('close', event => {
+    if (closing) return;
+    event.preventDefault(); closing = true;
+    void captureLoginContext().finally(() => login?.close());
+  });
   login.on('closed', () => { login = undefined; });
   void login.loadURL('https://music.youtube.com');
 }
@@ -206,6 +228,7 @@ async function main() {
     await loginSession().cookies.set({ url: 'https://music.youtube.com/', name: 'SID', value: 'smoke-session-identity' });
     await loginSession().cookies.set({ url: 'https://www.youtube.com/', name: 'SAPISID', value: 'smoke-signing-cookie' });
     loginAttempt = true;
+    loginContext = { accountIndex: 2, selectedChannelId: 'smoke-brand' };
     const errors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
     const result = await window.webContents.executeJavaScript(`(async () => {
@@ -223,6 +246,7 @@ async function main() {
       if (!login.loggedIn || login.open) throw Error('Closed login cookie detection failed');
       const captured = await bridge.invoke('ytm_login_finish');
       if (!captured.cookie.includes('SID=smoke-session-identity') || !captured.cookie.includes('SAPISID=smoke-signing-cookie')) throw Error('Cookie capture incomplete');
+      if (captured.accountIndex !== 2 || captured.selectedChannelId !== 'smoke-brand') throw Error('Account identity capture incomplete');
       if ((await bridge.invoke('auth_load')).cookie !== captured.cookie) throw Error('Captured auth was not persisted');
       await bridge.invoke('auth_clear');
       let rejected = false;

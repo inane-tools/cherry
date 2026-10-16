@@ -7,6 +7,7 @@
 // 25 purely by selecting the right channel.
 
 import { get as getStore, writable } from 'svelte/store';
+import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import type { AccountProfile } from '$lib/core/models';
 import { getAccountProfile, getChannels, pickPrimaryChannel, setActiveChannel } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
@@ -27,7 +28,7 @@ function applyChannel(profile: AccountProfile | null): void {
 
 let lastCookie = '';
 authStore.subscribe((session) => {
-  const cookie = session?.cookie ?? '';
+  const cookie = authIdentity(session);
   if (cookie === lastCookie) return;
   lastCookie = cookie;
   generation++;
@@ -59,7 +60,7 @@ export function initChannel(force = false): Promise<AccountProfile | null> {
     return Promise.resolve(getStore(activeChannelStore));
   }
   const id = ++generation;
-  const stale = () => id !== generation || getStore(authStore)?.cookie !== session.cookie;
+  const stale = () => id !== generation || authIdentity(getStore(authStore)) !== authIdentity(session);
   const run = (async () => {
     let channels: AccountProfile[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -75,13 +76,13 @@ export function initChannel(force = false): Promise<AccountProfile | null> {
       if (channels.length > 0) break;
       await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
     }
-    if (channels.length === 0) return null;
+    if (channels.length === 0) throw new Error('YouTube returned no account channels. Sign in again and finish on the YouTube Music page.');
     channelsStore.set(channels);
 
     const savedPageId = getStore(settingsStore).channelPageId;
     const saved = savedPageId ? channels.find((c) => c.pageId === savedPageId) : undefined;
 
-    let chosen: AccountProfile | null = saved ?? null;
+    let chosen: AccountProfile | null = saved ?? channels.find(c => !!session.selectedChannelId && c.pageId === session.selectedChannelId) ?? null;
     if (!chosen) {
       // Auto-detect the channel that owns a real library.
       chosen = (await pickPrimaryChannel(session)) ?? channels.find((c) => c.isChannel) ?? channels[0] ?? null;
@@ -117,7 +118,7 @@ export async function refreshActiveProfile(): Promise<AccountProfile | null> {
   if (!session) return null;
   const id = generation;
   const profile = await getAccountProfile(session);
-  if (id !== generation || getStore(authStore)?.cookie !== session.cookie) return null;
-  activeChannelStore.set(profile);
+  if (id !== generation || authIdentity(getStore(authStore)) !== authIdentity(session)) return null;
+  if (profile) activeChannelStore.set(profile);
   return profile;
 }

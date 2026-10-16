@@ -42,3 +42,14 @@ Login and streaming follow-up:
   total-duration cutoff. Canceling media cancels its upstream transfer.
 - Runtime stream failures refresh once with the play/pause state and position
   retained. Repeat failures display an error instead of retrying indefinitely.
+
+Brand-channel handling captures SESSION_INDEX and DELEGATED_SESSION_ID from the
+YouTube Music login page. Google account slots and brand page IDs are separate.
+Clients/cache identities include the account slot; brand requests retain the
+on-behalf-of context. Secure-prefixed signing cookies are adapted for youtubei.js
+without overwriting a real SAPISID cookie. Existing sessions can sign in again
+to capture the selected account slot.
+
+The player-script cache remains enabled. The shared youtubei.js session cache is
+disabled so restoring a brand session cannot leak its page context into personal
+account discovery. Signed API requests preserve the origin used by SAPISIDHASH.

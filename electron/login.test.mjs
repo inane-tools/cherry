@@ -26,3 +26,9 @@ test('does not swallow real disk/encryption errors when storage is available', a
   const storage = createAuthPersistence({ available: () => true, read: async () => null, write: async () => { throw Error('Disk full'); }, clear: async () => {} });
   await assert.rejects(storage.save({ cookie: 'SID=test' }), /Disk full/);
 });
+
+test('retains the Google account slot separately from its selected brand page', async () => {
+ const value=await captureYouTubeSession({get:async()=>[cookie('SID','session'),cookie('SAPISID','signing')]},Date.now(),{accountIndex:2,selectedChannelId:'brand-page'});
+ assert.equal(value.accountIndex,2);
+ assert.equal(value.selectedChannelId,'brand-page');
+});
