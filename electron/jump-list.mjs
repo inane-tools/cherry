@@ -4,7 +4,11 @@ import { join } from 'node:path';
 
 const validId = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(value);
 export function playlistArgument(args) {
-  for (let i = 0; i < args.length - 1; i++) if (args[i] === '--play-playlist' && validId(args[i + 1])) return args[i + 1];
+  for (let i = 0; i < args.length; i++) {
+    const match = args[i].match(/^--(?:open|play)-playlist=(.*)$/);
+    if (match && validId(match[1])) return match[1];
+    if (['--open-playlist', '--play-playlist'].includes(args[i]) && validId(args[i + 1])) return args[i + 1];
+  }
   return null;
 }
 export function createPlaylistLaunch(args, dispatch) {
@@ -16,7 +20,7 @@ export function createPlaylistLaunch(args, dispatch) {
   };
 }
 function quoteArgument(value) { return '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"'; }
-function removedId(args = '') { return args.match(/(?:^|\s)--play-playlist\s+"?([a-zA-Z0-9_-]{1,256})"?(?:\s|$)/)?.[1]; }
+function removedId(args = '') { return args.match(/(?:^|\s)--(?:open|play)-playlist(?:=|\s+)"?([a-zA-Z0-9_-]{1,256})"?(?:\s|$)/)?.[1]; }
 export function buildJumpList({ pinned = [], recent = [], removedItems = [], minItems = 12, executable, launchPrefix = [], iconFor = () => executable }) {
   if (!Array.isArray(pinned) || !Array.isArray(recent)) throw new Error('Invalid playlist shortcuts');
   const removed = new Set(removedItems.map(item => removedId(item.args)));
@@ -28,7 +32,7 @@ export function buildJumpList({ pinned = [], recent = [], removedItems = [], min
       if (!remaining || !validId(shortcut?.browseId) || removed.has(shortcut.browseId) || used.has(shortcut.browseId)) continue;
       used.add(shortcut.browseId); remaining--;
       const title = String(shortcut.title || 'Playlist').slice(0, 128);
-      items.push({ type: 'task', program: executable, args: [...launchPrefix.map(quoteArgument), '--play-playlist', shortcut.browseId].join(' '), title, description: ('Play ' + title).slice(0, 260), iconPath: iconFor(shortcut.thumbnail), iconIndex: 0 });
+      items.push({ type: 'task', program: executable, args: [...launchPrefix.map(quoteArgument), '--open-playlist=' + shortcut.browseId].join(' '), title, description: ('Open ' + title).slice(0, 260), iconPath: iconFor(shortcut.thumbnail), iconIndex: 0 });
     }
     return items.length ? [{ type: 'custom', name, items }] : [];
   });

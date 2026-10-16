@@ -377,3 +377,27 @@ describe('shuffle / repeat controls', () => {
     expect(get(queueStore.shuffle)).toBe(false);
   });
 });
+
+
+it('keeps the outgoing source attached while the next track is resolving', async () => {
+  const first = player.playTracks([track('first')]); await flush();
+  pending[0].resolve('https://media/first'); await first;
+  const remove = vi.spyOn(HTMLMediaElement.prototype, 'removeAttribute');
+  const nextTrack = player.playTracks([track('second')]); await flush();
+  expect(remove.mock.calls.filter(([attribute]) => attribute === 'src')).toHaveLength(0);
+  expect(get(player.playerStore).status).toBe('loading');
+  pending[1].resolve('https://media/second'); await nextTrack;
+  remove.mockRestore();
+});
+
+it('drops the outgoing source if its replacement fails, so retry cannot play the wrong song', async () => {
+  const first = player.playTracks([track('first')]); await flush();
+  pending[0].resolve('https://media/first'); await first;
+  const remove = vi.spyOn(HTMLMediaElement.prototype, 'removeAttribute');
+  const replacement = player.playTracks([track('second')]); await flush();
+  pending[1].reject(new Error('offline')); await flush();
+  pending[2].reject(new Error('still offline')); await replacement;
+  expect(get(player.playerStore).status).toBe('error');
+  expect(remove.mock.calls.some(([attribute]) => attribute === 'src')).toBe(true);
+  remove.mockRestore();
+});

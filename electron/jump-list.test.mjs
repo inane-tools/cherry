@@ -6,6 +6,8 @@ const pin = { browseId: 'VLPIN', title: 'Pinned', thumbnail: 'https://image.test
 const recent = { browseId: 'VLRECENT', title: 'Recent' };
 test('validates playlist launch arguments without accepting flags or shell fragments', () => {
   assert.equal(playlistArgument(['app', '--play-playlist', 'VLPIN']), 'VLPIN');
+  assert.equal(playlistArgument(['app', '--open-playlist', 'VLPIN']), 'VLPIN');
+  assert.equal(playlistArgument(['app', '--open-playlist=VLPIN', '--other']), 'VLPIN');
   for (const id of ['', '--devtools', 'abc;quit', '../files', 'id with space', 'a'.repeat(257)]) assert.equal(playlistArgument(['--play-playlist', id]), null);
 });
 test('queues cold-start playlists and delivers later launches once the renderer listens', () => {
@@ -20,7 +22,7 @@ test('queues cold-start playlists and delivers later launches once the renderer 
 test('builds pinned/recent sections, honours removed items and deduplicates playlists', () => {
   const lists = buildJumpList({ pinned: [pin], recent: [pin, recent, { browseId: 'REMOVED', title: 'Gone' }], removedItems: [{ args: '"C:\\Apps\\Cherry Electron" --play-playlist REMOVED' }], minItems: 3, executable: 'C:\\Cherry.exe', launchPrefix: ['C:\\App With Spaces'], iconFor: url => url ? 'pin.ico' : 'app.ico' });
   assert.equal(lists.length, 2);
-  assert.equal(lists[0].items[0].args, '"C:\\App With Spaces" --play-playlist VLPIN');
+  assert.equal(lists[0].items[0].args, '"C:\\App With Spaces" --open-playlist=VLPIN');
   assert.equal(lists[0].items[0].iconPath, 'pin.ico');
   assert.deepEqual(lists[1].items.map(item => item.title), ['Recent']);
   assert.equal(buildJumpList({ pinned: [pin], recent: [recent], minItems: 1, executable: 'cherry.exe' }).length, 1);

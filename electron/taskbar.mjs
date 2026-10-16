@@ -21,7 +21,7 @@ export function createTaskbarControls({ nativeImage, platform = process.platform
   }
   return (window, state) => {
     if (platform !== 'win32' || !window || window.isDestroyed()) return;
-    const flags = state.hasTrack ? ['enabled'] : ['disabled'];
+    const flags = state.hasTrack ? [] : ['disabled'];
     return window.setThumbarButtons([
       { tooltip: 'Previous', icon: icon('prev'), flags, click: () => dispatch('prev') },
       { tooltip: state.playing ? 'Pause' : 'Play', icon: icon(state.playing ? 'pause' : 'play'), flags, click: () => dispatch('toggle') },

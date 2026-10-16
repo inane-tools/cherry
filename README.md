@@ -44,8 +44,10 @@ No CI, release workflows, signing, automatic updates or publishing are configure
 - Discord Rich Presence (including artwork links and clear/reconnect behavior),
   Last.fm authorization/now-playing/scrobbling, and custom playlist cover uploads
   are ported. Windows has playback buttons in taskbar previews and pinned/recent
-  playlist Jump Lists with cached artwork. These integrations need live-account
-  testing alongside the automated protocol and IPC checks.
+  playlist Jump Lists with cached artwork (selecting one opens the playlist).
+  Discord, Last.fm scrobbles and cover uploads passed initial Windows user tests;
+  the corrected shell actions and media-card branding need another visual check.
+  Linux integration testing is still needed.
 - Manual video-quality changes replace buffered segments so downgrades do not
   wait for the old high-resolution buffer to drain. Auto remains adaptive.
 - Still to port: native GTK caption glyphs, Flatpak,

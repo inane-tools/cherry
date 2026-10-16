@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage } from 'electron';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assetPath, trustedRenderer, externalUrl } from './policy.mjs';
@@ -9,7 +11,8 @@ import { createDiscordPresence } from './discord.mjs';
 import { createLastfm } from './lastfm.mjs';
 import { createTaskbarControls } from './taskbar.mjs';
 import { createPlaylistImageUpload } from './playlist-image.mjs';
-import { createJumpLists, createPlaylistLaunch } from './jump-list.mjs';
+import { createJumpLists, createPlaylistLaunch, playlistArgument } from './jump-list.mjs';
+import { prepareWindowsIdentity } from './windows-identity.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const assets = join(here, 'assets');
@@ -17,9 +20,12 @@ const devUrl = process.env.CHERRY_DEV_URL;
 const smoke = process.argv.includes('--smoke-test');
 if (devUrl && !/^http:\/\/127\.0\.0\.1:1423\/?$/.test(devUrl)) throw new Error('Invalid development origin');
 app.setName('Cherry Electron');
-app.setAppUserModelId(smoke ? 'tools.inane.cherry.electron.smoke' : 'tools.inane.cherry.electron');
+const appId = smoke ? 'tools.inane.cherry.electron.smoke' : 'tools.inane.cherry.electron';
+app.setAppUserModelId(appId);
 // Never reuse the released app's settings, cookies, updater state or keychain.
-app.setPath('userData', smoke ? join(app.getPath('temp'), 'cherry-electron-smoke-' + Date.now()) : join(app.getPath('appData'), 'cherry-electron'));
+const profilePath = smoke ? process.env.CHERRY_SMOKE_PROFILE || join(app.getPath('temp'), 'cherry-electron-smoke-' + Date.now()) : join(app.getPath('appData'), 'cherry-electron');
+app.setPath('userData', profilePath);
+if (smoke) process.env.CHERRY_SMOKE_PROFILE = profilePath;
 protocol.registerSchemesAsPrivileged([
   { scheme: 'cherry', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'cherry-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -35,8 +41,11 @@ const discord = createDiscordPresence();
 const lastfm = createLastfm();
 const updateTaskbar = createTaskbarControls({ nativeImage, dispatch: id => send('tray://action', id) });
 const uploadPlaylistImage = createPlaylistImageUpload({ userAgent: browserAgent });
-const playlistLaunch = createPlaylistLaunch(process.argv, id => send('tray://action', 'playlist:' + id));
-const jumpLists = createJumpLists({ app, nativeImage, directory: data('jump-artwork'), iconPath: join(assets, 'icon.ico') });
+const playlistLaunch = createPlaylistLaunch(process.argv, id => {
+  if (!smoke) { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); }
+  send('tray://action', 'open-playlist:' + id);
+});
+const jumpLists = createJumpLists({ app, nativeImage, directory: data('jump-artwork'), iconPath: data('branding/icon.ico') });
 async function atomic(name, text) {
   await mkdir(app.getPath('userData'), { recursive: true });
   await writeFile(data(name + '.tmp'), text, { mode: 0o600 });
@@ -138,6 +147,10 @@ function updateTray(state) {
   ]));
 }
 const commands = {
+  ...(smoke ? {
+    'smoke:dispatch': ({ action }) => send('tray://action', action),
+    'smoke:second-instance': ({ legacy = false }) => promisify(execFile)(process.execPath, [...(!app.isPackaged ? [app.getAppPath()] : []), '--smoke-test', ...(legacy ? ['--open-playlist', 'VLSMOKE'] : ['--open-playlist=VLSMOKE'])], { windowsHide: true, timeout: 10000 }),
+  } : {}),
   desktop_platform: () => process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
   'window:minimize': () => window.minimize(),
   'window:close': () => window.close(),
@@ -200,6 +213,7 @@ const commands = {
 async function main() {
   await app.whenReady();
   permissions(session.defaultSession);
+  await prepareWindowsIdentity({ appId, assets, directory: data('branding'), register: !smoke }).catch(error => console.warn('[windows] Could not register app name/icon:', error.message));
   try { settings = JSON.parse(await readFile(data('settings.json'), 'utf8')); } catch { settings = {}; }
   protocol.handle('cherry', async request => {
     try {
@@ -229,6 +243,7 @@ async function main() {
   window = new BrowserWindow({ title: 'Cherry Electron', width: 1280, height: 850, minWidth: 460, minHeight: 540,
     frame: false, show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
+  if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry Electron', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
   ipcMain.handle('desktop:invoke', async (event, command, args = {}) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !trustedRenderer(event.senderFrame.url, devUrl)) throw new Error('Untrusted IPC sender');
     if (!Object.hasOwn(commands, command)) throw new Error('Desktop feature not ported: ' + String(command));
@@ -256,6 +271,7 @@ async function main() {
     loginAttempt = true;
     loginContext = { accountIndex: 2, selectedChannelId: 'smoke-brand' };
     const smokeArtwork = nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 64, height: 64 }).toPNG().toString('base64');
+    if (process.platform === 'win32' && updateTaskbar(window, { hasTrack: true, playing: true }) !== true) throw new Error('Native taskbar toolbar rejected enabled buttons');
     const errors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
     const result = await window.webContents.executeJavaScript(`(async () => {
@@ -263,6 +279,21 @@ async function main() {
       if (!bridge || typeof require !== 'undefined' || typeof process !== 'undefined') throw Error('Renderer isolation failed');
       for (let i = 0; i < 100 && !document.body.textContent.includes('Welcome to Cherry'); i++) await new Promise(r => setTimeout(r, 100));
       if (!document.body.textContent.includes('Welcome to Cherry')) throw Error('App did not mount');
+      const actionProbe = [];
+      const stopActionProbe = bridge.subscribe('tray://action', payload => actionProbe.push(payload));
+      await bridge.invoke('smoke:dispatch', { action: 'probe' });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (actionProbe[0] !== 'probe') throw Error('Native action event did not reach renderer');
+      await bridge.invoke('smoke:second-instance');
+      for (let i = 0; i < 50 && !actionProbe.includes('open-playlist:VLSMOKE'); i++) await new Promise(resolve => setTimeout(resolve, 20));
+      if (!actionProbe.includes('open-playlist:VLSMOKE')) throw Error('Second-instance playlist launch was not delivered: ' + JSON.stringify(actionProbe));
+      await bridge.invoke('smoke:second-instance', { legacy: true });
+      for (let i = 0; i < 50 && actionProbe.filter(action => action === 'open-playlist:VLSMOKE').length < 2; i++) await new Promise(resolve => setTimeout(resolve, 20));
+      if (actionProbe.filter(action => action === 'open-playlist:VLSMOKE').length !== 2) throw Error('Legacy playlist launch did not survive Chromium argument reordering');
+      stopActionProbe();
+      await bridge.invoke('smoke:dispatch', { action: 'shuffle' });
+      for (let i = 0; i < 250 && !(await bridge.invoke('settings:get', { key: 'settings' })).shuffle; i++) await new Promise(resolve => setTimeout(resolve, 20));
+      if (!(await bridge.invoke('settings:get', { key: 'settings' })).shuffle) throw Error('Native action did not reach the app action router');
       const platform = await bridge.invoke('desktop_platform');
       await bridge.invoke('settings:set', { key: 'settings', value: { lyricsEnabled: true, theme: 'dark' } });
       const settings = await bridge.invoke('settings:get', { key: 'settings' });
@@ -310,16 +341,17 @@ async function main() {
       let rejected = false;
       try { await bridge.invoke('http_proxy_fetch', { url: 'file:///private' }); } catch { rejected = true; }
       if (!rejected) throw Error('Network validation failed');
-      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true };
+      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
     })()`);
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('ELECTRON_SMOKE_PASS ' + JSON.stringify(result));
     app.quit();
   }
 }
-if (!app.requestSingleInstanceLock()) app.quit();
+if (!app.requestSingleInstanceLock({ playlistId: playlistArgument(process.argv) })) app.quit();
 else {
-  app.on('second-instance', (_event, argv) => { playlistLaunch.receive(argv); if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); });
+  app.on('second-instance', (_event, argv, _directory, extra) => {
+    playlistLaunch.receive(typeof extra?.playlistId === 'string' ? ['--open-playlist', extra.playlistId] : argv); if (!smoke) { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); } });
   app.on('will-quit', () => { discord.close(); tray?.destroy(); });
   void main().catch(error => { console.error('Electron startup failed:', error); app.exit(1); });
 }

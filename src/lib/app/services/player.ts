@@ -143,6 +143,7 @@ function ensureAudio(): HTMLMediaElement {
     audio.volume = s.volume;
     audio.muted = s.muted;
     listen('timeupdate', () => {
+      if (get(playerStore).status === 'loading') return;
       playerStore.update((p) => ({ ...p, positionSeconds: audio?.currentTime ?? 0 }));
       // Remember the position so a restart resumes where the user left off.
       rememberPosition(audio?.currentTime ?? 0);
@@ -169,7 +170,7 @@ function ensureAudio(): HTMLMediaElement {
       void pushOsState();
     });
     listen('pause', () => {
-      if (media.error) return; // An interrupted transfer must not erase playback intent.
+      if (media.error || ['loading', 'error'].includes(get(playerStore).status)) return; // Ignore pauses caused by a source handoff.
       // Any pause counts, not just one that interrupted "playing" — otherwise a
       // pause during buffering left the presence looking like it was still on.
       playerStore.update((p) => (p.track ? { ...p, status: 'paused' } : p));
@@ -352,7 +353,13 @@ export async function playTracksShuffled(tracks: Track[]): Promise<void> {
 export async function toggle(): Promise<void> {
   const el = ensureAudio();
   const st = get(playerStore);
-  if (st.status === 'playing') {
+  if (st.status === 'loading') {
+    loadGeneration++; clearHls();
+    el.pause(); el.removeAttribute('src'); el.load();
+    playerStore.update(p => ({ ...p, status: 'paused' }));
+    schedulePauseClear();
+    await pushOsState();
+  } else if (st.status === 'playing') {
     el.pause();
   } else if (st.track) {
     // A restored track has metadata but **no source yet** — streams are
@@ -642,16 +649,13 @@ function isAbort(e: unknown): boolean {
 }
 
 async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<void> {
-  clearHls();
   cancelPauseClear();
   const generation = ++loadGeneration;
   const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
   let el = ensureAudio();
-  el.pause();
-  el.removeAttribute('src');
-  el.load();
   if (!item) {
+    clearHls();
     el.pause();
     el.removeAttribute('src');
     playerStore.update((p) => ({ ...p, status: 'idle', track: null, positionSeconds: 0, durationSeconds: 0 }));
@@ -668,6 +672,9 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     durationSeconds: item.track.durationSeconds ?? 0,
     error: undefined,
   }));
+  // Keep the paused outgoing source attached until its replacement is ready.
+  // Dropping it here unregisters Chromium's media session between every song.
+  el.pause();
   // Theme the app from the new track's artwork (fire and forget).
   void applyArtworkTheme(bestThumbnail(item.track.thumbnails, 256));
   await pushOsState();
@@ -706,15 +713,15 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     }
   }
   if (stale()) return;
-  el = replaceMedia(playVideo);
   const start = async (refresh: boolean): Promise<void> => {
     videoReady.set(false);
     videoResolution.set(null);
     videoQualities.set([]);
-    const { track, stream } = await getAudioStream(videoId, session, { refresh, ...(get(videoMode) ? { video: true } : {}) });
+    const { track, stream } = await getAudioStream(videoId, session, { refresh, ...(playVideo ? { video: true } : {}) });
     if (stale()) return;
     playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
     clearHls();
+    el = replaceMedia(playVideo);
     if (stream.dashManifest && get(videoMode)) {
       const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, mediaProxyUrl(new URL(stream.url)).href, stale);
       if (stale()) { adaptive.destroy(); await adaptive.ready; return; }
@@ -781,6 +788,8 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     } catch (retryError) {
       if (stale() || isAbort(retryError)) return;
     }
+    // A failed replacement must not leave the previous song available to Play.
+    clearHls(); el.pause(); el.removeAttribute('src'); el.load();
     playerStore.update((p) => ({ ...p, status: 'error', error: err.message }));
     await pushOsState();
   }
@@ -811,6 +820,7 @@ async function pushMediaState(): Promise<void> {
       // from this, so it must be the live position.
       positionSecs: Math.round(st.positionSeconds),
       isPlaying: st.status === 'playing',
+      isLoading: st.status === 'loading',
     },
   });
 }
@@ -873,6 +883,7 @@ async function sendDiscordState(): Promise<void> {
         album: track.album?.name ?? '',
         artwork,
         isPlaying: st.status === 'playing',
+      isLoading: st.status === 'loading',
         // Loading is neither playing nor paused, so the paused marker doesn't
         // flash between tracks.
         isPaused: st.status === 'paused',

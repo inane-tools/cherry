@@ -61,7 +61,7 @@
         "nsis"
       ],
       "icon": "electron/assets/icon.ico",
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,

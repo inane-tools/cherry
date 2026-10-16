@@ -7,6 +7,8 @@ import { pinnedStore } from './pins';
 import { settingsStore } from './settings';
 import { authStore } from './auth';
 import { playlistStore, playPlaylist } from './playlists';
+import { openPage } from './navigation';
+import { closeSearch, closeSettings } from './overlays';
 import { trackDisplayArtists, type RepeatMode } from '$lib/core/models';
 import { prepareJumpArtwork, type PlaylistShortcut } from './jumpArtwork';
 
@@ -14,11 +16,15 @@ export async function startTray(): Promise<() => void> {
   if (!isDesktop()) return () => {};
   const windows = await invokeSafe<string>('desktop_platform') === 'windows';
   async function action(id: string) {
-    if (id.startsWith('playlist:')) {
-      const browseId = id.slice(9);
+    const opening = id.startsWith('open-playlist:');
+    if (opening || id.startsWith('playlist:')) {
+      const browseId = id.slice(opening ? 14 : 9);
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(browseId)) return;
       const shortcut = [...get(pinnedStore), ...get(settingsStore).recentPlaylists].find((p) => p.browseId === browseId);
       if (get(authStore)) {
-        await playPlaylist(get(playlistStore).find((p) => p.browseId === browseId) ?? { browseId, title: shortcut?.title ?? 'Playlist', thumbnails: [] });
+        const playlist = get(playlistStore).find((p) => p.browseId === browseId) ?? { browseId, title: shortcut?.title ?? 'Playlist', thumbnails: shortcut?.thumbnail ? [{ url: shortcut.thumbnail }] : [] };
+        if (opening) { closeSearch(); closeSettings(); openPage({ view: 'playlist', entity: playlist }); }
+        else await playPlaylist(playlist);
       }
       return;
     }
@@ -30,7 +36,7 @@ export async function startTray(): Promise<() => void> {
       default: if (['repeat:off', 'repeat:all', 'repeat:one'].includes(id)) setRepeat(id.slice(7) as RepeatMode);
     }
   }
-  const unlisten = await listen<string>('tray://action', (event) => void action(event.payload)).catch(() => () => {});
+  const unlisten = await listen<string>('tray://action', (event) => void action(event.payload).catch(error => console.warn('[cherry] native action failed:', error))).catch(() => () => {});
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastTray = '';
@@ -73,6 +79,6 @@ export async function startTray(): Promise<() => void> {
     timer = setTimeout(() => void flush(), 100);
   });
   const launch = await invokeSafe<string>('take_playlist_launch');
-  if (launch) void action(`playlist:${launch}`);
+  if (launch) void action(`open-playlist:${launch}`).catch(error => console.warn('[cherry] playlist launch failed:', error));
   return () => { disposed = true; unsubscribe(); unlisten(); if (timer !== undefined) clearTimeout(timer); };
 }

@@ -90,3 +90,25 @@ Playlist state follow-up:
 - Adding songs refreshes that playlist's header and, if open, contents in place.
   Existing rows stay visible while refreshing; unrelated playlists and playback
   are untouched. Counts and artwork update in the rail/page/home card.
+
+
+Windows shell and playback follow-up:
+
+- Jump Lists open playlists. Launch flags use `--open-playlist=ID`; older paired
+  arguments remain supported through single-instance additionalData, because
+  Chromium can reorder switches away from their values on a second launch.
+- Enabled thumbnail buttons omit flags: Electron's native implementation rejects
+  the literal `enabled` flag and clears its callback map on that failed update.
+  The startup smoke test now checks actual native toolbar creation and launches
+  a second Electron process to exercise both argument formats and IPC delivery.
+- Windows branding registers this fork's DisplayName/IconUri under the current
+  user's AppUserModelId key. Real icon files are copied out of app.asar into
+  userData/branding; window relaunch details use the same app ID. Executable
+  resource editing is enabled independently of code signing.
+- Track handoffs retain the paused outgoing source while the next URL resolves.
+  Timeline ticks reuse unchanged MediaMetadata; loading retains playback intent
+  rather than explicitly pausing/removing the system media card.
+- Last.fm counting excludes paused time and submits one scrobble per play.
+  New-track and resume notifications update the separate Now Playing status.
+  Last.fm's documented API has no explicit pause/clear-Now-Playing operation;
+  its profile status can linger after pausing. Completed scrobbles remain history.

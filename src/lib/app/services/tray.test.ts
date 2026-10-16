@@ -14,6 +14,8 @@ vi.mock('./queue', async () => {
 });
 vi.mock('./pins', async () => ({ pinnedStore: (await import('svelte/store')).writable([{ browseId: 'VLPIN', title: 'Pinned' }]) }));
 vi.mock('./settings', async () => ({ settingsStore: (await import('svelte/store')).writable({ recentPlaylists: [{ browseId: 'VLRECENT', title: 'Recent' }, { browseId: 'VLPIN', title: 'Pinned' }] }) }));
+vi.mock('./navigation', () => ({ openPage: vi.fn() }));
+vi.mock('./overlays', () => ({ closeSearch: vi.fn(), closeSettings: vi.fn() }));
 vi.mock('./auth', async () => ({ authStore: (await import('svelte/store')).writable({ cookie: 'session' }) }));
 vi.mock('./playlists', async () => ({ playlistStore: (await import('svelte/store')).writable([]), playPlaylist: vi.fn() }));
 
@@ -22,6 +24,8 @@ import { invokeSafe } from './platform';
 import { playerStore, toggle } from './player';
 import { playPlaylist } from './playlists';
 import { setRepeat } from './queue';
+import { openPage } from './navigation';
+import { closeSettings, closeSearch } from './overlays';
 
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
@@ -53,4 +57,22 @@ it('routes playback controls and playlist selections, and stops listening on cle
   stop();
   await vi.advanceTimersByTimeAsync(1000);
   expect(vi.mocked(invokeSafe).mock.calls.some(([command]) => command === 'update_tray')).toBe(false);
+});
+
+
+it('opens Jump List selections without playing them and closes covering overlays', async () => {
+  const stop = await startTray();
+  events.get('tray://action')?.({ payload: 'open-playlist:VLPIN' });
+  await Promise.resolve();
+  expect(openPage).toHaveBeenCalledWith({ view: 'playlist', entity: { browseId: 'VLPIN', title: 'Pinned', thumbnails: [] } });
+  expect(playPlaylist).not.toHaveBeenCalled();
+  expect(closeSettings).toHaveBeenCalled(); expect(closeSearch).toHaveBeenCalled();
+  stop();
+});
+it('opens a cold-start playlist launch after registering native action handlers', async () => {
+  vi.mocked(invokeSafe).mockImplementation(async command => command === 'take_playlist_launch' ? 'VLCOLD' : null);
+  const stop = await startTray();
+  expect(openPage).toHaveBeenCalledWith({ view: 'playlist', entity: { browseId: 'VLCOLD', title: 'Playlist', thumbnails: [] } });
+  expect(playPlaylist).not.toHaveBeenCalled(); stop();
+  vi.mocked(invokeSafe).mockImplementation(async () => null);
 });

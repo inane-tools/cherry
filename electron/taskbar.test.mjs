@@ -7,6 +7,7 @@ test('wires native playback buttons, paused state, and empty-player disabled sta
   const window = { isDestroyed: () => false, setThumbarButtons: value => { buttons = value; return true; } };
   assert.equal(update(window, { hasTrack: true, playing: true }), true);
   assert.equal(buttons[1].tooltip, 'Pause');
+  assert.deepEqual(buttons[1].flags, []); // Native THBF_ENABLED is zero, not an 'enabled' flag.
   buttons.forEach(button => button.click()); assert.deepEqual(actions, ['prev', 'toggle', 'next']);
   update(window, { hasTrack: false, playing: false });
   assert.equal(buttons[1].tooltip, 'Play'); assert.deepEqual(buttons[0].flags, ['disabled']);
