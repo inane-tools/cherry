@@ -12,6 +12,8 @@
 
 import { get, writable } from 'svelte/store';
 import type { AuthSession, Playlist } from '$lib/core/models';
+import { authIdentity } from '$lib/infra/ytmusic/authContext';
+import { cacheClear } from '$lib/infra/storage/cache';
 import { getActiveChannel, getAddablePlaylists } from '$lib/infra/ytmusic/InnertubeClient';
 import { activeChannelStore } from './account';
 import { authStore } from './auth';
@@ -24,9 +26,13 @@ export const addablePlaylistsLoading = writable(false);
 /** Session+channel the current list belongs to, so it is refreshed on change. */
 let loadedFor = '';
 let inflight: Promise<Playlist[]> | null = null;
+let generation = 0;
+// Server-confirmed local edits survive a delayed/older menu response.
+const localEdits = new Map<string, Playlist>();
+const removedIds = new Set<string>();
 
 function currentKey(session: AuthSession): string {
-  return `${session.cookie}::${getActiveChannel()}`;
+  return `${authIdentity(session)}::${getActiveChannel()}`;
 }
 
 /** The menu rows carry no artwork; borrow it from the loaded library. */
@@ -69,6 +75,8 @@ export function loadAddablePlaylists(videoIds: string[] = []): Promise<Playlist[
     return Promise.resolve([]);
   }
   const key = currentKey(session);
+  const version = generation;
+  const stale = () => version !== generation || !get(authStore) || currentKey(get(authStore)!) !== key;
   if (inflight) return inflight;
   if (loadedFor === key && get(addablePlaylistsStore).length > 0) {
     return Promise.resolve(get(addablePlaylistsStore));
@@ -79,16 +87,20 @@ export function loadAddablePlaylists(videoIds: string[] = []): Promise<Playlist[
     try {
       const list = enrich(await getAddablePlaylists(session, withProbe(videoIds)));
       // A channel switch mid-flight invalidates this result.
-      if (key !== currentKey(session)) return get(addablePlaylistsStore);
-      addablePlaylistsStore.set(list);
+      if (stale()) return get(addablePlaylistsStore);
+      const merged = enrich([
+        ...localEdits.values(),
+        ...list.filter(playlist => !localEdits.has(playlist.browseId)),
+      ]).filter(playlist => !removedIds.has(playlist.browseId));
+      addablePlaylistsStore.set(merged);
       if (list.length > 0) loadedFor = key;
-      return list;
+      return merged;
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[cherry] could not load editable playlists:', e);
       return get(addablePlaylistsStore);
     } finally {
-      addablePlaylistsLoading.set(false);
+      if (!stale()) addablePlaylistsLoading.set(false);
     }
   })();
   inflight = run;
@@ -100,6 +112,11 @@ export function loadAddablePlaylists(videoIds: string[] = []): Promise<Playlist[
 
 /** Keep the list in step after a create/rename without a refetch. */
 export function addPlaylistLocally(playlist: Playlist): void {
+  if (!get(authStore)) return;
+  localEdits.set(playlist.browseId, playlist);
+  removedIds.delete(playlist.browseId);
+  loadedFor = '';
+  cacheClear(`addable:${getActiveChannel()}:`);
   addablePlaylistsStore.update((list) => [
     playlist,
     ...list.filter((p) => p.browseId !== playlist.browseId),
@@ -107,13 +124,27 @@ export function addPlaylistLocally(playlist: Playlist): void {
 }
 
 export function renamePlaylistLocally(browseId: string, title: string): void {
+  const playlist = get(addablePlaylistsStore).find(p => p.browseId === browseId);
+  if (playlist) localEdits.set(browseId, { ...playlist, title });
+  cacheClear(`addable:${getActiveChannel()}:`);
   addablePlaylistsStore.update((list) =>
     list.map((p) => (p.browseId === browseId ? { ...p, title } : p)),
   );
 }
 
+export function removePlaylistLocally(browseId: string): void {
+  localEdits.delete(browseId);
+  removedIds.add(browseId);
+  loadedFor = '';
+  addablePlaylistsStore.update(list => list.filter(playlist => playlist.browseId !== browseId));
+}
+
 /** Forget the list (sign-out / clear data / channel switch). */
 export function resetAddablePlaylists(): void {
+  generation++;
+  localEdits.clear();
+  removedIds.clear();
+  addablePlaylistsLoading.set(false);
   loadedFor = '';
   inflight = null;
   addablePlaylistsStore.set([]);
@@ -139,7 +170,7 @@ activeChannelStore.subscribe((profile) => {
 // Drop the previous account's editable playlists the moment the session changes.
 let lastCookie: string | null = null;
 authStore.subscribe((session) => {
-  const cookie = session?.cookie ?? '';
+  const cookie = authIdentity(session);
   if (lastCookie === null) {
     lastCookie = cookie;
     return;

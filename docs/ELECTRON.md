@@ -77,3 +77,16 @@ Native integration follow-up:
 - Live verification still needed: Discord profile display, Last.fm authorization
   and accepted scrobbles, playlist image uploads, Windows shell menus, and quality
   switching on the Deck. Tests use synthetic data and local/mock services.
+
+
+Playlist state follow-up:
+
+- Creation invalidates the cached editable menu; successful local create/rename
+  evidence is merged with delayed menu responses. Deleted IDs cannot be revived
+  by an older response. Account slots, channels and reset generations are checked.
+- Opening a playlist also checks the editable header as positive permission
+  evidence. Metadata caches include account identity and ignore old cache records
+  that lacked permission information.
+- Adding songs refreshes that playlist's header and, if open, contents in place.
+  Existing rows stay visible while refreshing; unrelated playlists and playback
+  are untouched. Counts and artwork update in the rail/page/home card.

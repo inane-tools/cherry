@@ -1,3 +1,4 @@
+import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import { get, writable } from 'svelte/store';
 import type { Playlist, Track } from '$lib/core/models';
 import { getActiveChannel, getHomePage, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
@@ -5,7 +6,7 @@ import type { HomeSection, HomeFilter } from '$lib/infra/ytmusic/rawHome';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
 import { initChannel } from './account';
-import { openPage } from './navigation';
+import { openPage, pageStore } from './navigation';
 import { enqueue } from './queue';
 import { playTracks, playTracksShuffled } from './player';
 import { rememberPlaylist } from './playlistShortcuts';
@@ -74,7 +75,7 @@ export function loadLibrary(): Promise<void> {
   if (inflight) return inflight;
   const id = generation;
   let channel: string | undefined;
-  const stale = () => id !== generation || get(authStore)?.cookie !== session.cookie
+  const stale = () => id !== generation || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   inflight = (async () => {
     try {
@@ -118,7 +119,7 @@ export function loadHome(): Promise<void> {
   const id = generation;
   const homeId = ++homeGeneration;
   let channel: string | undefined;
-  const stale = () => id !== generation || homeId !== homeGeneration || get(authStore)?.cookie !== session.cookie
+  const stale = () => id !== generation || homeId !== homeGeneration || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   homeInflight = (async () => {
     homeLoading.set(true);
@@ -157,7 +158,7 @@ export function loadMoreHome(): Promise<void> {
   const id = generation;
   const homeId = homeGeneration;
   const channel = getActiveChannel();
-  const stale = () => id !== generation || homeId !== homeGeneration || get(authStore)?.cookie !== session.cookie || getActiveChannel() !== channel;
+  const stale = () => id !== generation || homeId !== homeGeneration || authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel;
   homeMoreLoading.set(true);
   homeMoreError.set('');
   let run: Promise<void> | undefined;
@@ -248,7 +249,7 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
   if (!session) return;
   const id = generation;
   let channel: string | undefined;
-  const stale = () => id !== generation || get(authStore)?.cookie !== session.cookie
+  const stale = () => id !== generation || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   try {
     await initChannel();
@@ -284,13 +285,16 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
 let openSeq = 0;
 
 /** Load the tracks for the playlist currently on screen. */
-export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
+export async function loadOpenPlaylist(playlist: Playlist, options: { preserveContent?: boolean } = {}): Promise<void> {
+  const preserve = options.preserveContent && get(openPlaylistStore)?.browseId === playlist.browseId;
   const id = ++openSeq;
   openPlaylistStore.set(playlist);
   // Clear synchronously so the previous playlist's tracks can never flash under
   // the new header while this load is in flight.
-  openPlaylistTracks.set([]);
-  openPlaylistDescription.set(null);
+  if (!preserve) {
+    openPlaylistTracks.set([]);
+    openPlaylistDescription.set(null);
+  }
   openPlaylistError.set(null);
   const session = get(authStore);
   if (!session) {
@@ -298,9 +302,9 @@ export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
     openPlaylistError.set('Sign in to open playlists.');
     return;
   }
-  openPlaylistLoading.set(true);
+  openPlaylistLoading.set(!preserve);
   let channel: string | undefined;
-  const stale = () => id !== openSeq || get(authStore)?.cookie !== session.cookie
+  const stale = () => id !== openSeq || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   try {
     await initChannel();
@@ -311,9 +315,21 @@ export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
     void getPlaylistMeta(playlist.browseId, session).then((meta) => {
       if (stale()) return;
       openPlaylistDescription.set(meta?.description ?? null);
+      if (meta) patchPlaylist(playlist.browseId, {
+        ...(meta.title ? { title: meta.title } : {}),
+        ...(meta.thumbnails?.length ? { thumbnails: meta.thumbnails } : {}),
+      });
+      if (meta?.canEdit) {
+        void import('./addablePlaylists').then(({ addablePlaylistsStore, addPlaylistLocally }) => {
+          if (!stale() && !get(addablePlaylistsStore).some(item => item.browseId === playlist.browseId)) {
+            addPlaylistLocally({ ...playlist, title: meta.title || playlist.title, thumbnails: meta.thumbnails?.length ? meta.thumbnails : playlist.thumbnails });
+          }
+        });
+      }
     });
     const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done) => {
       if (stale()) return;
+      if (preserve && !done) return;
       openPlaylistTracks.set(partial);
       // The first page is enough to render and play; drop the skeleton while
       // the remaining pages keep streaming in.
@@ -321,21 +337,60 @@ export async function loadOpenPlaylist(playlist: Playlist): Promise<void> {
     });
     if (stale()) return;
     openPlaylistTracks.set(tracks);
+    patchPlaylist(playlist.browseId, { trackCount: tracks.length });
     if (tracks.length === 0) {
       openPlaylistError.set('This playlist has no playable tracks.');
     }
   } catch (e) {
     if (stale()) return;
-    openPlaylistError.set(e instanceof Error ? e.message : String(e));
+    if (!preserve || !get(openPlaylistTracks).length) openPlaylistError.set(e instanceof Error ? e.message : String(e));
   } finally {
     if (id === openSeq) openPlaylistLoading.set(false);
+  }
+}
+
+/** Update one playlist without navigating or reloading unrelated lists. */
+function patchPlaylist(browseId: string, patch: Partial<Playlist>): void {
+  playlistStore.update(list => list.map(item => item.browseId === browseId ? { ...item, ...patch } : item));
+  openPlaylistStore.update(item => item?.browseId === browseId ? { ...item, ...patch } : item);
+  pageStore.update(page => page.view === 'playlist' && page.entity.browseId === browseId ? { ...page, entity: { ...page.entity, ...patch } } : page);
+  homeSectionsStore.update(sections => sections.map(section => ({ ...section, cards: section.cards.map(card => card.browseId === browseId ? { ...card, ...patch } : card) })));
+}
+
+const editRefreshes = new Map<string, symbol>();
+/** Reconcile a successful add with this playlist's header and visible contents. */
+export async function refreshEditedPlaylist(playlist: Playlist, addedTracks: Track[]): Promise<void> {
+  const session = get(authStore);
+  if (!session) return;
+  const channel = getActiveChannel();
+  const key = `${authIdentity(session)}::${channel}::${playlist.browseId}`;
+  const revision = Symbol('playlist edit');
+  editRefreshes.set(key, revision);
+  const stale = () => editRefreshes.get(key) !== revision || authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel;
+  for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
+  cacheClear(`library:${channel}:`);
+  const current = get(playlistStore).find(item => item.browseId === playlist.browseId) ?? playlist;
+  if (current.trackCount !== undefined) patchPlaylist(playlist.browseId, { trackCount: current.trackCount + addedTracks.length });
+  try {
+    if (get(openPlaylistStore)?.browseId === playlist.browseId) {
+      openPlaylistTracks.update(tracks => [...tracks, ...addedTracks]);
+      await loadOpenPlaylist(get(openPlaylistStore)!, { preserveContent: true });
+    } else {
+      const meta = await getPlaylistMeta(playlist.browseId, session);
+      if (!stale() && meta) patchPlaylist(playlist.browseId, {
+        ...(meta.title ? { title: meta.title } : {}),
+        ...(meta.thumbnails?.length ? { thumbnails: meta.thumbnails } : {}),
+      });
+    }
+  } finally {
+    if (editRefreshes.get(key) === revision) editRefreshes.delete(key);
   }
 }
 
 // Clear account-owned UI immediately, including sessions restored at startup.
 let lastCookie: string | null = null;
 authStore.subscribe((session) => {
-  const cookie = session?.cookie ?? '';
+  const cookie = authIdentity(session);
   if (cookie === lastCookie) return;
   lastCookie = cookie;
   invalidateLoads();

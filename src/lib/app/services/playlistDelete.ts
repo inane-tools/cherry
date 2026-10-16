@@ -3,7 +3,8 @@ import type { AuthSession, Playlist } from '$lib/core/models';
 import { deleteOwnedPlaylist, getActiveChannel } from '$lib/infra/ytmusic/InnertubeClient';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
-import { addablePlaylistsStore } from './addablePlaylists';
+import { removePlaylistLocally } from './addablePlaylists';
+import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import { playlistStore, homeSectionsStore } from './playlists';
 import { isPlaylistOwned } from './playlistLibrary';
 import { pinnedStore } from './pins';
@@ -39,7 +40,7 @@ export function cancelPlaylistDeletion(): void {
 export async function confirmPlaylistDeletion(): Promise<boolean> {
   const { playlist, busy } = get(playlistDeleteStore);
   if (!playlist || busy || !session) return false;
-  const sameAccount = () => get(authStore)?.cookie === session?.cookie && getActiveChannel() === channel;
+  const sameAccount = () => authIdentity(get(authStore)) === authIdentity(session) && getActiveChannel() === channel;
   if (!sameAccount() || !isPlaylistOwned(playlist.browseId)) {
     playlistDeleteStore.update((state) => ({ ...state, error: 'Your account or playlist permissions changed. Cancel and try again.' }));
     return false;
@@ -50,7 +51,7 @@ export async function confirmPlaylistDeletion(): Promise<boolean> {
     for (const prefix of ['library', 'addable', 'home', 'collection', 'meta']) cacheClear(`${prefix}:${channel}:`);
     if (sameAccount()) {
       playlistStore.update((list) => list.filter((p) => p.browseId !== playlist.browseId));
-      addablePlaylistsStore.update((list) => list.filter((p) => p.browseId !== playlist.browseId));
+      removePlaylistLocally(playlist.browseId);
       homeSectionsStore.update((sections) => sections.map((section) => ({ ...section, cards: section.cards.filter((card) => card.browseId !== playlist.browseId), order: section.order?.filter((key) => key !== `c:${playlist.browseId}`) })).filter((section) => section.cards.length || section.songs.length));
       const settings = get(settingsStore);
       const pinnedPlaylists = settings.pinnedPlaylists.filter((p) => p.browseId !== playlist.browseId);

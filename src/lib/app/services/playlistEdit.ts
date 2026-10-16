@@ -7,6 +7,7 @@
 // dropped — the next time it is opened it refetches from YouTube.
 
 import { get } from 'svelte/store';
+import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import type { Playlist, Thumbnail, Track } from '$lib/core/models';
 import { bestThumbnail } from '$lib/core/models';
 import {
@@ -26,7 +27,7 @@ import { notify } from './contextMenu';
 import { openPage } from './navigation';
 import { errorMessage, invokeStrict } from './platform';
 import { openPlaylistPicker } from './playlistPicker';
-import { openPlaylistStore, openPlaylistTracks, playlistStore } from './playlists';
+import { openPlaylistStore, openPlaylistTracks, playlistStore, refreshEditedPlaylist } from './playlists';
 import { settingsStore, updateSettings } from './settings';
 import { prependSidebarItem } from './folders';
 
@@ -91,10 +92,11 @@ export async function addTracksTo(playlist: Playlist, tracks: Track[]): Promise<
   const additions = tracks.filter((t) => t.videoId);
   if (additions.length === 0) return false;
   try {
-    await addTracksToPlaylist(playlist.browseId, additions.map((t) => t.videoId), get(authStore));
-    invalidateCollection(playlist.browseId);
-    // YouTube appends to the end, so mirror that locally instead of re-fetching.
-    updateOpenTracks(playlist.browseId, (list) => [...list, ...additions]);
+    const session = get(authStore);
+    const channel = getActiveChannel();
+    await addTracksToPlaylist(playlist.browseId, additions.map((t) => t.videoId), session);
+    if (authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel) return true;
+    void refreshEditedPlaylist(playlist, additions).catch(error => console.warn('[cherry] playlist refresh failed:', error));
     notify(
       additions.length === 1
         ? `Added to ${playlist.title}`
@@ -115,7 +117,10 @@ export async function createNewPlaylist(title: string, tracks: Track[] = []): Pr
     return null;
   }
   try {
-    const id = await createPlaylist(name, tracks.map((t) => t.videoId), get(authStore));
+    const session = get(authStore);
+    const channel = getActiveChannel();
+    const id = await createPlaylist(name, tracks.map((t) => t.videoId), session);
+    if (authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel) return id;
     // Show it in the rail immediately; the next library refresh fills in the
     // real metadata (thumbnail/author) once YouTube returns it.
     const optimistic: Playlist = { browseId: id, title: name, thumbnails: [] };

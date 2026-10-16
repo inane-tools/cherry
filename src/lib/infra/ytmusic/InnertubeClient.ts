@@ -1424,6 +1424,7 @@ export async function getSongCredits(
 }
 
 export interface PlaylistMeta {
+  canEdit?: boolean;
   title?: string;
   description?: string;
   thumbnails?: Thumbnail[];
@@ -1445,7 +1446,7 @@ export async function getPlaylistMeta(
   // time just to show its description/art, so the description always lagged
   // behind the (already-streamed) track list; now a re-open shows it instantly.
   return cached(
-    `meta:${getActiveChannel()}:${browseId}`,
+    `meta:${getActiveChannel()}:${browseId}:permissions-v1:${sessionKey(session)}`,
     TTL.playlist,
     async () => {
       try {
@@ -1457,6 +1458,7 @@ export async function getPlaylistMeta(
         const header = scanPageHeader(response?.data);
         if (!header) return null;
         return {
+          canEdit: header.canEdit,
           title: header.title,
           description: header.description,
           thumbnails: header.thumbnails,
