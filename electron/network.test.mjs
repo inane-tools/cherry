@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAllowed, apiHeaders } from './network.mjs';
+import { fetchAllowed, apiHeaders, createMediaFetch } from './network.mjs';
 const media = 'https://rr1.googlevideo.com/video?sig=a%2Bb';
 test('an active transfer can outlive its connection/idle timeout', async () => {
   const response = await fetchAllowed(media, {}, true, { timeoutMs: 80, fetchImpl: async (_url, options) => new Response(new ReadableStream({
@@ -47,4 +47,41 @@ test('browser-side signed requests use the same origin as the authentication has
  const headers=apiHeaders('https://www.youtube.com/youtubei/v1/account/accounts_list', { authorization:'SAPISIDHASH synthetic' }, 'Chrome');
  assert.equal(headers.get('origin'),'https://www.youtube.com');
  assert.equal(headers.get('x-origin'),'https://www.youtube.com');
+});
+test('media uses the supplied Chromium transport with ranges and no cookie jar', async () => {
+  let calls = 0;
+  const nativeFetch = createMediaFetch(async (url, options) => {
+    calls++;
+    assert.equal(typeof url, 'string');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.redirect, 'manual');
+    assert.equal(new Headers(options.headers).get('range'), 'bytes=0-3');
+    return new Response(new Uint8Array([1, 2, 3, 4]), { status: 206 });
+  });
+  assert.equal((await (await nativeFetch(media, { headers: { range: 'bytes=0-3' } })).arrayBuffer()).byteLength, 4);
+  await assert.rejects(nativeFetch('https://youtube.com/not-media'), /Refused media/);
+  assert.equal(calls, 1);
+});
+
+test('cancel while a body read is pending releases the upstream without stream-controller errors', async () => {
+  let canceled = 0;
+  const response = await fetchAllowed(media, {}, true, { fetchImpl: async () => new Response(new ReadableStream({
+    pull: () => new Promise(() => {}), cancel: () => { canceled++; },
+  })) });
+  const reader = response.body.getReader();
+  const pending = reader.read();
+  await reader.cancel();
+  assert.equal((await pending).done, true);
+  assert.equal(canceled, 1);
+});
+
+test('an interrupted body rejects consumption and a later request can still succeed', async () => {
+  const response = await fetchAllowed(media, {}, true, { fetchImpl: async () => new Response(new ReadableStream({
+    start(output) { output.enqueue(new Uint8Array([1])); },
+    pull(output) { output.error(new Error('Connection closed')); },
+  })) });
+  await assert.rejects(response.arrayBuffer(), /Connection closed/);
+  const next = await fetchAllowed(media, {}, true, { fetchImpl: async () => new Response('ok') });
+  assert.equal(await next.text(), 'ok');
 });

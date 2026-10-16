@@ -114,3 +114,16 @@ Windows shell and playback follow-up:
   New-track and resume notifications update the separate Now Playing status.
   Last.fm's documented API has no explicit pause/clear-Now-Playing operation;
   its profile status can linger after pausing. Completed scrobbles remain history.
+
+
+Media network backend:
+
+- `createMediaFetch` uses Electron `net.fetch` (Chromium), preserving validated
+  destinations/redirects, Range headers, header/idle timeouts and cancellation.
+  Signed googlevideo URLs need no session cookies. API/login transport is unchanged.
+- Avoid Node's HTTP fetch for buffered media: its bundled Undici parser can raise
+  an uncaught `assert(!this.paused)` when a peer sends FIN under backpressure.
+  The real-backend smoke test exercises paused consumption at EOF, repeated
+  cancel/abort, truncated responses and subsequent successful playback requests.
+- Do not suppress the error using a blanket uncaughtException handler. Streaming
+  failures must reach the player as ordinary failed requests so recovery can run.

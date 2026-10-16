@@ -24,6 +24,9 @@ Fukagawa. First release candidate using Electron on Windows and Linux.
 
 ### Fixed
 
+- Media streams use Chromium's network backend to avoid an uncaught Node/Undici
+  parser assertion when connections end while playback has buffered the response.
+  Cancellation also handles a pending body read without touching a closed stream.
 - Brand-channel login/session capture, streaming recovery and video-quality
   switching. Created playlists retain edit permissions and refresh after edits.
 - Windows Jump Lists open the selected playlist; preview playback controls and

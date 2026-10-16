@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assetPath, trustedRenderer, externalUrl } from './policy.mjs';
-import { fetchAllowed, apiHeaders } from './network.mjs';
+import { fetchAllowed, apiHeaders, createMediaFetch } from './network.mjs';
 import { captureYouTubeSession, createAuthPersistence } from './login.mjs';
 import { createDiscordPresence } from './discord.mjs';
 import { createLastfm } from './lastfm.mjs';
@@ -43,6 +43,7 @@ const data = name => join(app.getPath('userData'), name);
 const send = (name, value) => { if (window && !window.isDestroyed()) window.webContents.send(name, value); };
 const discord = createDiscordPresence();
 const lastfm = createLastfm();
+const fetchMedia = createMediaFetch((url, options) => net.fetch(url, options));
 const updates = createUpdates({
   environment: updateEnvironment({ packaged: app.isPackaged, platform: process.platform, env: process.env, smoke }),
   loadUpdater: async () => { const { default: module } = await import('electron-updater'); return module.autoUpdater; },
@@ -290,7 +291,7 @@ async function main() {
       const source = new URL(request.url).searchParams.get('url');
       const headers = new Headers(); const range = request.headers.get('range'); if (range) headers.set('range', range);
       headers.set('user-agent', browserAgent()); headers.set('accept-encoding', 'identity');
-      const response = await fetchAllowed(source, { headers, signal: request.signal }, true);
+      const response = await fetchMedia(source, { headers, signal: request.signal });
       if (!response.ok) console.warn('[media] CDN returned HTTP ' + response.status);
       const output = new Headers(cors);
       for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) if (response.headers.has(name)) output.set(name, response.headers.get(name));
@@ -334,6 +335,8 @@ async function main() {
     loginContext = { accountIndex: 2, selectedChannelId: 'smoke-brand' };
     const smokeArtwork = nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 64, height: 64 }).toPNG().toString('base64');
     if (process.platform === 'win32' && updateTaskbar(window, { hasTrack: true, playing: true }) !== true) throw new Error('Native taskbar toolbar rejected enabled buttons');
+    const { testMediaTransport } = await import('./media-transport.smoke.mjs');
+    await testMediaTransport((url, options) => net.fetch(url, options));
     const { default: updaterModule } = await import('electron-updater');
     if (typeof updaterModule.autoUpdater.checkForUpdates !== 'function') throw new Error('Packaged updater dependency missing');
     const errors = [];
@@ -436,7 +439,7 @@ async function main() {
       await bridge.invoke('secret_save', { name: 'lastfm', value: 'stale-secret' });
       if (Object.keys(await bridge.invoke('settings:get', { key: 'settings' })).length) throw Error('Stale renderer settings survived reset');
       if (localStorage.getItem('smoke-preserved')) throw Error('Full reset retained localStorage');
-      return { platform, updater: true, windowsCaptions: platform === 'windows', maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
+      return { platform, mediaTransport: true, updater: true, windowsCaptions: platform === 'windows', maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
     })()`);
     for (const name of ['settings.json', 'lastfm.encrypted', 'auth.encrypted']) {
       try { await readFile(data(name)); throw new Error('Reset retained ' + name); } catch (error) { if (error.code !== 'ENOENT') throw error; }

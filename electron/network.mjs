@@ -16,7 +16,7 @@ export async function fetchAllowed(value, options = {}, media = false, { fetchIm
     } catch (error) { detach(); throw error; }
     finally { clearTimeout(timer); }
     if ([301, 302, 303, 307, 308].includes(response.status)) {
-      await response.body?.cancel(); detach();
+      try { await response.body?.cancel(); } finally { detach(); }
       const location = response.headers.get('location');
       if (!location) throw new Error('Redirect has no destination');
       const next = new URL(location, url);
@@ -34,6 +34,7 @@ export async function fetchAllowed(value, options = {}, media = false, { fetchIm
     if (!response.body) { detach(); return response; }
     const reader = response.body.getReader();
     let idle;
+    let finished = false;
     const clear = () => { clearTimeout(idle); detach(); };
     const body = new ReadableStream({
       async pull(output) {
@@ -46,18 +47,20 @@ export async function fetchAllowed(value, options = {}, media = false, { fetchIm
         try {
           const { value, done } = await Promise.race([reader.read(), deadline]);
           clearTimeout(idle);
-          if (done) { clear(); output.close(); }
+          // Cancellation can resolve a pending read after the consumer closed.
+          if (finished) return;
+          if (done) { finished = true; clear(); reader.releaseLock(); output.close(); }
           else output.enqueue(value);
         } catch (error) {
           clear(); controller.abort();
           void reader.cancel().catch(() => {});
-          output.error(error);
+          if (!finished) { finished = true; output.error(error); }
         }
       },
-      async cancel(reason) { clear(); controller.abort(); await reader.cancel(reason).catch(() => {}); },
+      async cancel(reason) { finished = true; clear(); controller.abort(); await reader.cancel(reason).catch(() => {}); },
     });
     const headers = new Headers(response.headers);
-    // Node fetch already decompresses the body. Do not advertise encoded size.
+    // Both network backends decompress bodies. Do not advertise encoded size.
     if (headers.has('content-encoding')) { headers.delete('content-encoding'); headers.delete('content-length'); }
     return new Response(body, { status: response.status, statusText: response.statusText, headers });
   }
@@ -76,4 +79,14 @@ export function apiHeaders(value, input, userAgent) {
     if (signed && !headers.has('x-origin')) headers.set('x-origin', headers.get('origin'));
   }
   return headers;
+}
+
+/** Media bodies are often paused by playback buffers. Chromium owns their HTTP
+ * connections, avoiding Node/Undici's paused-parser assertion on socket end.
+ * Keep destination/redirect checks and abort/range handling in the shared relay.
+ * No session cookies are needed: googlevideo URLs carry their own signatures. */
+export function createMediaFetch(chromiumFetch) {
+  return (url, options = {}) => fetchAllowed(url, options, true, {
+    fetchImpl: (target, init) => chromiumFetch(target.href, { ...init, credentials: 'omit', cache: 'no-store' }),
+  });
 }
