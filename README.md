@@ -13,6 +13,21 @@ with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 > and for any consequences, including any effect on your account. The software is
 > provided **as is**, without warranty of any kind.
 
+## Platform status
+
+**Windows is currently the most polished version. Linux is still rough.** The
+current Linux release uses WebKitGTK, where animation flicker, rendering glitches
+and inconsistent responsiveness can remain despite the existing workarounds.
+The Flatpak and AppImage downloads below are still the Tauri builds and have
+these limitations.
+
+An **Electron-based Linux build is being explored** to use Chromium instead.
+Early testing on Steam Deck has eliminated the observed rendering glitches and
+felt much smoother; the Fedora VM remains sluggish. This is an experimental
+fork with missing desktop integrations, not a replacement stable release yet.
+Its memory usage and the maintenance cost of supporting both desktop hosts are
+still being evaluated. macOS remains deferred.
+
 ## Features
 
 - **Fully custom UI** - Cherry is not a wrapper on the YouTube Music web app, it has a fully custom built user interface, with a focus on simplicity and good looks.
@@ -20,8 +35,19 @@ with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
   reorder, drop a playlist onto a folder to file it, **pin** favourites to the
   top, resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
   collapses into a slide-in drawer.
-- **Expanded player** - click the album art for a larger music view with artwork,
-  Art, Queue and Lyrics tabs, playback controls and optional music videos.
+- **Expanded player** - click the album art for Art, Queue and Lyrics tabs over
+  the artwork background. The selected tab is remembered when collapsed, and
+  artwork preloads and transitions with the background and accent colors.
+- **Lyrics** - enabled by default, with a centered strip above the compact player
+  and a larger expanded view. LRCLIB is preferred, with YouTube Music as a
+  fallback. Timed lyrics follow playback and support click-to-seek; lyrics
+  without timestamps stay readable. Configure them in Settings → Player.
+- **Music videos** - switch from the expanded player to adaptive HD video up to
+  1080p where available. Choose Highest, Auto or a remembered resolution, with
+  optional black letterboxing. Collapsing keeps playback running; video
+  preference survives audio-only tracks and restarts. Lyrics pause in video mode.
+- **Stations & radio** - play station recommendations or start radio from a song,
+  with more tracks loaded as playback continues.
 - **In-app sign in** - loads music.youtube.com and captures the session from the
   native cookie store; the session lives in the **OS keychain**, never in
   localStorage. Cherry also handles multiple brand accounts, as one YouTube account can have many, it is really easy to switch between them in Settings.
@@ -102,9 +128,10 @@ then run `flatpak run tools.inane.cherry`. This is a self-distributed bundle;
 Cherry is not listed on Flathub.
 
 For AppImage, run `chmod +x Cherry_1.7.0_amd64.AppImage` before opening it, and
-keep it in a writable location to use the updater. See [platform support](docs/platforms.md)
-for Linux keyring requirements and known limitations, including animation flicker
-that can remain on some Linux systems.
+keep it in a writable location to use the updater. Read the [Linux status](#platform-status)
+before downloading; the current packages retain the WebKitGTK rendering issues.
+See [platform support](docs/platforms.md) for Linux keyring requirements and
+other limitations.
 
 **Users on 1.6.1 or earlier need to install 1.7.0 manually once to add the updater.** The `.sig`
 files and `latest.json` on the release are updater assets; manual installation
