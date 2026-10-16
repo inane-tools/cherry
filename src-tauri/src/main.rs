@@ -4,6 +4,7 @@ mod auth_store;
 mod devtools;
 mod discord;
 mod http_proxy;
+mod media_proxy;
 mod jump_list;
 mod lastfm;
 mod maintenance;
@@ -124,6 +125,11 @@ fn main() {
     migrate::run();
     maintenance::run_startup_cleanup();
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol("cherry-media", |_context, request, responder| {
+            tauri::async_runtime::spawn(async move {
+                responder.respond(media_proxy::respond(request).await);
+            });
+        })
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(id) = jump_list::playlist_argument(&args) {
@@ -180,6 +186,7 @@ fn main() {
             discord::discord_set_presence,
             discord::discord_clear_presence,
             devtools::open_devtools,
+            devtools::close_devtools,
             lastfm::lastfm_get_token,
             lastfm::lastfm_get_session,
             lastfm::lastfm_now_playing,

@@ -1,5 +1,7 @@
 import { get, writable } from 'svelte/store';
-import type { Album, AppView, ArtistRef, Playlist, SearchResults } from '$lib/core/models';
+import type { Album, AppView, ArtistRef, Playlist } from '$lib/core/models';
+import { searchQuery, searchRequest } from './searchSession';
+export { searchQuery, searchRequest, searchResultsStore } from './searchSession';
 import { openSearch, openSettings } from './overlays';
 import { playerExpanded } from './layout';
 
@@ -131,15 +133,6 @@ export function startMouseNavigation(): () => void {
 }
 
 // ── Search ──────────────────────────────────────────────────────
-export const searchQuery = writable<string>('');
-
-/** Bumped on every explicit search request. The Search view listens to this
- *  instead of the query value, so repeating the *same* query still runs a
- *  fresh search (previously a no-op — the visible "unreliable search" bug). */
-export const searchRequest = writable<{ query: string; id: number }>({ query: '', id: 0 });
-
-/** Last search results, kept outside the view so Back restores them. */
-export const searchResultsStore = writable<SearchResults | null>(null);
 
 let requestId = 0;
 

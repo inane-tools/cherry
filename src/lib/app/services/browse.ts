@@ -13,6 +13,7 @@ import { authStore } from './auth';
 import { getAlbumPage } from '$lib/infra/ytmusic/InnertubeClient';
 import { notify } from './contextMenu';
 import { errorMessage } from './platform';
+import { playRadio } from './radio';
 import { openPage } from './navigation';
 
 /** Card subtitles look like "Single · Camellia" — pull the artist out of that. */
@@ -38,7 +39,8 @@ export function entriesOf(section: HomeSection): CarouselEntry[] {
     subtitle: card.subtitle,
     thumbnails: card.thumbnails,
     kind: 'card',
-    canPlay: /^(VL|PL|RD|MPR)/.test(card.browseId) || card.browseId.startsWith('FEmusic_library_privately_owned_release'),
+    playback: card.playback,
+    canPlay: !!card.playback || /^(VL|PL|RD|MPR)/.test(card.browseId) || card.browseId.startsWith('FEmusic_library_privately_owned_release'),
     round: card.browseId.startsWith('UC') || card.pageType === 'MUSIC_PAGE_TYPE_ARTIST',
   }));
   const songs: CarouselEntry[] = section.songs.map((song) => ({
@@ -57,6 +59,7 @@ export function entriesOf(section: HomeSection): CarouselEntry[] {
 export function sectionTracks(section: HomeSection): Track[] {
   return section.songs.map((song) => ({
     videoId: song.videoId,
+    isMusicVideo: song.isMusicVideo,
     title: song.title,
     artists: song.subtitle ? [{ name: song.subtitle }] : [],
     thumbnails: song.thumbnails,
@@ -90,6 +93,7 @@ export async function selectCarouselEntry(section: HomeSection, entry: CarouselE
     if (tracks.length > 0) await playTracks(tracks, index < 0 ? 0 : index);
     return;
   }
+  if (entry.playback && (!entry.browseId || /^VL?RD/.test(entry.browseId) || entry.browseId.startsWith('RD') || entry.browseId.startsWith('station:'))) { await playRadio(entry.playback); return; }
   openBrowseCard(entry.browseId ?? entry.key.slice(2), entry.title, entry.thumbnails, entry.subtitle, entry.browseParams);
 }
 
@@ -99,6 +103,11 @@ export async function playCarouselEntry(section: HomeSection, entry: CarouselEnt
   if (entry.canPlay === false) return;
   try {
     const browseId = entry.browseId ?? entry.key.slice(2);
+    // A collection's overlay may start a recommendation mix rather than the
+    // collection shown on the card. Only stations use that watch endpoint.
+    if (entry.playback && (!entry.browseId || /^(?:VL)?RD/.test(browseId) || browseId.startsWith('station:'))) {
+      await playRadio(entry.playback); return;
+    }
     if (browseId.startsWith('MPR') || browseId.startsWith('FEmusic_library_privately_owned_release')) {
       const album = await getAlbumPage(browseId, get(authStore));
       if (!album.tracks.length) { notify('No playable songs found in this album.'); return; }

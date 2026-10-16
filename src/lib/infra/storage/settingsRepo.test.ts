@@ -40,6 +40,14 @@ beforeEach(() => {
 const stored = () => file.get('settings') as Record<string, unknown>;
 
 describe('settings repository', () => {
+  it('restores preferred video quality after unrelated settings changes and a reload', async () => {
+    await repo.saveSettings({ videoQuality: '720' });
+    await repo.saveSettings({ theme: 'dark' });
+    repo.resetSettingsCache();
+    const loaded = await repo.loadSettings();
+    expect(loaded.videoQuality).toBe('720');
+    expect(loaded.theme).toBe('dark');
+  });
   it('returns defaults when nothing is stored', async () => {
     expect(await repo.loadSettings()).toEqual(repo.DEFAULT_SETTINGS);
   });

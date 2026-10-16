@@ -28,7 +28,12 @@ export interface Track {
   isExplicit?: boolean;
   /** Server-issued `MPTC…` browse id for the song's credits, when known. */
   creditsBrowseId?: string;
+  isMusicVideo?: boolean;
 }
+
+export interface LyricLine { text: string; startSeconds?: number; endSeconds?: number }
+export interface Lyrics { lines: LyricLine[]; synced: boolean; source?: string }
+export interface RadioEndpoint { videoId?: string; playlistId?: string; params?: string }
 
 export interface Album {
   browseId: BrowseId;
@@ -71,12 +76,16 @@ export interface PlaybackState {
   volume: number; // 0..1
   muted: boolean;
   error?: string;
+  isLive?: boolean;
 }
 
 export interface StreamInfo {
   url: string;
   mimeType: string;
+  /** Optional HD adaptive stream; url remains the progressive fallback. */
+  dashManifest?: string;
   bitrate?: number;
+  isLive?: boolean;
   /** expiry hint for refresh */
   expiresInSeconds?: number;
 }
@@ -155,4 +164,16 @@ export function hiResThumbnail(url: string, size = 1080): string {
   // Google CDN: =w544-h544-l90-rj  →  =w1080-h1080-l90-rj
   if (/=w\d+-h\d+/.test(url)) return url.replace(/=w\d+-h\d+/, `=w${size}-h${size}`);
   return url;
+}
+
+/** Keep maximum resolution first, then try real intermediate YouTube sizes. */
+export function expandedArtworkSources(ts: Thumbnail[], size = 1080): string[] {
+  const supplied = thumbnailSources(ts, 512);
+  const largest = hiResThumbnail(supplied[0] ?? '', size);
+  const youtube = largest.match(/^(https?:\/\/i\.ytimg\.com\/(?:vi|vi_webp)\/[^/]+\/)maxresdefault\.(jpg|webp)(.*)$/);
+  return [...new Set([
+    largest,
+    ...(youtube ? ['sddefault', 'hqdefault'].map(name => `${youtube[1]}${name}.${youtube[2]}${youtube[3]}`) : []),
+    ...supplied,
+  ].filter(Boolean))];
 }

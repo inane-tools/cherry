@@ -21,7 +21,7 @@ with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
   top, resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
   collapses into a slide-in drawer.
 - **Expanded player** - click the album art for a larger music view with artwork,
-  playback controls and a matching queue.
+  Art, Queue and Lyrics tabs, playback controls and optional music videos.
 - **In-app sign in** - loads music.youtube.com and captures the session from the
   native cookie store; the session lives in the **OS keychain**, never in
   localStorage. Cherry also handles multiple brand accounts, as one YouTube account can have many, it is really easy to switch between them in Settings.
@@ -35,7 +35,7 @@ with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 - **Home & Explore** - browse recommendations, filter the Home feed, and open
   moods, genres, charts and new releases from the separate Explore page.
 - **Paste a link** - drop a YouTube / YouTube Music song or playlist URL into the
-  search box to open it.
+  search box to preview it, then click the result to play or open it.
 - **Desktop integration** - Windows media controls and Linux MPRIS, hardware
   media keys, tray playback controls and pinned playlists. Windows also gets
   taskbar preview buttons and Jump Lists for pinned and recent playlists.
@@ -59,6 +59,23 @@ measurements and the Windows landmines that were hit along the way.
 
 ## Changelog
 
+**v1.7.0 (Fukagawa)** adds lyrics, music videos and station playback, with
+smoother transitions, improved artwork handling and a calmer startup.
+
+Lyrics are enabled by default. Hide the strip with the captions button, or
+configure lyrics and player buttons under **Settings → Player**. Lyrics prefer
+LRCLIB, then YouTube Music. Only provider-supplied timestamps are used; untimed
+lyrics stay readable. LRCLIB receives song title, artist, album and duration,
+without sign-in data, and its lookup can be disabled in Settings.
+
+The expanded player has **Art, Queue and Lyrics** tabs and remembers the selected
+tab when collapsed. Video controls sit beside Collapse, with **Highest**, adaptive
+**Auto** and remembered resolution choices. Music videos use adaptive HD up to
+1080p where available, with progressive fallback. Video mode survives audio-only
+songs and app restarts; restored video loads paused. Collapsing keeps playback
+running. Lyrics are suspended during video playback. Optional letterboxing adds
+black bars without resizing the player.
+
 **v1.6.2 (Shibetsu)** adds signed GitHub updates for Windows and AppImage installs.
 
 **v1.6.1 (Shibetsu)** fixes Discord presence clearing and adds links to the
@@ -74,22 +91,22 @@ See [platform support](docs/platforms.md) and
 
 ## Download
 
-Get **[v1.6.2 Shibetsu](https://github.com/inane-tools/cherry/releases/tag/v1.6.2)**
+Get **[v1.7.0 Fukagawa](https://github.com/inane-tools/cherry/releases/tag/v1.7.0)**
 (or check the [latest release](https://github.com/inane-tools/cherry/releases/latest)):
 
-- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.6.2/Cherry_1.6.2_x64-setup.exe).
-- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.6.2/Cherry_1.6.2_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.6.2/Cherry_1.6.2_amd64.AppImage).
+- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.7.0/Cherry_1.7.0_x64-setup.exe).
+- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.7.0/Cherry_1.7.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.7.0/Cherry_1.7.0_amd64.AppImage).
 
-Install the downloaded Flatpak with `flatpak install --user Cherry_1.6.2_x86_64.flatpak`,
+Install the downloaded Flatpak with `flatpak install --user Cherry_1.7.0_x86_64.flatpak`,
 then run `flatpak run tools.inane.cherry`. This is a self-distributed bundle;
 Cherry is not listed on Flathub.
 
-For AppImage, run `chmod +x Cherry_1.6.2_amd64.AppImage` before opening it, and
+For AppImage, run `chmod +x Cherry_1.7.0_amd64.AppImage` before opening it, and
 keep it in a writable location to use the updater. See [platform support](docs/platforms.md)
 for Linux keyring requirements and known limitations, including animation flicker
 that can remain on some Linux systems.
 
-**Users on 1.6.1 or earlier need to install 1.6.2 manually once to add the updater.** The `.sig`
+**Users on 1.6.1 or earlier need to install 1.7.0 manually once to add the updater.** The `.sig`
 files and `latest.json` on the release are updater assets; manual installation
 only needs the installer for your platform.
 

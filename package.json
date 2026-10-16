@@ -1,6 +1,6 @@
 {
   "name": "cherry",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "private": true,
   "description": "Lightweight YouTube Music desktop client",
   "type": "module",
@@ -23,6 +23,8 @@
     "@tauri-apps/plugin-store": "^2.3.1",
     "@tauri-apps/plugin-updater": "~2.11.0",
     "boxicons": "^2.1.4",
+    "dashjs": "^5.2.1",
+    "hls.js": "^1.7.3",
     "svelte": "^5.57.0",
     "youtubei.js": "^18.0.0"
   },

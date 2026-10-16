@@ -11,6 +11,7 @@ export interface CarouselEntry {
   subtitle?: string;
   thumbnails: Thumbnail[];
   kind: 'card' | 'song';
+  playback?: import('$lib/core/models').RadioEndpoint;
   canPlay?: boolean;
   round?: boolean;
   browseId?: string;

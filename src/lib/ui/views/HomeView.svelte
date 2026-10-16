@@ -8,13 +8,8 @@
   import Carousel from '$lib/ui/components/Carousel.svelte';
 
   $: sections = $homeSectionsStore;
-  // Sections YouTube serves that we deliberately don't render: "Listen together"
-  // is a row of 24/7 stations.
-  const HIDDEN_SECTIONS = /listen together|station/i;
-  // Preserve the server's section order. Stations remain hidden until supported.
-  $: heroSection =
-    sections.find((s) => !HIDDEN_SECTIONS.test(s.title) && (s.cards.length > 0 || s.songs.length > 0));
-  $: restSections = sections.filter((s) => s !== heroSection && !HIDDEN_SECTIONS.test(s.title));
+  $: heroSection = sections.find(s => s.cards.length > 0 || s.songs.length > 0);
+  $: restSections = sections.filter(s => s !== heroSection);
 
   // Skeleton sizes mirror the real carousels: a hero row of wide cards plus a
   // couple of ordinary sections of smaller cards.

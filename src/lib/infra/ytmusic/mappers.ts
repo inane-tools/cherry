@@ -209,6 +209,7 @@ export function mapTrack(node: AnyNode): Track | null {
   const albumNode = node.album;
   return {
     videoId: String(videoId),
+    ...(node.item_type === 'video' ? { isMusicVideo: true } : {}),
     title: String(title),
     artists: artistsOf(node),
     album: albumNode && (albumNode.name ?? albumNode.text)

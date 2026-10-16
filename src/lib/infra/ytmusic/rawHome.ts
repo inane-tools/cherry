@@ -31,6 +31,7 @@ export interface HomeSong {
   title: string;
   subtitle?: string;
   thumbnails: Thumbnail[];
+  isMusicVideo?: boolean;
 }
 
 export interface HomeSection {
@@ -258,14 +259,14 @@ function extractTwoRow(renderer: Json): { card?: HomeCard; song?: HomeSong } {
   if (!title) return {};
 
   const videoId: string | undefined = endpoint?.watchEndpoint?.videoId;
-  if (videoId) {
+  if (videoId && !endpoint?.watchEndpoint?.playlistId?.startsWith('RD')) {
     return {
-      song: { videoId, title, subtitle: artistLine(renderer), thumbnails: thumbnailsOf(renderer) },
+      song: { videoId, title, subtitle: artistLine(renderer), thumbnails: thumbnailsOf(renderer), isMusicVideo: (endpoint?.watchEndpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType ?? '').match(/OMV|UGC/) !== null },
     };
   }
 
   const overlayWatch = findFirst(renderer?.overlay ?? renderer?.thumbnailOverlay, (value) => value?.watchEndpoint || value?.watchPlaylistEndpoint);
-  const watch = endpoint?.watchPlaylistEndpoint ?? overlayWatch?.watchEndpoint ?? overlayWatch?.watchPlaylistEndpoint;
+  const watch = endpoint?.watchPlaylistEndpoint ?? endpoint?.watchEndpoint ?? overlayWatch?.watchEndpoint ?? overlayWatch?.watchPlaylistEndpoint;
   const playback = watch && (watch.playlistId || watch.videoId) ? { videoId: watch.videoId, playlistId: watch.playlistId, params: watch.params } : undefined;
   const browseId: string | undefined = endpoint?.browseEndpoint?.browseId ?? (playback?.playlistId ? playback.playlistId.startsWith('VL') ? playback.playlistId : `VL${playback.playlistId}` : undefined);
   if (browseId) {
@@ -291,6 +292,14 @@ function extractResponsive(renderer: Json): { card?: HomeCard; song?: HomeSong }
   const firstColumn = renderer?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text;
   const title = textOf(firstColumn) ?? textOf(renderer?.title);
   if (!title) return {};
+
+  const station = findFirst(renderer, value => value?.watchPlaylistEndpoint?.playlistId || value?.watchEndpoint?.playlistId?.startsWith('RD'));
+  const radio = station?.watchPlaylistEndpoint ?? station?.watchEndpoint;
+  if (radio?.playlistId) {
+    return { card: { browseId: radio.playlistId.startsWith('VL') ? radio.playlistId : `VL${radio.playlistId}`,
+      title, subtitle: subtitleOf(renderer), thumbnails: thumbnailsOf(renderer),
+      playback: { videoId: radio.videoId, playlistId: radio.playlistId, params: radio.params } } };
+  }
 
   // Songs carry a watch endpoint in the first column runs, or on the overlay
   // play button.

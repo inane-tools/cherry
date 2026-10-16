@@ -1,11 +1,10 @@
-// Pasting a YouTube / YouTube Music link into the search box opens it, instead
-// of searching for the URL text.
+// Resolve YouTube links into search previews. Resolution never starts playback
+// or navigates; those actions belong to the result the user chooses.
 
 import { get } from 'svelte/store';
 import { getPlaylistMeta, getTrack } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
-import { playTracks } from './player';
-import { openPlaylist } from './playlists';
+import type { SearchResults } from '$lib/core/models';
 
 export type ParsedLink =
   | { kind: 'track'; videoId: string }
@@ -31,6 +30,8 @@ export function parseYouTubeLink(text: string): ParsedLink {
     const id = url.pathname.slice(1).split('/')[0];
     return id ? { kind: 'track', videoId: id } : null;
   }
+  const pathVideo = url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1];
+  if (pathVideo) return { kind: 'track', videoId: pathVideo };
   // Prefer the video if a URL carries both (`watch?v=…&list=…`).
   const videoId = url.searchParams.get('v');
   if (videoId) return { kind: 'track', videoId };
@@ -39,24 +40,26 @@ export function parseYouTubeLink(text: string): ParsedLink {
   return null;
 }
 
-/** Play the linked track, or open the linked playlist page. */
-export async function openParsedLink(link: ParsedLink): Promise<void> {
-  if (!link) return;
+/** Fetch only the linked item's metadata for the ordinary search result UI. */
+export async function resolveParsedLink(link: ParsedLink): Promise<SearchResults> {
+  const results: SearchResults = { songs: [], playlists: [], albums: [], artists: [] };
+  if (!link) return results;
   const session = get(authStore);
 
   if (link.kind === 'track') {
     const track =
       (await getTrack(link.videoId, session)) ?? {
         videoId: link.videoId,
-        title: link.videoId,
+        title: 'YouTube song',
         artists: [],
-        thumbnails: [],
+        thumbnails: [{ url: `https://i.ytimg.com/vi/${encodeURIComponent(link.videoId)}/hqdefault.jpg` }],
       };
-    await playTracks([track], 0);
-    return;
+    results.songs.push(track);
+    return results;
   }
 
   const browseId = link.playlistId.startsWith('VL') ? link.playlistId : `VL${link.playlistId}`;
   const meta = await getPlaylistMeta(browseId, session);
-  openPlaylist({ browseId, title: meta?.title ?? 'Playlist', thumbnails: meta?.thumbnails ?? [] });
+  results.playlists.push({ browseId, title: meta?.title ?? 'YouTube playlist', thumbnails: meta?.thumbnails ?? [] });
+  return results;
 }

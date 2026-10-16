@@ -33,7 +33,10 @@ import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } fro
 import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
 import { scanHome, scanPageHeader, homeContinuation, scanHomeFilters, isNoiseSegment, type HomeSection, type HomeFilter } from './rawHome';
 import { innertubeFetch } from './tauriFetch';
+import { mediaProxyUrl } from './mediaProxy';
 import { installEvaluator } from './evaluator';
+import { lyricsBrowseId, parseLyrics, parseRadio, musicVideoCounterpart, findPlaybackNode } from './rawPlayback';
+import type { Lyrics, RadioEndpoint } from '$lib/core/models';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyInnertube = any;
@@ -132,6 +135,8 @@ function cacheKey(
 
 export function resetInnertubeClient(): void {
   CLIENTS.clear();
+  playbackContexts.clear();
+  clearStreamCache();
 }
 
 export async function getInnertube(
@@ -219,6 +224,8 @@ interface AudioStreamResult {
 const STREAM_TTL_MS = 20 * 60_000;
 const STREAM_CACHE_MAX = 24;
 const STREAMS = new Map<string, { result: AudioStreamResult; expires: number }>();
+const STREAM_REQUESTS = new Map<string, Promise<AudioStreamResult>>();
+let streamGeneration = 0;
 
 function rememberStream(videoId: string, result: AudioStreamResult): void {
   STREAMS.set(videoId, { result, expires: Date.now() + STREAM_TTL_MS });
@@ -232,7 +239,10 @@ function rememberStream(videoId: string, result: AudioStreamResult): void {
 /** Forget resolved streams (sign-out: the URLs were minted for that session). */
 export function clearStreamCache(): void {
   STREAMS.clear();
+  STREAM_REQUESTS.clear();
+  streamGeneration++;
   preferredPlayerClient = undefined;
+  preferredVideoClient = undefined;
 }
 
 /**
@@ -241,6 +251,7 @@ export function clearStreamCache(): void {
  * attempt order is WEB, YTMUSIC, TV, ANDROID).
  */
 let preferredPlayerClient: string | undefined;
+let preferredVideoClient: string | undefined;
 
 /**
  * Caching wrapper around stream resolution (also the entry point used by the
@@ -250,17 +261,27 @@ let preferredPlayerClient: string | undefined;
 export async function getAudioStream(
   videoId: string,
   session?: AuthSession | null,
-  options: { refresh?: boolean } = {},
+  options: { refresh?: boolean; video?: boolean } = {},
 ): Promise<AudioStreamResult> {
+  const key = JSON.stringify([session?.cookie ?? '', getActiveChannel(), videoId, options.video === true]);
   if (options.refresh) {
-    STREAMS.delete(videoId);
+    STREAMS.delete(key);
   } else {
-    const hit = STREAMS.get(videoId);
+    const hit = STREAMS.get(key);
     if (hit && hit.expires > Date.now()) return hit.result;
+    const pending = STREAM_REQUESTS.get(key);
+    if (pending) return pending;
   }
-  const result = await resolveAudioStream(videoId, session);
-  rememberStream(videoId, result);
-  return result;
+  const generation = streamGeneration;
+  const request = resolveAudioStream(videoId, session, options.video === true);
+  STREAM_REQUESTS.set(key, request);
+  try {
+    const result = await request;
+    if (generation === streamGeneration && STREAM_REQUESTS.get(key) === request) rememberStream(key, result);
+    return result;
+  } finally {
+    if (STREAM_REQUESTS.get(key) === request) STREAM_REQUESTS.delete(key);
+  }
 }
 
 /**
@@ -270,15 +291,15 @@ export async function getAudioStream(
 export async function prefetchAudioStream(
   videoId: string,
   session?: AuthSession | null,
+  options: { video?: boolean } = {},
 ): Promise<void> {
-  const hit = STREAMS.get(videoId);
-  if (hit && hit.expires > Date.now()) return;
-  await getAudioStream(videoId, session).catch(() => undefined);
+  await getAudioStream(videoId, session, options).catch(() => undefined);
 }
 
 async function resolveAudioStream(
   videoId: string,
   session?: AuthSession | null,
+  video = false,
 ): Promise<AudioStreamResult> {
   // Playback is the one place the player JS is genuinely required, so this is
   // the only call that opts into fetching it.
@@ -286,10 +307,16 @@ async function resolveAudioStream(
   let lastError: unknown;
   // `undefined` = default WEB client (authed when logged in). YTMUSIC is the
   // music.youtube.com client itself — best odds of audio URLs when authed.
-  const base: (string | undefined)[] = [undefined, 'YTMUSIC', 'TV', 'ANDROID'];
-  const attempts: (string | undefined)[] = preferredPlayerClient
-    ? [preferredPlayerClient, ...base.filter((c) => c !== preferredPlayerClient)]
+  // WEB can advertise HD formats without file URLs (SABR-only). VR still
+  // exposes ordinary adaptive files; don't let a working 360p WEB file end
+  // the HD search. Audio keeps its existing client order.
+  const base: (string | undefined)[] = video ? ['ANDROID_VR', undefined, 'YTMUSIC', 'TV', 'ANDROID'] : [undefined, 'YTMUSIC', 'TV', 'ANDROID'];
+  const preferred = video ? preferredVideoClient : preferredPlayerClient;
+  const attempts: (string | undefined)[] = preferred
+    ? [preferred, ...base.filter((c) => c !== preferred)]
     : base;
+  let videoFallback: { result: AudioStreamResult; height: number; client?: string } | undefined;
+  let pendingManifest: string | undefined;
   for (const playerClient of attempts) {
     let info: AnyNode;
     try {
@@ -301,6 +328,10 @@ async function resolveAudioStream(
       continue;
     }
     if (info.playability_status?.status !== 'OK' || !info.streaming_data) continue;
+    // Live stations often expose a manifest rather than a progressive file.
+    if (info.basic_info?.is_live && info.streaming_data.hls_manifest_url) {
+      return { track: {}, stream: { url: info.streaming_data.hls_manifest_url, mimeType: 'application/vnd.apple.mpegurl', isLive: true } };
+    }
     const usable = (f: AnyNode) => f?.url || f?.signature_cipher || f?.cipher;
     const pool: AnyNode[] = [
       ...(info.streaming_data.adaptive_formats ?? []),
@@ -313,9 +344,32 @@ async function resolveAudioStream(
     // much more reliable across logged-in WebView2 sessions.
     const progressive = pool
       .filter((f) => PROGRESSIVE_WITH_AUDIO.has(Number(f?.itag)))
-      .sort(byBitrate);
+      .sort(video ? (a, b) => (b.height ?? 0) - (a.height ?? 0) || byBitrate(a, b) : byBitrate);
+    let dashManifest: string | undefined;
+    if (video && typeof MediaSource !== 'undefined') {
+      // YouTube's HD formats separate audio and video. Keep them on one MSE
+      // clock, limiting resolution to 1080p and excluding unsupported codecs.
+      const supported = (f: AnyNode) => usable(f) && !!f.init_range && !!f.index_range
+        && !!f.mime_type && MediaSource.isTypeSupported(f.mime_type)
+        && (!f.has_video || (f.height > 0 && f.height <= 1080)) && !f.has_text;
+      const adaptive = (info.streaming_data.adaptive_formats ?? []).filter(supported);
+      if (adaptive.some((f: AnyNode) => f.has_video && f.height > (progressive[0]?.height ?? 0))
+        && adaptive.some((f: AnyNode) => f.has_audio)) {
+        try {
+          dashManifest = await info.toDash({ format_filter: (f: AnyNode) => !supported(f), url_transformer: mediaProxyUrl });
+          pendingManifest = dashManifest;
+        } catch {
+          console.warn('[cherry] HD manifest generation failed; trying another player client.');
+        }
+      }
+    }
+    if (dashManifest && videoFallback) {
+      preferredVideoClient = playerClient;
+      return { ...videoFallback.result, stream: { ...videoFallback.result.stream, dashManifest } };
+    }
     const audio = pool.filter((f) => /audio/i.test(f?.mime_type ?? '')).sort(byBitrate);
-    const ranked = [...progressive, ...audio];
+    const ranked = video ? progressive : [...progressive, ...audio];
+    if (!ranked.length && info.streaming_data.hls_manifest_url) return { track: {}, stream: { url: info.streaming_data.hls_manifest_url, mimeType: 'application/vnd.apple.mpegurl', isLive: true } };
     for (const format of ranked.slice(0, 12)) {
       // ALWAYS run decipher, even when a plain `url` exists.
       //
@@ -333,16 +387,27 @@ async function resolveAudioStream(
       if (!url && format.url) url = String(format.url);
       if (!url) continue;
       // Remember the client that produced a usable stream.
-      preferredPlayerClient = playerClient;
-      return {
+      const result: AudioStreamResult = {
         track: { durationSeconds: info.basic_info?.duration },
         stream: {
           url,
           mimeType: String(format.mime_type ?? 'audio/mp4'),
           bitrate: format.bitrate,
+          ...(pendingManifest ? { dashManifest: pendingManifest } : {}),
         },
       };
+      if (!video) { preferredPlayerClient = playerClient; return result; }
+      if (pendingManifest) { preferredVideoClient = playerClient; return result; }
+      if (!videoFallback || (format.height ?? 0) > videoFallback.height) {
+        videoFallback = { result, height: format.height ?? 0, client: playerClient };
+      }
+      break;
     }
+  }
+  if (videoFallback) {
+    console.warn('[cherry] No usable HD stream was returned; using progressive video.');
+    preferredVideoClient = videoFallback.client;
+    return videoFallback.result;
   }
   throw new CherryError(
     'stream-unavailable',
@@ -1421,4 +1486,53 @@ export async function getHomeFeed(session?: AuthSession | null): Promise<Track[]
   } catch {
     return [];
   }
+}
+
+// Lyrics and video availability share the same next response for this account.
+const playbackContexts = new Map<string, { expires: number; value: Promise<AnyNode> }>();
+async function playbackContext(videoId: string, session?: AuthSession | null): Promise<AnyNode> {
+  const key = `${session?.cookie ?? ''}:${getActiveChannel()}:${videoId}`;
+  const cached = playbackContexts.get(key);
+  if (cached && cached.expires > Date.now()) return cached.value;
+  const value = getInnertube(session).then(client => client.actions.execute('/next', { videoId, client: 'YTMUSIC' }))
+    .then(response => response.data ?? response).catch(error => {
+      if (playbackContexts.get(key)?.value === value) playbackContexts.delete(key);
+      throw error;
+    });
+  playbackContexts.set(key, { expires: Date.now() + 120000, value });
+  if (playbackContexts.size > 32) playbackContexts.delete(playbackContexts.keys().next().value!);
+  return value;
+}
+
+/** Lyrics stay on YouTube's own endpoint, with a plain-text fallback. */
+export async function getTrackLyrics(videoId: string, session?: AuthSession | null): Promise<Lyrics | null> {
+  const client = await getInnertube(session);
+  const next = await playbackContext(videoId, session);
+  const browseId = lyricsBrowseId(next);
+  if (!browseId) return null;
+  for (const clientName of ['YTMUSIC_ANDROID', 'YTMUSIC']) {
+    try {
+      const response = await client.actions.execute('/browse', { browseId, client: clientName });
+      const lyrics = parseLyrics(response.data ?? response);
+      if (lyrics) return lyrics;
+    } catch (error) { if (clientName === 'YTMUSIC') throw error; }
+  }
+  return null;
+}
+export async function getRadioPage(endpoint: RadioEndpoint, session?: AuthSession | null, continuation?: string) {
+  const client = await getInnertube(session);
+  const response = await client.actions.execute('/next', { ...endpoint, ...(continuation ? { continuation } : {}),
+    client: 'YTMUSIC', isAudioOnly: true, enablePersistentPlaylistPanel: true });
+  const raw = response.data ?? response;
+  const automix = findPlaybackNode(raw, node => node.automixPlaylistVideoRenderer)?.automixPlaylistVideoRenderer?.navigationEndpoint;
+  const mixEndpoint = automix?.watchPlaylistEndpoint ?? automix?.watchEndpoint;
+  if (!continuation && mixEndpoint?.playlistId) {
+    const mixed = await client.actions.execute('/next', { ...mixEndpoint, videoId: mixEndpoint.videoId ?? endpoint.videoId,
+      client: 'YTMUSIC', isAudioOnly: true, enablePersistentPlaylistPanel: true });
+    return { ...parseRadio(mixed.data ?? mixed), endpoint: mixEndpoint as RadioEndpoint };
+  }
+  return { ...parseRadio(raw), endpoint };
+}
+export async function getMusicVideo(videoId: string, session?: AuthSession | null): Promise<Track | null> {
+  return musicVideoCounterpart(await playbackContext(videoId, session), videoId);
 }

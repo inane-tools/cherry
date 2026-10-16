@@ -4,6 +4,57 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-10-16
+
+Fukagawa.
+
+### Added
+
+- Lyrics above the compact player and in the expanded player's Lyrics tab,
+  enabled by default. LRCLIB is preferred, with YouTube Music as a fallback.
+  Timed lyrics follow playback and support click-to-seek; untimed lyrics remain
+  readable without invented timestamps. Lyrics controls gray out when unavailable.
+- Music-video playback in the expanded player, with adaptive HD up to 1080p,
+  Highest, Auto and remembered resolution choices. Optional black letterboxing
+  preserves the full frame without changing the layout.
+- Station playback and Start radio, with continuation loading and bounded queues.
+
+### Changed
+
+- Expanded-player Art, Queue and Lyrics tabs use the artwork backdrop and retain
+  the selected tab when collapsed. Video mode offers Video and Queue; lyrics
+  pause in video mode to avoid mismatched timing.
+- Video preference survives audio-only songs and app restarts. Restored video
+  prepares without autoplaying; next-track video streams are prefetched and
+  overlapping lookups are shared. Collapsing keeps playback running.
+- Expanded artwork preloads and crossfades with the background and accent colors.
+  The compact player slides down as the expanded player opens.
+- Smoother shared animations, lyric highlighting and scrolling, respecting
+  reduced motion and the existing Linux rendering workarounds.
+- Startup reveals the initial content over a plain themed background, replacing
+  the animated splash. Network and artwork waits have a bounded startup budget.
+- Pasted YouTube links show clickable song or playlist previews. Closing search
+  clears the query and results instead of replaying the previous search.
+- Player settings have their own section. Playback library credits and LRCLIB
+  attribution are included in Open Source & Contributors.
+- Clicking the Cherry logo five times now disables Developer options as well as
+  enabling them, including the DevTools shortcut and any open DevTools window.
+
+### Fixed
+
+- Homepage playlist and album play buttons play the displayed collection rather
+  than an unrelated recommendation mix. Loading spinners rotate around their center.
+- Expanded artwork rejects YouTube's tiny missing-thumbnail placeholder and tries
+  available sizes, retaining maximum resolution wherever it exists.
+- Stream caches are isolated by account and channel; stale requests cannot refill
+  a cleared cache or overwrite a newer playback request.
+- Compact lyrics no longer flash loading or untimed states before lookup finishes.
+  Manual scrolling temporarily pauses lyric following without playback scrolling
+  constantly revealing the scrollbar.
+- Sleep timers retain their deadline when paused during the fade and use the
+  remaining time when resumed.
+- Updated devalue and source-map-js for security fixes.
+
 ## [1.6.2] — 2026-10-16
 
 Shibetsu maintenance update.
@@ -415,6 +466,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.7.0]: https://github.com/inane-tools/cherry/compare/v1.6.2...main
 [1.6.2]: https://github.com/inane-tools/cherry/releases/tag/v1.6.2
 [1.6.1]: https://github.com/inane-tools/cherry/releases/tag/v1.6.1
 [1.6.0]: https://github.com/inane-tools/cherry/releases/tag/v1.6.0

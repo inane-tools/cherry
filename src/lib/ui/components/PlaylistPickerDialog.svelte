@@ -68,8 +68,8 @@
       aria-label={adding ? 'Add to playlist' : 'New playlist'}
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
-      in:fly={{ y: -12, duration: 180 }}
-      out:fade={{ duration: 120 }}
+      in:fly={{ y: -10, duration: 220 }}
+      out:fade={{ duration: 140 }}
     >
       <DialogHeader
         title={adding ? 'Add to playlist' : 'New playlist'}

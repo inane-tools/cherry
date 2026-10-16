@@ -1,7 +1,7 @@
 # GitHub updates
 
 Cherry 1.6.2 introduces signed updates for Windows NSIS and Linux AppImage
-installations. It checks GitHub Releases after startup. Settings → Updates lets
+installations. It checks GitHub Releases after startup. Settings → Cherry lets
 you check manually, read release notes, download, then choose **Install and
 restart**. Downloading does not interrupt playback. Installation pauses playback,
 saves the queue and pending settings, and clears Discord presence before exit.
@@ -45,7 +45,7 @@ The app reads `https://github.com/inane-tools/cherry/releases/latest/download/la
 Only a newer stable version is offered. Signatures are verified by Tauri before
 installation; GitHub hosting alone is not the trust mechanism.
 
-Users on 1.6.1 or earlier need to install 1.6.2 manually once, because those
+Users on 1.6.1 or earlier need to install 1.7.0 manually once, because those
 versions do not contain an updater.
 
 ## Testing 1.6.2 → 1.7

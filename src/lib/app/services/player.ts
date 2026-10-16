@@ -9,7 +9,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
 import { toCherryError } from '$lib/core/errors';
-import { getAudioStream, getInnertube, prefetchAudioStream } from '$lib/infra/ytmusic/InnertubeClient';
+import { getAudioStream, getInnertube, prefetchAudioStream, getMusicVideo } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
 import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
 import type { RepeatMode } from '$lib/core/models';
@@ -18,6 +18,8 @@ import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
 import { rememberPosition, restoreQueue, watchQueue } from './queuePersistence';
 import { applyArtworkTheme, resetArtworkTheme } from './theme';
+import { attachAdaptiveVideo } from './adaptiveVideo';
+import { videoQualities } from './videoQuality';
 
 export const playerStore = writable<PlaybackState>({
   status: 'idle',
@@ -28,7 +30,41 @@ export const playerStore = writable<PlaybackState>({
   muted: false,
 });
 
-let audio: HTMLAudioElement | null = null;
+let audio: HTMLMediaElement | null = null;
+let clearHls = () => {};
+export const videoMode = writable(false);
+/** User preference survives tracks that temporarily have no music video. */
+export const videoPreferred = writable(false);
+export const videoReady = writable(false);
+export const videoResolution = writable<number | null>(null);
+let videoHost: HTMLElement | null = null;
+/** Reparent the same media element; expanding/collapsing never creates a second clock. */
+export function videoSurface(node: HTMLElement) {
+  videoHost = node;
+  if (audio instanceof HTMLVideoElement) node.appendChild(audio);
+  return { destroy() { if (videoHost === node) videoHost = null; } };
+}
+export async function setVideoMode(enabled: boolean, autoplay?: boolean): Promise<void> {
+  if (get(videoPreferred) === enabled) return;
+  videoPreferred.set(enabled);
+  void updateSettings({ videoPreferred: enabled });
+  const state = get(playerStore);
+  if (!state.track) return;
+  pendingResume = { videoId: get(currentItem)?.track.videoId ?? state.track.videoId, seconds: state.positionSeconds };
+  await loadCurrent(autoplay ?? (state.status === 'playing' || state.status === 'loading'));
+}
+
+function replaceMedia(video: boolean): HTMLMediaElement {
+  if (get(videoMode) === video && audio) return audio;
+  clearHls();
+  const previous = audio;
+  audio = null;
+  if (previous) { previous.pause(); previous.removeAttribute('src'); previous.load(); previous.remove(); }
+  videoReady.set(false);
+  videoResolution.set(null);
+  videoMode.set(video);
+  return ensureAudio();
+}
 let sessionUnsub: (() => void) | null = null;
 let queueUnsub: (() => void) | null = null;
 /**
@@ -90,40 +126,56 @@ function cancelPauseClear(): void {
   statusSuppressed = false;
 }
 
-function ensureAudio(): HTMLAudioElement {
+function ensureAudio(): HTMLMediaElement {
   if (!audio) {
-    audio = new Audio();
+    audio = get(videoMode) ? document.createElement('video') : new Audio();
+    if (audio instanceof HTMLVideoElement) {
+      audio.playsInline = true;
+      audio.controls = false;
+      audio.className = 'h-full w-full object-cover';
+      videoHost?.appendChild(audio);
+    }
+    const media = audio;
+    const listen = (name: string, handler: () => void) => media.addEventListener(name, () => { if (audio === media) handler(); });
     audio.preload = 'auto';
     const s = get(playerStore);
     audio.volume = s.volume;
     audio.muted = s.muted;
-    audio.addEventListener('timeupdate', () => {
+    listen('timeupdate', () => {
       playerStore.update((p) => ({ ...p, positionSeconds: audio?.currentTime ?? 0 }));
       // Remember the position so a restart resumes where the user left off.
       rememberPosition(audio?.currentTime ?? 0);
     });
-    audio.addEventListener('loadedmetadata', () => {
+    listen('loadedmetadata', () => {
       playerStore.update((p) => ({
         ...p,
         durationSeconds: Number.isFinite(audio?.duration ?? NaN) ? (audio?.duration ?? 0) : p.durationSeconds,
       }));
     });
-    audio.addEventListener('play', () => {
+    listen('loadeddata', () => videoReady.set(media instanceof HTMLVideoElement));
+    listen('resize', () => {
+      if (media instanceof HTMLVideoElement) {
+        videoResolution.set(media.videoHeight || null);
+        if (media.videoHeight && !get(videoQualities).length) videoQualities.set([media.videoHeight]);
+      }
+    });
+    listen('emptied', () => videoReady.set(false));
+    listen('play', () => {
       discordAwaitingPlayback = false;
       playerStore.update((p) => ({ ...p, status: 'playing', error: undefined }));
       cancelPauseClear();
       // Force: resume must reach Discord immediately, including fresh timers.
       void pushOsState();
     });
-    audio.addEventListener('pause', () => {
+    listen('pause', () => {
       // Any pause counts, not just one that interrupted "playing" — otherwise a
       // pause during buffering left the presence looking like it was still on.
       playerStore.update((p) => (p.track ? { ...p, status: 'paused' } : p));
       schedulePauseClear();
       void pushOsState();
     });
-    audio.addEventListener('ended', () => void onEnded());
-    audio.addEventListener('error', () => {
+    listen('ended', () => void onEnded());
+    listen('error', () => {
       // Releasing the element in stopPlayback() can emit an "empty src" error;
       // ignore it so tearing down never resurrects a stale track.
       if (!audio?.getAttribute('src')) return;
@@ -141,7 +193,7 @@ function ensureAudio(): HTMLAudioElement {
  * seek can only be applied after metadata loads, and must be applied exactly
  * once, only to the track it was saved for.
  */
-function applyPendingResume(el: HTMLAudioElement, videoId: string): void {
+function applyPendingResume(el: HTMLMediaElement, videoId: string): void {
   const resume = pendingResume;
   pendingResume = null;
   if (!resume || resume.videoId !== videoId) return;
@@ -361,6 +413,7 @@ export function seekTo(seconds: number): void {
 // Stops playback entirely and clears the OS media session and Discord presence.
 // Used when the queue is exhausted or emptied so nothing lingers.
 export async function stopPlayback(): Promise<void> {
+  clearHls();
   // A stream resolving after Stop must not reattach its source and autoplay.
   loadGeneration++;
   pendingResume = null;
@@ -414,6 +467,12 @@ export async function restorePlayback(): Promise<void> {
   // Clear any stale OS presence from a previous run; the card is re-pushed when
   // playback actually starts.
   await pushOsState();
+  if (get(settingsStore).videoPreferred && get(currentItem) === item) {
+    videoPreferred.set(true);
+    // Use the real media element so buffered video is reused on expansion.
+    // No play() call: startup must stay paused and presence must stay clear.
+    void loadCurrent(false);
+  }
 }
 
 /** Toggle shuffle and remember the choice for the next start. */
@@ -537,7 +596,12 @@ async function prefetchNext(): Promise<void> {
   if (!next || !session) return;
   prefetching = true;
   try {
-    await prefetchAudioStream(next.track.videoId, session);
+    if (get(videoPreferred)) {
+      const counterpart = next.track.isMusicVideo ? next.track : await getMusicVideo(next.track.videoId, session);
+      if (get(authStore)?.cookie !== session.cookie || !get(videoPreferred)) return;
+      if (counterpart) await prefetchAudioStream(counterpart.videoId, session, { video: true });
+      else await prefetchAudioStream(next.track.videoId, session);
+    } else await prefetchAudioStream(next.track.videoId, session);
   } catch {
     /* best-effort */
   } finally {
@@ -562,11 +626,12 @@ function isAbort(e: unknown): boolean {
 }
 
 async function loadCurrent(autoplay: boolean): Promise<void> {
+  clearHls();
   cancelPauseClear();
   const generation = ++loadGeneration;
   const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
-  const el = ensureAudio();
+  let el = ensureAudio();
   if (!item) {
     el.pause();
     el.removeAttribute('src');
@@ -578,6 +643,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
   playerStore.update((p) => ({
     ...p,
     status: 'loading',
+    isLive: false,
     track: item.track,
     positionSeconds: 0,
     durationSeconds: item.track.durationSeconds ?? 0,
@@ -597,11 +663,67 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     return;
   }
 
-  const videoId = item.track.videoId;
+  let videoId = item.track.videoId;
+  let playVideo = false;
+  if (get(videoPreferred)) {
+    // Fetch the player/decipher code and DASH module while locating the video,
+    // rather than waiting for the counterpart request to finish first.
+    void getInnertube(session, { retrievePlayer: true }).catch(() => {});
+    void import('dashjs').catch(() => {});
+    try {
+      const counterpart = item.track.isMusicVideo ? item.track : await getMusicVideo(videoId, session);
+      if (stale()) return;
+      if (counterpart) {
+        playVideo = true;
+        if (pendingResume?.videoId === videoId) pendingResume.videoId = counterpart.videoId;
+        videoId = counterpart.videoId;
+        playerStore.update(p => ({ ...p, track: counterpart }));
+      }
+    } catch (error) {
+      if (stale()) return;
+      // A failed availability lookup should not interrupt ordinary audio or
+      // clear the preference for the following track.
+      console.warn('[cherry] Music video lookup failed; continuing with audio.');
+    }
+  }
+  if (stale()) return;
+  el = replaceMedia(playVideo);
   const start = async (refresh: boolean): Promise<void> => {
-    const { track, stream } = await getAudioStream(videoId, session, { refresh });
+    videoReady.set(false);
+    videoResolution.set(null);
+    videoQualities.set([]);
+    const { track, stream } = await getAudioStream(videoId, session, { refresh, ...(get(videoMode) ? { video: true } : {}) });
     if (stale()) return;
-    el.src = stream.url;
+    playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
+    clearHls();
+    if (stream.dashManifest && get(videoMode)) {
+      const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, stream.url, stale);
+      if (stale()) { adaptive.destroy(); await adaptive.ready; return; }
+      clearHls = () => { adaptive.destroy(); clearHls = () => {}; };
+      await adaptive.ready;
+      if (stale()) return;
+    } else if (/mpegurl/i.test(stream.mimeType) && !el.canPlayType(stream.mimeType)) {
+      const { default: Hls } = await import('hls.js');
+      if (stale()) return;
+      if (!Hls.isSupported()) throw new Error('Live playback is not supported by this webview.');
+      const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('The live station took too long to load.')), 20000);
+        clearHls = () => { clearTimeout(timer); hls.destroy(); clearHls = () => {}; reject(new DOMException('Playback changed', 'AbortError')); };
+        hls.on(Hls.Events.MANIFEST_PARSED, () => { clearTimeout(timer); resolve(); });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal || stale()) return;
+          clearTimeout(timer);
+          const error = new Error('The live station stream could not be loaded.');
+          reject(error);
+          playerStore.update(p => ({ ...p, status: 'error', error: error.message }));
+          void pushOsState();
+        });
+        hls.attachMedia(el);
+        hls.loadSource(stream.url);
+      });
+      if (stale()) return;
+    } else el.src = stream.url;
     applyPendingResume(el, videoId);
     if (track.durationSeconds) {
       playerStore.update((p) => ({ ...p, durationSeconds: track.durationSeconds as number }));
@@ -617,6 +739,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
       }
     }
     if (stale()) return;
+    if (!autoplay) playerStore.update(p => ({ ...p, status: 'paused' }));
     // Warm the next track so skipping is instant.
     void prefetchNext();
   };

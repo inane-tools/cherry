@@ -3,6 +3,7 @@
 
 import type { Playlist, PlaylistFolder, Track } from '$lib/core/models';
 import { get } from 'svelte/store';
+import { playRadio } from './radio';
 import { playTracks } from './player';
 import { playPlaylist } from './playlists';
 import { isPinned, togglePin } from './pins';
@@ -65,6 +66,7 @@ export function trackMenu(
   ];
 
   if (signedIn) {
+    items.push({ label: 'Start radio', icon: 'bx bx-radio', action: () => playRadio({ videoId: track.videoId }) });
     items.push({
       label: preferred ? `Add to “${preferred.title}”` : 'Add to playlist…',
       icon: 'bx bx-plus',

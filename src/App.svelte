@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
+  import { waitForStartup } from '$lib/app/services/startup';
+  import { startLyrics } from '$lib/app/services/lyrics';
+  import { startRadioRefill } from '$lib/app/services/radio';
   import { startUpdateChecks } from '$lib/app/services/updates';
   import { get } from 'svelte/store';
   import { fade, fly } from '$lib/ui/transitions';
@@ -28,7 +31,6 @@
   import { initFolders } from '$lib/app/services/folders';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import { washTransition } from '$lib/ui/actions/washTransition';
-  import logoUrl from '$lib/assets/logo.png';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
   import Sidebar from '$lib/ui/chrome/Sidebar.svelte';
   import PlayerBar from '$lib/ui/chrome/PlayerBar.svelte';
@@ -50,6 +52,7 @@
   import BrowseView from '$lib/ui/views/BrowseView.svelte';
 
   let ready = false;
+  let launched = false;
   let stopTray = () => {};
   let destroyed = false;
   onDestroy(() => { destroyed = true; stopTray(); });
@@ -85,6 +88,8 @@
   // page opened "in the middle"), and the mouse Back/Forward (X1/X2) buttons
   // drive the same history stack.
   onMount(() => {
+    const stopLyrics = startLyrics();
+    const stopRadio = startRadioRefill();
     const stopUpdates = startUpdateChecks();
     const stopMouse = startMouseNavigation();
     const stopLayout = startLayoutTracking();
@@ -95,7 +100,8 @@
     // F12 / Ctrl+Shift+I opens the WebView DevTools when the Developer option is
     // enabled (the Settings button is the primary route; this is a convenience).
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!get(settingsStore).devToolsEnabled) return;
+      const settings = get(settingsStore);
+      if (!settings.developerUnlocked || !settings.devToolsEnabled) return;
       const f12 = event.key === 'F12';
       const inspect = event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'i';
       if (f12 || inspect) {
@@ -110,6 +116,8 @@
     let stopMemory = () => {};
     void startMemoryTrimming().then((stop) => (stopMemory = stop));
     return () => {
+      stopLyrics();
+      stopRadio();
       stopUpdates();
       stopMouse();
       stopLayout();
@@ -129,6 +137,7 @@
   }
 
   onMount(async () => {
+    try {
     await restoreSettings();
     initFolders();
     // Volume / mute / repeat / shuffle must be applied before the first track.
@@ -143,16 +152,28 @@
     // started working after the save button was pressed in Settings.
     void setDiscordAppId(get(settingsStore).discordAppId);
     startPresenceKeepAlive();
-    // Restore the last queue + position (paused, no autoplay) once the session
-    // is known — only a signed-in user has a queue worth resuming.
-    if (get(authStore)) void restorePlayback();
     startScrobbling();
     ready = true;
-    // Channel context first: the home feed and library both depend on it.
-    void initChannel().then(() => {
-      void loadHome();
-      void loadLibrary();
-    });
+    // Mount the real shell behind a quiet themed cover. Resolve the channel
+    // before restoring video as well as before requesting the feed/library.
+    if (get(authStore)) {
+      await waitForStartup(initChannel().then(() => Promise.allSettled([
+        loadHome(), loadLibrary(), restorePlayback(),
+      ])), 2000);
+      await tick();
+      // Give the first covers a brief decode budget, without waiting forever
+      // for a slow connection or unavailable image.
+      const images = Array.from(mainEl?.querySelectorAll('img') ?? []).slice(0, 12);
+      await waitForStartup(Promise.allSettled(images.map(image => image.decode())), 350);
+    }
+    } catch (error) {
+      console.error('[cherry] Startup restoration failed:', error);
+    } finally {
+      if (!destroyed) {
+        ready = true;
+        launched = true;
+      }
+    }
   });
 
   // Re-run when the stored session changes (sign-in / sign-out).
@@ -184,6 +205,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions : only prevents the native menu -->
 <div use:washTransition class="cherry-wash relative flex h-full flex-col text-zinc-100" oncontextmenu={suppressNativeContextMenu}>
+  {#if !launched}
+    <div class="absolute inset-0 z-[35] bg-[var(--color-surface)]" out:fade={{ duration: 300 }} aria-hidden="true"></div>
+  {/if}
   <div class="flex min-h-0 flex-1">
     <!-- Playlist rail: full window height, never covered by the top bar or player.
          Hidden while signed out — there is no library to show, and the welcome
@@ -207,24 +231,10 @@
           ? 'pt-16 pb-24'
           : 'pt-12 pb-40'}"
       >
-        {#if !ready}
-          <!-- Boot splash: the shell is up, but settings/auth are still being
-               restored. Fades out as the real content fades in, so the launch
-               never snaps from a blank frame to a full page. -->
-          <div
-            class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5"
-            out:fade={{ duration: 180 }}
-          >
-            <img src={logoUrl} alt="" class="h-16 w-16 rounded-2xl shadow-[0_18px_50px_rgba(0,0,0,0.6)]" />
-            <div class="cherry-eq flex h-4 items-center gap-[3px] text-[var(--color-accent2)]">
-              <span></span><span></span><span></span>
-            </div>
-            <p class="text-[12px] tracking-[0.18em] text-zinc-600 uppercase">Tuning in</p>
-          </div>
-        {:else}
-          <div in:fade={{ duration: 260, delay: 40 }}>
+        {#if ready}
+          <div>
             {#key $pageStore.view}
-              <div in:fade={{ duration: 180 }}>
+              <div in:fade={{ duration: launched ? 180 : 0 }}>
                 {#if $pageStore.view === 'playlist'}
                   <PlaylistView />
                 {:else if $pageStore.view === 'artist'}

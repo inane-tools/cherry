@@ -30,7 +30,7 @@
   >
     <!-- Track is 36x20, thumb 16px, 2px inset on every side => travel is 16px. -->
     <span
-      class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-150 {checked
+      class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-180 {checked
         ? 'translate-x-4'
         : 'translate-x-0'}"
     ></span>

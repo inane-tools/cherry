@@ -58,8 +58,14 @@ export interface CherrySettings {
   accentColor: string;
   /** UI zoom level applied to the whole window (1 = 100%). */
   uiZoom: number;
-  /** Show square album art above the title in the expanded player. */
-  playerSquareArt: boolean;
+  /** Show the compact lyrics strip when lyrics are available. */
+  lyricsEnabled: boolean;
+  lyricsLookupEnabled: boolean;
+  playerShowLyrics: boolean;
+  /** Preferred resolution; unavailable qualities fall back without changing this. */
+  videoQuality: string;
+  videoPreferred: boolean;
+  videoLetterboxing: boolean;
   /** Player buttons that can be hidden. */
   playerShowPrev: boolean;
   playerShowShuffle: boolean;
@@ -111,7 +117,12 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   accentSource: 'song',
   accentColor: '#ff4d5e',
   uiZoom: 1,
-  playerSquareArt: false,
+  lyricsEnabled: true,
+  lyricsLookupEnabled: true,
+  playerShowLyrics: true,
+  videoQuality: 'highest',
+  videoPreferred: false,
+  videoLetterboxing: false,
   playerShowPrev: true,
   playerShowShuffle: true,
   playerShowRepeat: true,

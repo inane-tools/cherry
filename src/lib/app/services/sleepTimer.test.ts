@@ -17,6 +17,7 @@ const timer = await import('./sleepTimer');
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.setSystemTime(0);
   fades.length = 0;
   player.set({ status: 'playing' });
   timer.cancelSleepTimer();
@@ -24,6 +25,25 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('sleep timer', () => {
+  it('keeps the deadline when playback resumes during the last eight seconds', async () => {
+    timer.startSleepTimer(1);
+    player.set({ status: 'paused' });
+    await vi.advanceTimersByTimeAsync(60_000 - timer.FADE_MS);
+    expect(get(timer.sleepTimerStore).mode).toBe('time');
+    expect(fades).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(4000);
+    player.set({ status: 'playing' });
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(fades).toEqual([expect.objectContaining({ ms: 0 })]);
+    expect(get(timer.sleepTimerStore).mode).toBe('off');
+  });
+
+  it('short timers only fade for their remaining duration', async () => {
+    timer.startSleepTimer(3 / 60);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fades).toEqual([expect.objectContaining({ ms: 3000 })]);
+  });
+
   it('starts fading so the music stops exactly at the deadline', async () => {
     timer.startSleepTimer(1, 0);
     expect(get(timer.sleepTimerStore)).toEqual({ mode: 'time', endsAt: 60_000, minutes: 1 });

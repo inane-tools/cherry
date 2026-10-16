@@ -36,3 +36,11 @@ it('follows the feed continuation instead of an individual shelf continuation', 
   expect(homeContinuation(shelf('Only shelf', [song('one')], { continuations: [{ nextContinuationData: { continuation: 'shelf-only' } }] }))).toBeNull();
   expect(homeContinuation({ continuationContents: { sectionListContinuation: { contents: [{ continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: 'next' } } } }] } } })).toBe('next');
 });
+
+
+it('keeps station watch endpoints and params instead of reducing them to songs', () => {
+  const endpoint = { watchEndpoint: { videoId: 'seed', playlistId: 'RDstation', params: 'server-params' } };
+  const [section] = scanHome(shelf('Listen together', [{ musicTwoRowItemRenderer: { title: text('Station'), navigationEndpoint: endpoint, thumbnailRenderer: { musicThumbnailRenderer: { thumbnail: { thumbnails: [] } } } } }]));
+  expect(section.songs).toHaveLength(0);
+  expect(section.cards[0]).toMatchObject({ browseId: 'VLRDstation', playback: { videoId: 'seed', playlistId: 'RDstation', params: 'server-params' } });
+});

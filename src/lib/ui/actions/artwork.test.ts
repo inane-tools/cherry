@@ -1,6 +1,33 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { artwork } from './artwork';
-import { hiResThumbnail, thumbnailSources } from '$lib/core/models';
+import { hiResThumbnail, thumbnailSources, expandedArtworkSources } from '$lib/core/models';
+
+it.each(['iqc0lqW6AEY', 'xXF7qHZXJ4w', 'SfNPOwFRRJs'])('rejects the decoded YouTube placeholder for %s without promoting it', id => {
+  const image = document.createElement('img');
+  const urls = expandedArtworkSources([{ url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, width: 480 }]);
+  const action = artwork(image, { urls });
+  const promoted = vi.fn();
+  image.addEventListener('load', promoted);
+  Object.defineProperties(image, { naturalWidth: { configurable: true, value: 120 }, naturalHeight: { configurable: true, value: 90 } });
+  image.dispatchEvent(new Event('load'));
+  expect(promoted).not.toHaveBeenCalled();
+  expect(image.src).toBe(`https://i.ytimg.com/vi/${id}/sddefault.jpg`);
+  Object.defineProperties(image, { naturalWidth: { value: 640 }, naturalHeight: { value: 480 } });
+  image.dispatchEvent(new Event('load'));
+  expect(promoted).toHaveBeenCalledTimes(1);
+  action.destroy();
+});
+
+it('retains real maximum-resolution artwork and does not downgrade Google album art', () => {
+  const image = document.createElement('img');
+  const urls = expandedArtworkSources([{ url: 'https://i.ytimg.com/vi/id/hqdefault.jpg', width: 480 }]);
+  const action = artwork(image, { urls });
+  Object.defineProperties(image, { naturalWidth: { value: 1280 }, naturalHeight: { value: 720 } });
+  image.dispatchEvent(new Event('load'));
+  expect(image.src).toBe('https://i.ytimg.com/vi/id/maxresdefault.jpg');
+  expect(expandedArtworkSources([{ url: 'https://lh3.googleusercontent.com/art=w544-h544', width: 544 }])[0]).toContain('=w1080-h1080');
+  action.destroy();
+});
 
 afterEach(() => vi.useRealTimers());
 

@@ -27,6 +27,8 @@ const MEASURE_DEBOUNCE_MS = 120;
 export interface OverlayScrollbarOptions {
   /** Hide the thumb entirely (e.g. the compact sidebar). */
   enabled?: boolean;
+  /** Reveal for wheel/touch/keyboard input, not playback-driven scrolls. */
+  userScrollOnly?: boolean;
   /**
    * Pixels at the top of the scroller the thumb must stay below. Used when the
    * scroller runs under an overlaid title bar, so the bar does not sit behind it.
@@ -41,6 +43,8 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
 
   let enabled = options.enabled !== false;
   let topInset = Math.max(0, options.topInset ?? 0);
+  let userScrollOnly = options.userScrollOnly === true;
+  let userScrollUntil = 0;
 
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let measureTimer: ReturnType<typeof setTimeout> | null = null;
@@ -127,7 +131,7 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
   }
 
   function onEnter(): void {
-    if (!enabled) return;
+    if (!enabled || userScrollOnly) return;
     setVisible(true);
     if (hideTimer) clearTimeout(hideTimer);
     paint();
@@ -135,6 +139,15 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
 
   function onLeave(): void {
     if (!dragging) setVisible(false);
+  }
+  function onUserScroll(event: Event): void {
+    if (event instanceof KeyboardEvent && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+    userScrollUntil = performance.now() + 1200;
+    if (userScrollOnly) reveal();
+  }
+  function onScroll(): void {
+    if (!userScrollOnly || dragging || performance.now() < userScrollUntil) reveal();
+    else paint();
   }
 
   // Drag the thumb to scroll. The thumb rides the content, so one screen pixel
@@ -180,7 +193,10 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
 
   // No layout read here — just `scrollTop` and a transform write — so this can
   // run synchronously on every scroll without reflowing or lagging.
-  node.addEventListener('scroll', reveal, { passive: true });
+  node.addEventListener('scroll', onScroll, { passive: true });
+  node.addEventListener('wheel', onUserScroll, { passive: true });
+  node.addEventListener('touchmove', onUserScroll, { passive: true });
+  node.addEventListener('keydown', onUserScroll);
   node.addEventListener('mouseenter', onEnter);
   node.addEventListener('mouseleave', onLeave);
   thumb.addEventListener('pointerdown', onThumbDown);
@@ -211,16 +227,21 @@ export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOpt
     update(next: OverlayScrollbarOptions = {}): void {
       const nextEnabled = next.enabled !== false;
       const nextInset = Math.max(0, next.topInset ?? 0);
-      if (nextEnabled === enabled && nextInset === topInset) return;
+      const nextUserOnly = next.userScrollOnly === true;
+      if (nextEnabled === enabled && nextInset === topInset && nextUserOnly === userScrollOnly) return;
       enabled = nextEnabled;
       topInset = nextInset;
+      userScrollOnly = nextUserOnly;
       lastContent = -1;
       lastViewport = -1;
       if (!enabled) setVisible(false);
       scheduleMeasure();
     },
     destroy() {
-      node.removeEventListener('scroll', reveal);
+      node.removeEventListener('scroll', onScroll);
+      node.removeEventListener('wheel', onUserScroll);
+      node.removeEventListener('touchmove', onUserScroll);
+      node.removeEventListener('keydown', onUserScroll);
       node.removeEventListener('mouseenter', onEnter);
       node.removeEventListener('mouseleave', onLeave);
       thumb.removeEventListener('pointerdown', onThumbDown);

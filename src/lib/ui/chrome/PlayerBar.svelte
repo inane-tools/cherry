@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { coordinateArtworkPresentation } from '$lib/app/services/theme';
   import { artwork } from '$lib/ui/actions/artwork';
+  import { preloadArtwork } from '$lib/ui/actions/preloadArtwork';
   import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted, toggleShuffle } from '$lib/app/services/player';
   import { shuffleMode, upNext } from '$lib/app/services/queue';
-  import { bestThumbnail, hiResThumbnail, thumbnailSources, trackDisplayArtists } from '$lib/core/models';
+  import { bestThumbnail, hiResThumbnail, thumbnailSources, expandedArtworkSources, trackDisplayArtists } from '$lib/core/models';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
-  import { playerExpanded } from '$lib/app/services/layout';
+  import { playerExpanded, expandedPlayerPanel } from '$lib/app/services/layout';
   import { queueSidebarVisible } from '$lib/app/services/queueSidebar';
   import { settingsStore } from '$lib/app/services/settings';
   import { fly, fade } from '$lib/ui/transitions';
@@ -17,12 +19,19 @@
   import QueueList from './QueueList.svelte';
   import QueueHeader from './QueueHeader.svelte';
   import RepeatButton from '$lib/ui/components/RepeatButton.svelte';
+  import { lyricsStore } from '$lib/app/services/lyrics';
+  import LyricsView from '$lib/ui/components/LyricsView.svelte';
+  import PlaybackExtras from '$lib/ui/components/PlaybackExtras.svelte';
+  import VideoControls from '$lib/ui/components/VideoControls.svelte';
+  import { videoMode, videoSurface, videoReady } from '$lib/app/services/player';
   import SleepTimerButton from '$lib/ui/components/SleepTimerButton.svelte';
 
   let upNextOpen = false;
   let volOpen = false;
   $: showQueueButton = !$queueSidebarVisible && ($settingsStore.playerShowQueue || $settingsStore.queueSidebar);
   $: if ($queueSidebarVisible) upNextOpen = false;
+  $: if ($queueSidebarVisible && $expandedPlayerPanel === 'queue') expandedPlayerPanel.set('art');
+  $: if ($videoMode && $expandedPlayerPanel === 'lyrics') expandedPlayerPanel.set('art');
 
   $: st = $playerStore;
   $: pct = st.durationSeconds > 0 ? (st.positionSeconds / st.durationSeconds) * 100 : 0;
@@ -33,11 +42,38 @@
   // upscale to a hi-res source, with the supplied sizes as fallbacks.
   $: squareCover = cover ? hiResThumbnail(cover, 720) : '';
   $: coverSources = thumbnailSources(st.track?.thumbnails ?? [], 512);
+  let preloadKey = '';
+  let clearPreload = () => {};
+  $: {
+    const groups = [1080, 720].map(size => expandedArtworkSources(st.track?.thumbnails ?? [], size));
+    const key = JSON.stringify(groups);
+    if (key !== preloadKey) {
+      preloadKey = key;
+      clearPreload();
+      const requestedBackground = bgCover;
+      const requestedSquare = squareCover;
+      clearPreload = preloadArtwork(groups, (urls, image) => {
+        if (urls[0] === requestedBackground) onPendingLoad(image, requestedBackground);
+        if (urls[0] === requestedSquare) onSquareLoad(image, requestedSquare);
+      });
+    }
+  }
+  onDestroy(() => clearPreload());
   // First track in the play order after the current one (for the "Next up" chip).
   $: nextItem = $upNext[0] ?? null;
   $: nextArt = nextItem ? bestThumbnail(nextItem.track.thumbnails, 96) : '';
-  // Square album art above the title (Settings → Appearance).
-  $: squareArt = $settingsStore.playerSquareArt;
+  let videoFrame: HTMLDivElement;
+  // Keep the persistent video on exactly the same animation clock as the card.
+  function playerFly(node: Element, options: { y: number; duration: number }) {
+    const config = fly(node, options);
+    return { ...config, tick(t: number, u: number) {
+      config.tick?.(t, u);
+      if (videoFrame) {
+        videoFrame.style.transform = `translateY(${options.y * u}px)`;
+        videoFrame.style.opacity = String(t);
+      }
+    } };
+  }
 
   // ── Background-art crossfade ────────────────────────────────────────────
   // Two layers: `baseArt` is the last cover that actually loaded and stays on
@@ -57,12 +93,67 @@
   // tracks that share the same cover don't blink.
   let squareLoaded = false;
   let squareArtUrl = '';
+  let squareBaseArt = '';
+  let squarePromoteTimer: ReturnType<typeof setTimeout> | null = null;
+  let backgroundDecoded = false;
+  let squareDecoded = false;
+  let decodedBackground = '';
+  let decodedSquare = '';
+  let releaseTheme: (() => void) | null = null;
+  let presentationFallback: ReturnType<typeof setTimeout> | null = null;
+  let presentationStarted = false;
+  let preparedThemeUrl = '';
+  function beginPresentation(force = false) {
+    if (presentationStarted) { releaseTheme?.(); releaseTheme = null; return; }
+    const expandedAudio = $playerExpanded && !$videoMode;
+    const artVisible = expandedAudio && $expandedPlayerPanel === 'art';
+    if (!force && (!backgroundDecoded || (artVisible && !squareDecoded))) return;
+    if (!force && expandedAudio && $settingsStore.accentSource === 'song' && !releaseTheme
+      && preparedThemeUrl !== bestThumbnail(st.track?.thumbnails ?? [], 256)) return;
+    presentationStarted = true;
+    if (presentationFallback) clearTimeout(presentationFallback);
+    presentationFallback = null;
+    pendingLoaded = backgroundDecoded;
+    squareLoaded = squareDecoded;
+    if (backgroundDecoded) {
+      const url = pendingArt;
+      const loaded = decodedBackground;
+      if (promoteTimer) clearTimeout(promoteTimer);
+      promoteTimer = setTimeout(() => { if (url === pendingArt) baseArt = loaded; promoteTimer = null; }, 320);
+    }
+    if (squareDecoded) {
+      const url = squareArtUrl;
+      const loaded = decodedSquare;
+      if (squarePromoteTimer) clearTimeout(squarePromoteTimer);
+      squarePromoteTimer = setTimeout(() => { if (url === squareArtUrl) squareBaseArt = loaded; squarePromoteTimer = null; }, 320);
+    }
+    releaseTheme?.(); releaseTheme = null;
+  }
+  onMount(() => coordinateArtworkPresentation(async url => {
+    await tick();
+    if (url !== bestThumbnail(st.track?.thumbnails ?? [], 256)) return;
+    preparedThemeUrl = url;
+    if (!$playerExpanded || $videoMode) return;
+    await new Promise<void>(resolve => {
+      releaseTheme?.();
+      releaseTheme = resolve;
+      beginPresentation();
+    });
+  }));
+  $: if (!$playerExpanded || $videoMode || $settingsStore.accentSource !== 'song') beginPresentation(true);
+  $: if ($playerExpanded && !$videoMode && $expandedPlayerPanel !== 'art') beginPresentation();
 
   $: {
     const id = st.track ? `${st.track.videoId}:${bgCover}` : null;
     if (id !== artTrackId) {
       artTrackId = id;
       pendingLoaded = false;
+      backgroundDecoded = false;
+      squareDecoded = squareCover === squareArtUrl && squareLoaded;
+      presentationStarted = false;
+      releaseTheme?.(); releaseTheme = null;
+      if (presentationFallback) clearTimeout(presentationFallback);
+      presentationFallback = setTimeout(() => beginPresentation(true), 5000);
       if (promoteTimer) {
         clearTimeout(promoteTimer);
         promoteTimer = null;
@@ -80,21 +171,45 @@
   $: if (squareCover !== squareArtUrl) {
     squareArtUrl = squareCover;
     squareLoaded = false;
+    if (squarePromoteTimer) clearTimeout(squarePromoteTimer);
+    squarePromoteTimer = null;
+  }
+  $: if (!st.track || (!cover && st.status !== 'loading')) squareBaseArt = '';
+
+  function onSquareLoad(image: HTMLImageElement, requested: string): void {
+    if (requested !== squareArtUrl) return;
+    squareDecoded = true;
+    const loadedUrl = image.currentSrc || image.src;
+    decodedSquare = loadedUrl;
+    if (!presentationStarted) { beginPresentation(); return; }
+    squareLoaded = true;
+    if (squarePromoteTimer) clearTimeout(squarePromoteTimer);
+    squarePromoteTimer = setTimeout(() => {
+      squarePromoteTimer = null;
+      if (requested === squareArtUrl) squareBaseArt = loadedUrl;
+    }, 320);
   }
 
-  function onPendingLoad(event: Event): void {
-    pendingLoaded = true;
+  function onPendingLoad(image: HTMLImageElement, requested: string): void {
+    if (requested !== pendingArt) return;
+    backgroundDecoded = true;
     const url = pendingArt;
-    const loadedUrl = (event.currentTarget as HTMLImageElement).currentSrc || (event.currentTarget as HTMLImageElement).src;
+    const loadedUrl = image.currentSrc || image.src;
+    decodedBackground = loadedUrl;
+    if (!presentationStarted) { beginPresentation(); return; }
+    pendingLoaded = true;
     if (promoteTimer) clearTimeout(promoteTimer);
     promoteTimer = setTimeout(() => {
       promoteTimer = null;
       if (pendingArt === url) baseArt = loadedUrl;
-    }, 520);
+    }, 320);
   }
 
   onDestroy(() => {
     if (promoteTimer) clearTimeout(promoteTimer);
+    if (squarePromoteTimer) clearTimeout(squarePromoteTimer);
+    if (presentationFallback) clearTimeout(presentationFallback);
+    releaseTheme?.();
   });
 
   function fmt(s: number): string {
@@ -121,7 +236,20 @@
     upNextOpen = false;
     playerExpanded.set(true);
   }
+
+  function compactFly(node: Element) {
+    return fly(node, { y: node.getBoundingClientRect().height + 8, opacity: 1, duration: 280 });
+  }
 </script>
+
+<!-- Keep the media node connected when the expanded presentation is removed. -->
+<div bind:this={videoFrame} style:opacity="0" class="pointer-events-none absolute inset-x-3 bottom-0 top-14 z-[25] overflow-hidden rounded-t-3xl">
+  <div class="absolute inset-0 bg-black {$videoMode ? '' : 'invisible'}">
+    <div use:videoSurface use:frameOpacity={{ visible: $videoMode && $videoReady, duration: 220 }}
+      class:letterboxed={$settingsStore.videoLetterboxing}
+      class="absolute inset-0 overflow-hidden transition-opacity duration-200 motion-reduce:transition-none {$videoMode && $videoReady ? 'opacity-100' : 'opacity-0'}"></div>
+  </div>
+</div>
 
 {#if $playerExpanded}
   <!-- Full-screen now-playing card. It is a floating card *below* the top bar
@@ -133,34 +261,34 @@
     out:fade={{ duration: 150 }}
   ></div>
   <div
-    class="cherry-playerbar absolute inset-x-3 bottom-0 top-14 z-30 flex flex-col overflow-hidden rounded-t-xl shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
+    style:background={$videoMode ? ($videoReady ? 'transparent' : '#000') : undefined}
+    class="expanded-player cherry-playerbar absolute inset-x-3 bottom-0 top-14 z-30 flex flex-col overflow-hidden rounded-t-3xl shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
     oncontextmenu={onTrackContext}
     role="presentation"
-    in:fly={{ y: 48, duration: 240 }}
-    out:fly={{ y: 48, duration: 180 }}
+    in:playerFly={{ y: 36, duration: 280 }}
+    out:playerFly={{ y: 36, duration: 200 }}
   >
     <!-- Album art as a full-bleed, dimmed background. Two layers so the
          previous cover stays visible until the next one has loaded. -->
-    {#if cover}
+    {#if $videoMode}
+      <div class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-black via-black/60 to-black/20"></div>
+    {:else if cover}
       {#if baseArt}
         <img
           use:artwork={{ urls: [baseArt] }}
           alt=""
-          class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover {squareArt
-            ? 'scale-110 blur-3xl'
-            : ''}"
+          class="pointer-events-none absolute inset-0 -z-10 h-full w-full scale-110 object-cover blur-3xl"
         />
       {/if}
       {#if pendingArt}
         {#key artTrackId}
+          {@const requestedBackground = pendingArt}
           <img
-            use:artwork={{ urls: [pendingArt, ...coverSources] }}
+            use:artwork={{ urls: expandedArtworkSources(st.track?.thumbnails ?? [], 1080) }}
             alt=""
-            use:frameOpacity={{ visible: pendingLoaded, duration: 500 }}
-            class="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover transition-opacity duration-500 {squareArt
-              ? 'scale-110 blur-3xl'
-              : ''} {pendingLoaded ? 'opacity-100' : 'opacity-0'}"
-            onload={onPendingLoad}
+            use:frameOpacity={{ visible: pendingLoaded, duration: 300 }}
+            class="pointer-events-none absolute inset-0 -z-10 h-full w-full scale-110 object-cover blur-3xl transition-opacity duration-300 {pendingLoaded ? 'opacity-100' : 'opacity-0'}"
+            onload={(event) => onPendingLoad(event.currentTarget as HTMLImageElement, requestedBackground)}
           />
         {/key}
       {/if}
@@ -169,10 +297,14 @@
       ></div>
     {/if}
 
-    <div class="flex shrink-0 items-center gap-3 p-3">
+    <div use:frameOpacity={{ visible: $expandedPlayerPanel !== 'art', duration: 240 }}
+      class="pointer-events-none absolute inset-0 -z-10 bg-[#000]/55 transition-opacity duration-[240ms] motion-reduce:transition-none {$expandedPlayerPanel !== 'art' ? 'opacity-100' : 'opacity-0'}"></div>
+
+    <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 p-3">
+      <div class="min-w-0">
       {#if nextItem && !upNextOpen}
         <div
-          class="flex h-9 min-w-0 items-center gap-3 overflow-hidden rounded-lg bg-[var(--color-elevated)]/70 pr-3 backdrop-blur"
+          class="flex h-9 w-fit min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-full bg-[var(--player-header-background)] pr-3 backdrop-blur"
           title={`Next up: ${nextItem.track.title}`}
         >
           <span class="h-9 w-9 shrink-0 bg-white/5">
@@ -190,48 +322,70 @@
           </span>
         </div>
       {/if}
+      </div>
+      <div class="flex justify-center">
+          <div class="player-view-switch flex h-9 items-center gap-1 rounded-full p-1 backdrop-blur" role="group" aria-label="Expanded player view">
+            <button class="h-7 rounded-full px-3 text-xs font-semibold transition-colors {$expandedPlayerPanel === 'art' ? 'bg-[var(--color-accent)] text-[#fff]' : 'text-zinc-300 hover:text-white'}"
+              aria-pressed={$expandedPlayerPanel === 'art'} onclick={() => expandedPlayerPanel.set('art')}>{$videoMode ? 'Video' : 'Art'}</button>
+            {#if !$queueSidebarVisible}
+            <button class="h-7 rounded-full px-3 text-xs font-semibold transition-colors {$expandedPlayerPanel === 'queue' ? 'bg-[var(--color-accent)] text-[#fff]' : 'text-zinc-300 hover:text-white'}"
+              aria-pressed={$expandedPlayerPanel === 'queue'} onclick={() => expandedPlayerPanel.set('queue')}>Queue</button>
+            {/if}
+            {#if !$videoMode}
+            <button class="h-7 rounded-full px-3 text-xs font-semibold transition-colors {$expandedPlayerPanel === 'lyrics' ? 'bg-[var(--color-accent)] text-[#fff]' : 'text-zinc-300 hover:text-white'}"
+              aria-pressed={$expandedPlayerPanel === 'lyrics'} onclick={() => expandedPlayerPanel.set('lyrics')}>Lyrics</button>
+            {/if}
+          </div>
+      </div>
+      <div class="flex shrink-0 items-center justify-self-end gap-2">
+      <VideoControls />
       <button
-        class="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-elevated)]/70 text-white backdrop-blur transition-colors hover:bg-[var(--color-elevated)]"
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--player-header-background)] text-white backdrop-blur transition-colors hover:bg-[var(--color-surface)]"
         title="Collapse player"
         aria-label="Collapse player"
         onclick={() => playerExpanded.set(false)}
       >
         <i class="bx bx-chevron-down text-2xl"></i>
       </button>
+      </div>
     </div>
 
-    {#if upNextOpen}
-      <!-- Queue shown inline in the middle of the full-screen card. -->
-      <div
-        class="mx-auto mb-2 flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)]"
-      >
-        <QueueHeader onClose={() => (upNextOpen = false)} />
-        <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1 px-3 pb-3">
-          <QueueList />
-        </div>
+    {#if !$videoMode || $expandedPlayerPanel === 'queue'}
+      <div class="mx-auto mb-6 flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden sm:mb-8">
+        {#key $expandedPlayerPanel}
+          <div in:fade={{ duration: 160 }} class="flex min-h-0 flex-1 flex-col">
+            {#if $expandedPlayerPanel === 'art'}
+              <div class="art-frame flex min-h-0 flex-1 items-center justify-center px-6 py-4">
+                {#if squareCover || squareBaseArt}
+                  <div class="player-square-art relative overflow-hidden rounded-2xl shadow-lg">
+                    {#if squareBaseArt}
+                      <img use:artwork={{ urls: [squareBaseArt] }} alt="" class="absolute inset-0 h-full w-full object-cover" />
+                    {/if}
+                    {#if squareCover}
+                      {#key squareCover}
+                        {@const requested = squareCover}
+                        <img use:artwork={{ urls: expandedArtworkSources(st.track?.thumbnails ?? [], 720) }} alt={st.track?.title ?? 'Album art'}
+                          use:frameOpacity={{ visible: squareLoaded, duration: 300 }}
+                          class="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 {squareLoaded ? 'opacity-100' : 'opacity-0'}"
+                          onload={(event) => onSquareLoad(event.currentTarget as HTMLImageElement, requested)} />
+                      {/key}
+                    {/if}
+                  </div>
+                {:else}
+                  <i class="bx bx-music text-7xl text-zinc-500" aria-label="No album art"></i>
+                {/if}
+              </div>
+            {:else if $expandedPlayerPanel === 'queue'}
+              <QueueHeader />
+              <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1 px-3 pb-3"><QueueList /></div>
+            {:else}
+              <LyricsView expanded transparent />
+            {/if}
+          </div>
+        {/key}
       </div>
     {:else}
-      <!-- Empty spacer normally; when the square-art option is on, the cover is
-           centred in this middle area. -->
-      <div class="flex min-h-0 flex-1 items-center justify-center px-8 pb-6">
-        {#if squareArt && cover}
-          <div
-            class="aspect-square h-full max-h-[22rem] overflow-hidden rounded-2xl shadow-[0_18px_50px_rgba(0,0,0,0.55)] ring-1 ring-white/10"
-          >
-            {#key squareCover}
-              <img
-                use:artwork={{ urls: [squareCover, ...coverSources] }}
-                alt=""
-                use:frameOpacity={{ visible: squareLoaded, duration: 300 }}
-                class="h-full w-full object-cover transition-opacity duration-300 {squareLoaded
-                  ? 'opacity-100'
-                  : 'opacity-0'}"
-                onload={() => (squareLoaded = true)}
-              />
-            {/key}
-          </div>
-        {/if}
-      </div>
+      <div class="min-h-0 flex-1"></div>
     {/if}
 
     <div class="mx-auto w-full max-w-2xl shrink-0 px-8 pb-8">
@@ -246,7 +400,7 @@
 
       <div class="mt-5 flex items-center gap-3">
         <span class="w-10 shrink-0 text-left text-[11px] tabular-nums text-zinc-300"
-          >{fmt(st.positionSeconds)}</span
+          >{st.isLive ? 'LIVE' : fmt(st.positionSeconds)}</span
         >
         <input
           type="range"
@@ -254,14 +408,15 @@
           max={Math.max(1, st.durationSeconds, st.positionSeconds)}
           step="0.5"
           value={st.positionSeconds}
+          disabled={st.isLive}
           oninput={onSeek}
           class="cherry-range min-w-0 flex-1"
           style="--fill: {pct}%"
-          title={`Full length ${fmt(st.durationSeconds)}`}
+          title={`Full length ${st.isLive ? 'LIVE' : fmt(st.durationSeconds)}`}
           aria-label="Seek"
         />
         <span class="w-10 shrink-0 text-right text-[11px] tabular-nums text-zinc-300"
-          >{fmt(st.durationSeconds)}</span
+          >{st.isLive ? 'LIVE' : fmt(st.durationSeconds)}</span
         >
       </div>
 
@@ -278,7 +433,7 @@
           </button>
         {/if}
         <button
-          class="cherry-btn-scrim flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent)] text-4xl text-white"
+          class="cherry-btn-scrim flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent)] text-4xl text-white transition-colors duration-300"
           onclick={toggle}
           title={st.status === 'playing' ? 'Pause' : 'Play'}
           aria-label={st.status === 'playing' ? 'Pause' : 'Play'}
@@ -300,7 +455,7 @@
       </div>
 
       <!-- Secondary controls -->
-      <div class="mt-4 flex items-center justify-center gap-5">
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-3 sm:gap-5">
         {#if $settingsStore.playerShowShuffle}
           <button
             class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode
@@ -315,18 +470,6 @@
         {/if}
         {#if $settingsStore.playerShowRepeat}<RepeatButton size="lg" />{/if}
         {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton size="lg" />{/if}
-        {#if showQueueButton}
-          <button
-            class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen
-              ? 'text-[var(--color-accent2)]'
-              : 'text-zinc-400 hover:text-white'}"
-            onclick={() => (upNextOpen = !upNextOpen)}
-            title="Queue"
-            aria-label="Queue"
-          >
-            <i class="bx bx-list-ul"></i>
-          </button>
-        {/if}
 
         <!-- svelte-ignore a11y_no_static_element_interactions : hover wrapper for the volume popup -->
         <div
@@ -382,8 +525,12 @@
   ></div>
 
   <footer
+    transition:compactFly
     class="cherry-playerbar pointer-events-auto absolute inset-x-3 bottom-0 z-30 rounded-t-xl shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
   >
+    {#if !$videoMode && $settingsStore.lyricsEnabled && st.track && $lyricsStore.status === 'ready' && $lyricsStore.data}
+      <div transition:fly={{ y: 8, duration: 180 }} class="absolute bottom-full left-1/2 mb-2 w-max max-w-[min(36rem,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-[var(--color-popover)] shadow-lg"><LyricsView /></div>
+    {/if}
     <div class="flex w-full flex-wrap items-center gap-2 p-3 sm:gap-4">
       <!-- Album art doubles as the "expand player" button; the chevron shows on
            hover. Right-click still opens the track menu. -->
@@ -432,13 +579,14 @@
             max={Math.max(1, st.durationSeconds, st.positionSeconds)}
             step="0.5"
             value={st.positionSeconds}
+          disabled={st.isLive}
             oninput={onSeek}
             class="cherry-range min-w-0 flex-1"
             style="--fill: {pct}%"
-            title={`Full length ${fmt(st.durationSeconds)}`}
+            title={`Full length ${st.isLive ? 'LIVE' : fmt(st.durationSeconds)}`}
             aria-label="Seek"
           />
-          <span class="shrink-0 text-[10px] tabular-nums text-zinc-500">{fmt(st.positionSeconds)}</span>
+          <span class="shrink-0 text-[10px] tabular-nums text-zinc-500">{st.isLive ? 'LIVE' : fmt(st.positionSeconds)}</span>
         </div>
       </div>
 
@@ -504,6 +652,7 @@
 
         <!-- Right (small) / third (wide): queue + volume -->
         <div class="order-3 -mr-2 flex items-center gap-1 sm:order-3">
+          <PlaybackExtras />
           {#if showQueueButton}
             <button
               data-upnext-toggle
@@ -564,3 +713,15 @@
 
 <!-- Queue panel, shared by the bar and the full-screen card. -->
 <UpNextPanel open={upNextOpen && !$playerExpanded} onClose={() => (upNextOpen = false)} />
+
+<style>
+  .expanded-player { --player-header-background: color-mix(in srgb, var(--color-surface) 85%, transparent); }
+  .expanded-player :global(.transition-colors) { transition-duration: 300ms; }
+  .expanded-player :global(.text-zinc-400), .expanded-player :global(.text-zinc-500) { color: var(--color-zinc-200); }
+  .expanded-player :global(.text-zinc-600) { color: var(--color-zinc-400); }
+  .player-view-switch { background: var(--player-header-background); }
+  .art-frame { container-type: size; }
+  .player-square-art { width: min(100cqw, 100cqh, 22rem); height: min(100cqw, 100cqh, 22rem); aspect-ratio: 1; }
+  .letterboxed { background: black; }
+  .letterboxed :global(video) { object-fit: contain; }
+</style>

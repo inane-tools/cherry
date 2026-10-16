@@ -18,7 +18,7 @@
   import { openPlaylist } from '$lib/app/services/playlists';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { playlistMenu } from '$lib/app/services/menus';
-  import { parseYouTubeLink, openParsedLink } from '$lib/app/services/openLink';
+  import { parseYouTubeLink, resolveParsedLink } from '$lib/app/services/openLink';
   import { searchAll } from '$lib/infra/ytmusic/InnertubeClient';
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
@@ -46,12 +46,10 @@
   let debounce: ReturnType<typeof setTimeout> | undefined;
   // Guards against out-of-order responses when queries change quickly.
   let seq = 0;
+  let lastTyped = '';
 
-  // Returning to the search page (Back) keeps the last results; if there are
-  // none yet but a query exists, run it.
   onMount(() => {
     if (compact) searchInput?.focus();
-    if (q.trim() && !results) void run(q, true);
   });
 
   async function run(query: string, immediate = false) {
@@ -64,16 +62,8 @@
       searchResultsStore.set(null);
       return;
     }
-    // A pasted YouTube / YouTube Music link opens that song or playlist rather
-    // than searching for the URL text.
+    // Pasted links resolve into clickable results, never playback/navigation.
     const link = parseYouTubeLink(text);
-    if (link) {
-      clearTimeout(debounce);
-      loading = false;
-      error = null;
-      void openParsedLink(link);
-      return;
-    }
     // Gate: anonymous Innertube results cannot be played (PO-token gated), so
     // searching without an account only produces dead results — block it with
     // a single clear message instead.
@@ -84,13 +74,15 @@
       announceSignInRequired();
       return;
     }
-    clearTimeout(debounce);
+    loading = true;
+    error = null;
+    searchResultsStore.set(null);
     const execute = async () => {
       if (id !== seq) return;
       loading = true;
       error = null;
       try {
-        const res = await searchAll(text, get(authStore));
+        const res = link ? await resolveParsedLink(link) : await searchAll(text, get(authStore));
         if (id !== seq) return; // a newer search already started
         searchResultsStore.set(res);
         if (
@@ -117,7 +109,11 @@
   // Unsubscribed on destroy: the view is re-created on every navigation, so a
   // bare `.subscribe` leaked one listener per visit (each replaying the search).
   const unsubscribeSearch = searchRequest.subscribe((req) => {
-    if (!req.id) return;
+    if (!req.id) {
+      q = ''; lastTyped = ''; ++seq; clearTimeout(debounce);
+      loading = false; error = null;
+      return;
+    }
     q = req.query;
     void run(req.query, true);
   });
@@ -129,14 +125,12 @@
 
   // Typing in this view refines live.
   function onType() {
-    // Keep the shared query in sync so re-opening the popup restores the *last*
-    // thing typed, not just the last committed search.
+    // Shared only for the current overlay session; closing clears it.
     searchQuery.set(q);
     const text = q;
     requestSearchSilently(text);
   }
 
-  let lastTyped = '';
   function requestSearchSilently(text: string) {
     if (text === lastTyped) return;
     lastTyped = text;
@@ -164,6 +158,7 @@
   $: albums = results?.albums ?? [];
   $: artists = results?.artists ?? [];
   $: playlists = results?.playlists ?? [];
+  $: pastedLink = !!parseYouTubeLink(q.trim());
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -232,7 +227,7 @@
   {:else if results}
     {#if songs.length > 0}
       <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
-        Songs
+        {pastedLink ? 'Pasted link' : 'Songs'}
       </h2>
       <div class="flex flex-col gap-0.5">
         {#each songs as t, i}
@@ -305,17 +300,18 @@
 
     {#if playlists.length > 0}
       <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
-        Playlists
+        {pastedLink ? 'Pasted link' : 'Playlists'}
       </h2>
-      <div class="grid gap-2 {compact ? 'grid-cols-3 sm:grid-cols-4' : 'grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8'}">
+      <div class={pastedLink ? 'flex flex-col gap-0.5' : `grid gap-2 ${compact ? 'grid-cols-3 sm:grid-cols-4' : 'grid-cols-3 sm:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8'}`}>
         {#each playlists as playlist (playlist.browseId)}
           <button
-            class="group flex flex-col gap-2 rounded-lg p-2 text-left transition-colors hover:bg-white/5"
+            class="group flex rounded-lg text-left transition-colors hover:bg-white/5 {pastedLink ? 'w-full items-center gap-3 px-2 py-1.5' : 'flex-col gap-2 p-2'}"
             title={playlist.title}
             onclick={() => openPlaylist(playlist)}
             oncontextmenu={(e) => openContextMenu(e, playlistMenu(playlist))}
           >
-            <div class="aspect-square w-full overflow-hidden rounded-lg bg-white/5">
+            {#if pastedLink}<span class="w-6 shrink-0 text-center text-xs text-zinc-600"><i class="bx bx-list-ul text-base" aria-hidden="true"></i></span>{/if}
+            <div class="overflow-hidden bg-white/5 {pastedLink ? 'h-10 w-10 shrink-0 rounded-md' : 'aspect-square w-full rounded-lg'}">
               {#if playlistCover(playlist)}
                 <img
                   use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 320) }}
@@ -327,11 +323,12 @@
                 <div class="flex h-full w-full items-center justify-center text-zinc-600"><i class="bx bx-music text-2xl"></i></div>
               {/if}
             </div>
-            <div class="min-w-0">
-              <div class="truncate text-[12px] font-medium text-zinc-100">{playlist.title}</div>
+            <div class="min-w-0 {pastedLink ? 'flex-1' : ''}">
+              <div class="truncate font-medium text-zinc-100 {pastedLink ? 'text-sm' : 'text-[12px]'}">{playlist.title}</div>
               {#if playlist.author}
                 <div class="truncate text-[11px] text-zinc-500">{playlist.author}</div>
               {/if}
+              {#if pastedLink && !playlist.author}<div class="truncate text-xs text-zinc-500">Playlist</div>{/if}
             </div>
           </button>
         {/each}

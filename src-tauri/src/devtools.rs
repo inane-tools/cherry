@@ -17,3 +17,10 @@ pub fn open_devtools(app: tauri::AppHandle) {
         window.open_devtools();
     }
 }
+
+#[tauri::command]
+pub fn close_devtools(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.close_devtools();
+    }
+}

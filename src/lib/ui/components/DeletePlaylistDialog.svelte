@@ -23,7 +23,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/60 p-4 backdrop-blur-[3px]" role="presentation" onclick={cancelPlaylistDeletion} in:fade={{ duration: 150 }} out:fade={{ duration: 120 }}>
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="w-full max-w-md rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]" role="dialog" aria-modal="true" aria-label="Delete playlist" tabindex="-1" onclick={(event) => event.stopPropagation()} onkeydown={dialogKey} in:fly={{ y: -12, duration: 180 }}>
+    <div class="w-full max-w-md rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]" role="dialog" aria-modal="true" aria-label="Delete playlist" tabindex="-1" onclick={(event) => event.stopPropagation()} onkeydown={dialogKey} in:fly={{ y: -10, duration: 220 }}>
       <DialogHeader title="Delete playlist?" onClose={cancelPlaylistDeletion} />
       <div class="space-y-3 px-6 text-[13px] leading-relaxed text-zinc-300">
         <p>Permanently delete <strong class="text-white">“{state.playlist.title}”</strong> from your YouTube Music account?</p>

@@ -1,3 +1,5 @@
+import { sineInOut } from 'svelte/easing';
+
 /** Fade painted background layers rather than animate inherited colour tokens. */
 export function washTransition(node: HTMLElement) {
   const root = document.documentElement;
@@ -45,14 +47,14 @@ export function washTransition(node: HTMLElement) {
       layer.style.opacity = '0';
       const started = performance.now();
       const step = (now: number) => {
-        const progress = Math.min(1, Math.max(0, (now - started) / 220));
-        layer.style.opacity = String(1 - (1 - progress) ** 3);
+        const progress = Math.min(1, Math.max(0, (now - started) / 300));
+        layer.style.opacity = String(sineInOut(progress));
         if (progress < 1) frame = requestAnimationFrame(step);
         else finish();
       };
       frame = requestAnimationFrame(step);
     } else {
-      animation = layer.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
+      animation = layer.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'cubic-bezier(0.37, 0, 0.63, 1)', fill: 'forwards' });
       animation.onfinish = finish;
     }
   }

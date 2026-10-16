@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Spinner from './Spinner.svelte';
   import { thumbnailSources } from '$lib/core/models';
   import { artwork } from '$lib/ui/actions/artwork';
   import type { CarouselEntry } from './carouselTypes';
@@ -93,7 +94,11 @@
             title={`Play ${entry.title}`} aria-label={`Play ${entry.title}`} disabled={!!playingEntry}
             onclick={() => play(entry)}
           >
-            <i class="bx {playingEntry === entry.key ? 'bx-loader-alt animate-spin' : 'bx-play'} {hero ? 'text-2xl' : 'text-lg'}"></i>
+            {#if playingEntry === entry.key}
+              <Spinner size={hero ? 24 : 18} />
+            {:else}
+              <i class="bx bx-play {hero ? 'text-2xl' : 'text-lg'}"></i>
+            {/if}
           </button>
           {/if}
         </div>

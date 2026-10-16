@@ -14,6 +14,7 @@ const pending: Pending[] = [];
 
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
   setActiveChannel: vi.fn(),
+  getMusicVideo: vi.fn(async () => ({ videoId: 'official', title: 'Official video', artists: [], thumbnails: [], isMusicVideo: true })),
   getInnertube: vi.fn(() => Promise.resolve({})),
   prefetchAudioStream: vi.fn(() => Promise.resolve()),
   getAudioStream: vi.fn(
@@ -58,8 +59,115 @@ beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
   pending.length = 0;
   clearQueue();
+  player.videoMode.set(false);
+  player.videoPreferred.set(false);
   setShuffle(false);
   authStore.set({ kind: 'cookie', cookie: 'SID=x', savedAt: 0 } satisfies AuthSession);
+});
+
+describe('music video playback', () => {
+  it('prepares a restored video without autoplaying or losing the remembered position', async () => {
+    const { settingsStore } = await import('./settings');
+    localStorage.setItem('cherry.queue.v1', JSON.stringify({
+      items: [{ queueId: 'restored', track: track('restored') }],
+      index: 0, order: [0], shuffle: false, repeat: 'off', position: 42,
+    }));
+    player.playerStore.update(state => ({ ...state, track: null, status: 'idle' }));
+    settingsStore.update(settings => ({ ...settings, videoPreferred: true }));
+    try {
+      await player.restorePlayback();
+      await flush();
+      expect(get(player.videoPreferred)).toBe(true);
+      expect(pending[0].videoId).toBe('official');
+      pending[0].resolve('https://media/restored-video');
+      await flush();
+      expect(get(player.videoMode)).toBe(true);
+      expect(get(player.playerStore).status).toBe('paused');
+      expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    } finally {
+      localStorage.removeItem('cherry.queue.v1');
+      settingsStore.update(settings => ({ ...settings, videoPreferred: false }));
+      await player.stopPlayback();
+    }
+  });
+  it('falls back to audio without starting a paused track when no counterpart exists', async () => {
+    const { getMusicVideo } = await import('$lib/infra/ytmusic/InnertubeClient');
+    vi.mocked(getMusicVideo).mockResolvedValueOnce(null);
+    const start = player.playTracks([track('no-video')]); await flush(); pending[0].resolve('https://media/song'); await start;
+    player.playerStore.update(s => ({ ...s, status: 'paused', positionSeconds: 23 }));
+    const switched = player.setVideoMode(true); await flush();
+    expect(get(player.videoMode)).toBe(false);
+    expect(get(player.videoPreferred)).toBe(true);
+    expect(pending[1].videoId).toBe('no-video');
+    pending[1].resolve('https://media/song'); await switched;
+    expect(get(player.playerStore).status).toBe('paused');
+    await player.stopPlayback();
+  });
+  it('returns to video on the next compatible track after an audio-only song', async () => {
+    const { getMusicVideo } = await import('$lib/infra/ytmusic/InnertubeClient');
+    const start = player.playTracks([track('audio-only'), track('has-video')]);
+    await flush(); pending[0].resolve('https://media/song'); await start;
+    vi.mocked(getMusicVideo).mockResolvedValueOnce(null);
+    const enable = player.setVideoMode(true);
+    await flush(); pending[1].resolve('https://media/song'); await enable;
+    expect(get(player.videoPreferred)).toBe(true);
+    expect(get(player.videoMode)).toBe(false);
+    const { prefetchAudioStream } = await import('$lib/infra/ytmusic/InnertubeClient');
+    await flush();
+    expect(prefetchAudioStream).toHaveBeenCalledWith('official', expect.anything(), { video: true });
+    const advance = player.next();
+    await flush();
+    expect(pending[2].videoId).toBe('official');
+    pending[2].resolve('https://media/video'); await advance;
+    expect(get(player.videoMode)).toBe(true);
+    expect(get(player.videoPreferred)).toBe(true);
+    await player.stopPlayback(); await player.setVideoMode(false);
+  });
+  it('allows turning video preference off while an audio-only track is playing', async () => {
+    const { getMusicVideo } = await import('$lib/infra/ytmusic/InnertubeClient');
+    const start = player.playTracks([track('audio-only'), track('has-video')]);
+    await flush(); pending[0].resolve('https://media/song'); await start;
+    vi.mocked(getMusicVideo).mockResolvedValueOnce(null);
+    const enable = player.setVideoMode(true);
+    await flush(); pending[1].resolve('https://media/song'); await enable;
+    const disable = player.setVideoMode(false);
+    await flush(); pending[2].resolve('https://media/song'); await disable;
+    const advance = player.next();
+    await flush();
+    expect(pending[3].videoId).toBe('has-video');
+    pending[3].resolve('https://media/song2'); await advance;
+    expect(get(player.videoPreferred)).toBe(false);
+    expect(get(player.videoMode)).toBe(false);
+    await player.stopPlayback();
+  });
+  it('replaces the audio element, preserves position and ignores late old-element events', async () => {
+    const start = player.playTracks([track('a')]); await flush();
+    pending[0].resolve('https://media/a'); await start;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    player.playerStore.update(s => ({ ...s, status: 'playing', positionSeconds: 42 }));
+    const host = document.createElement('div'); const surface = player.videoSurface(host);
+    const switchMode = player.setVideoMode(true); await flush();
+    expect(pending[1].videoId).toBe('official');
+    pending[1].resolve('https://media/video'); await switchMode;
+    const video = host.querySelector('video')!;
+    expect(video).toBeInstanceOf(HTMLVideoElement);
+    Object.defineProperty(video, 'duration', { value: 200, configurable: true });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    expect(video.currentTime).toBe(42);
+    video.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('pause'));
+    expect(get(player.playerStore).status).toBe('playing');
+    await player.stopPlayback(); await player.setVideoMode(false); surface.destroy();
+  });
+  it('does not start playback when switching a paused song to video', async () => {
+    const start = player.playTracks([track('paused')]); await flush(); pending[0].resolve('https://media/paused'); await start;
+    player.playerStore.update(s => ({ ...s, status: 'paused', positionSeconds: 20 }));
+    const calls = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+    const switched = player.setVideoMode(true); await flush(); pending[1].resolve('https://media/video'); await switched;
+    expect(get(player.playerStore).status).toBe('paused');
+    expect(vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length).toBe(calls);
+    await player.stopPlayback(); await player.setVideoMode(false);
+  });
 });
 
 describe('loadCurrent', () => {

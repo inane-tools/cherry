@@ -1,4 +1,4 @@
-import { cubicInOut } from 'svelte/easing';
+import { sineInOut } from 'svelte/easing';
 
 interface Options {
   visible: boolean;
@@ -7,7 +7,11 @@ interface Options {
 
 /** Keep CSS fades on other platforms; avoid compositor-driven fades on Linux. */
 export function frameOpacity(node: HTMLElement, initial: Options) {
-  if (!document.documentElement.classList.contains('cherry-linux-window')) return {};
+  if (!document.documentElement.classList.contains('cherry-linux-window')) {
+    const timing = node.style.transitionTimingFunction;
+    node.style.transitionTimingFunction = 'cubic-bezier(0.37, 0, 0.63, 1)';
+    return { destroy() { node.style.transitionTimingFunction = timing; } };
+  }
 
   const savedOpacity = node.style.opacity;
   const savedTransition = node.style.transitionProperty;
@@ -32,7 +36,7 @@ export function frameOpacity(node: HTMLElement, initial: Options) {
       }
       const step = (now: number) => {
         const progress = Math.min(1, Math.max(0, (now - started) / duration));
-        value = start + (target - start) * cubicInOut(progress);
+        value = start + (target - start) * sineInOut(progress);
         node.style.opacity = String(value);
         frame = progress < 1 ? requestAnimationFrame(step) : 0;
       };

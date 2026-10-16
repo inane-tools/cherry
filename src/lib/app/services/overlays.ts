@@ -3,6 +3,7 @@
 // history (the sidebar/top bar stay put underneath).
 
 import { writable } from 'svelte/store';
+import { resetSearchSession } from './searchSession';
 
 export const settingsOpen = writable(false);
 export const searchOpen = writable(false);
@@ -19,4 +20,5 @@ export function openSearch(): void {
 }
 export function closeSearch(): void {
   searchOpen.set(false);
+  resetSearchSession();
 }

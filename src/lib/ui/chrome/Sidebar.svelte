@@ -2,8 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { artwork } from '$lib/ui/actions/artwork';
   import { thumbnailSources } from '$lib/core/models';
-  import { flip } from 'svelte/animate';
-  import { fade, slide } from 'svelte/transition';
+  import { fade, slide, flip } from '$lib/ui/transitions';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import type { Playlist, PlaylistFolder } from '$lib/core/models';
   import { authStore } from '$lib/app/services/auth';
@@ -447,7 +446,7 @@
       data-child-id={playlist.browseId}
       data-child-index={j}
       data-folder={folder.id}
-      animate:flip={{ duration: 180 }}
+      animate:flip={{ duration: 220 }}
     >
       {#if drop?.kind === 'in-folder' && drop?.folderId === folder.id && drop?.index === j}
         <span
@@ -524,7 +523,7 @@
           class="flex flex-col items-stretch gap-2"
           data-child-zone={folder.id}
           data-child-count={items.length}
-          transition:slide={{ duration: 160 }}
+          transition:slide={{ duration: 200 }}
         >
           {@render folderChildren(folder, items)}
         </div>
@@ -572,7 +571,7 @@
           class="mx-2 rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/[0.12]"
           data-child-zone={folder.id}
           data-child-count={items.length}
-          transition:slide={{ duration: 160 }}
+          transition:slide={{ duration: 200 }}
         >
           {@render folderChildren(folder, items)}
         </div>
@@ -759,7 +758,7 @@
           class="relative"
           data-top-id={item.id}
           data-top-index={i}
-          animate:flip={{ duration: 180 }}
+          animate:flip={{ duration: 220 }}
         >
           {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === i}
             <span

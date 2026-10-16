@@ -23,7 +23,15 @@ const DEFAULT_PAIR = {
  * user. `setAccentSource` is called by `appearance.ts` when settings change.
  */
 let accentSource: 'song' | 'custom' = 'song';
+let artworkGeneration = 0;
+let artworkPresentation: ((url: string) => Promise<void>) | null = null;
+/** Let the expanded player align its decoded images with the prepared accent. */
+export function coordinateArtworkPresentation(handler: (url: string) => Promise<void>): () => void {
+  artworkPresentation = handler;
+  return () => { if (artworkPresentation === handler) artworkPresentation = null; };
+}
 export function setAccentSource(source: 'song' | 'custom'): void {
+  if (source !== accentSource) artworkGeneration++;
   accentSource = source;
 }
 
@@ -142,6 +150,7 @@ function setAccent(colour: Rgb, vivid: boolean, preview = false): void {
 
 /** Reset to the built-in accent (only meaningful while following the artwork). */
 export function resetArtworkTheme(): void {
+  artworkGeneration++;
   if (accentSource !== 'song') return;
   current = { accent: DEFAULT_PAIR.accent, accent2: DEFAULT_PAIR.accent2 };
   applyAccent();
@@ -160,14 +169,21 @@ export function previewCustomAccent(hex: string): void {
 /** Adopt the dominant colour of `artworkUrl` as the app accent. */
 export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
   if (accentSource !== 'song') return;
+  const generation = ++artworkGeneration;
+  async function commit(colour: Rgb | null) {
+    if (generation !== artworkGeneration || accentSource !== 'song') return;
+    await artworkPresentation?.(artworkUrl);
+    if (generation !== artworkGeneration || accentSource !== 'song') return;
+    if (colour) setAccent(colour, true);
+    else resetArtworkTheme();
+  }
   if (!artworkUrl || !isTauri()) {
-    resetArtworkTheme();
+    await commit(null);
     return;
   }
   if (cache.has(artworkUrl)) {
     const cached = cache.get(artworkUrl);
-    if (cached) setAccent(cached, true);
-    else resetArtworkTheme();
+    await commit(cached ?? null);
     return;
   }
 
@@ -191,13 +207,12 @@ export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
 
     const colour = dominantColour(data);
     remember(artworkUrl, colour);
-    if (colour) setAccent(colour, true);
-    else resetArtworkTheme();
+    await commit(colour);
   } catch (e) {
     // Artwork may be unavailable or undecodable; the default theme still works.
     // eslint-disable-next-line no-console
     console.warn('[cherry] could not theme from artwork:', e);
     remember(artworkUrl, null);
-    resetArtworkTheme();
+    await commit(null);
   }
 }

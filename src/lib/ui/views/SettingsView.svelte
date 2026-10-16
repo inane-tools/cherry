@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Spinner from '$lib/ui/components/Spinner.svelte';
   import { onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import {
@@ -23,7 +24,7 @@
   import { setDefaultPlaylist } from '$lib/app/services/playlistEdit';
   import { addablePlaylistsStore, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import { beginAuth, completeAuth } from '$lib/app/services/lastfm';
-  import { openDevTools, reloadFrontend } from '$lib/app/services/devtools';
+  import { openDevTools, reloadFrontend, toggleDeveloperOptions } from '$lib/app/services/devtools';
   import { refreshDiscord } from '$lib/app/services/player';
   import { clearAllData, clearCache, formatCacheSize } from '$lib/app/services/maintenance';
   import { DISCLAIMER } from '$lib/app/services/gate';
@@ -134,27 +135,21 @@
   let label = '';
   let busy = false;
 
-  // Tapping the Cherry logo five times reveals the Developer section.
+  // Five quick logo clicks toggle the Developer section in either direction.
   let logoTaps = 0;
   let logoTapTimer: ReturnType<typeof setTimeout> | null = null;
   function onLogoTap(): void {
-    if ($settingsStore.developerUnlocked) return;
     logoTaps += 1;
     if (logoTapTimer) clearTimeout(logoTapTimer);
     logoTapTimer = setTimeout(() => (logoTaps = 0), 1200);
     if (logoTaps >= 5) {
       logoTaps = 0;
       if (logoTapTimer) clearTimeout(logoTapTimer);
-      void updateSettings({ developerUnlocked: true });
-      window.dispatchEvent(
-        new CustomEvent('cherry:notice', {
-          detail: {
-            message: 'In my restless dreams, I see those options. Sile- Developer Options.',
-          },
-        }),
-      );
+      void toggleDeveloperOptions();
     }
   }
+
+  onDestroy(() => { if (logoTapTimer) clearTimeout(logoTapTimer); });
 
   $: codename = releaseCodename(__APP_VERSION__);
   $: shortVersion = majorMinor(__APP_VERSION__);
@@ -206,13 +201,15 @@
     | 'playerShowShuffle'
     | 'playerShowRepeat'
     | 'playerShowSleepTimer'
-    | 'playerShowQueue';
+    | 'playerShowQueue'
+    | 'playerShowLyrics';
   const PLAYER_BUTTONS: { key: PlayerButtonKey; label: string; icon: string }[] = [
     { key: 'playerShowPrev', label: 'Previous', icon: 'bx bx-skip-previous' },
     { key: 'playerShowShuffle', label: 'Shuffle', icon: 'bx bx-shuffle' },
     { key: 'playerShowRepeat', label: 'Repeat', icon: 'bx bx-repeat' },
     { key: 'playerShowSleepTimer', label: 'Sleep timer', icon: 'bx bx-moon' },
     { key: 'playerShowQueue', label: 'Queue', icon: 'bx bx-list-ul' },
+    { key: 'playerShowLyrics', label: 'Lyrics', icon: 'bx bx-captions' },
   ];
 
   $: playlistOptions = [
@@ -512,7 +509,7 @@
       {#if phase === 'waiting'}
         <div class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-accent)]/20 bg-black/20 px-3 py-2.5 text-[11px] text-zinc-300">
           <span class="flex min-w-0 items-center gap-2">
-            <i class="bx bx-loader-alt bx-spin shrink-0"></i>
+            <Spinner />
             <span class="truncate">{popupStatus || 'Sign in to YouTube Music in the opened window.'}</span>
           </span>
           <button class="shrink-0 text-zinc-400 transition-colors hover:text-white" onclick={cancelLogin}>Cancel</button>
@@ -942,15 +939,29 @@
           </label>
         </div>
 
+      </div>
+    </SettingsSection>
+
+    <SettingsSection
+      title="Player"
+      description="Lyrics, video and player controls."
+      collapsible
+    >
+      <div class="flex flex-col gap-5">
         <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Expanded player</div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Playback</div>
+          <label class="mb-3 flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-captions shrink-0 text-sm text-zinc-500"></i>Show lyrics when available</span>
+            <Toggle checked={$settingsStore.lyricsEnabled} label="Show lyrics when available" onchange={(value) => updateSettings({ lyricsEnabled: value })} />
+          </label>
+          <label class="mb-3 flex items-center justify-between gap-4">
+            <span class="text-[12px] text-zinc-300" title="Tries LRCLIB first, then YouTube Music. Uses song details without sign-in data.">Use LRCLIB for lyrics</span>
+            <Toggle checked={$settingsStore.lyricsLookupEnabled} label="Prefer LRCLIB lyrics before YouTube Music" onchange={(value) => updateSettings({ lyricsLookupEnabled: value })} />
+          </label>
           <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-image shrink-0 text-sm text-zinc-500"></i>Square album art</span>
-            <Toggle
-              checked={$settingsStore.playerSquareArt}
-              label="Square album art in expanded player"
-              onchange={(value) => updateSettings({ playerSquareArt: value })}
-            />
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-movie shrink-0 text-sm text-zinc-500"></i>Letterbox videos</span>
+            <Toggle checked={$settingsStore.videoLetterboxing} label="Show full videos with black letterboxing"
+              onchange={(value) => updateSettings({ videoLetterboxing: value })} />
           </label>
         </div>
 
@@ -1076,12 +1087,17 @@
       <ul class="grid grid-cols-1 gap-x-6 text-[11px] text-zinc-400 sm:grid-cols-2">
         {#each [
           { name: 'Tauri', use: 'desktop shell, windowing, OS integration', license: 'MIT / Apache-2.0', url: 'https://github.com/tauri-apps/tauri' },
+          { name: 'Tauri plugins', use: 'signed updates, restart, settings storage, links, shortcuts and single-instance handling', license: 'MIT / Apache-2.0', url: 'https://github.com/tauri-apps/plugins-workspace' },
           { name: 'Svelte', use: 'UI framework', license: 'MIT', url: 'https://github.com/sveltejs/svelte' },
+          { name: 'svelte-check', use: 'Svelte diagnostics and type checking', license: 'MIT', url: 'https://github.com/sveltejs/language-tools' },
+          { name: 'TypeScript', use: 'frontend type checking', license: 'Apache-2.0', url: 'https://github.com/microsoft/TypeScript' },
           { name: 'Vite', use: 'build tooling', license: 'MIT', url: 'https://github.com/vitejs/vite' },
           { name: 'Vitest', use: 'unit testing', license: 'MIT', url: 'https://github.com/vitest-dev/vitest' },
           { name: 'jsdom', use: 'DOM for unit tests', license: 'MIT', url: 'https://github.com/jsdom/jsdom' },
           { name: 'Tailwind CSS', use: 'styling', license: 'MIT', url: 'https://github.com/tailwindlabs/tailwindcss' },
           { name: 'youtubei.js', use: 'YouTube / YouTube Music (Innertube) API', license: 'MIT', url: 'https://github.com/LuanRT/YouTube.js' },
+          { name: 'hls.js', use: 'live station playback', license: 'Apache-2.0', url: 'https://github.com/video-dev/hls.js' },
+          { name: 'dash.js', use: 'adaptive HD music videos', license: 'BSD-3-Clause', url: 'https://github.com/Dash-Industry-Forum/dash.js' },
           { name: 'souvlaki', use: 'OS media controls (SMTC / MPRIS)', license: 'MIT', url: 'https://github.com/Sinono3/souvlaki' },
           { name: 'discord-rich-presence', use: 'Discord Rich Presence', license: 'MIT', url: 'https://github.com/EmbarkStudios/discord-rich-presence' },
           { name: 'Boxicons', use: 'icon set', license: 'CC BY 4.0', url: 'https://github.com/atisawd/boxicons' },
@@ -1125,6 +1141,23 @@
           <span class="font-semibold text-zinc-300">Codex (OpenAI)</span> — code review,
           playback and sign-out fixes, regression tests, and UI refinements.
         </p>
+      </div>
+      <div class="mt-4 border-t border-white/[0.06] pt-3">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Lyrics</div>
+      <ul class="mt-1.5 space-y-3 text-[11px] leading-relaxed text-zinc-400">
+        {#each [
+          { name: 'LRCLIB', url: 'https://lrclib.net/', description: 'Community-contributed lyrics and timing. Cherry checks LRCLIB first, then falls back to YouTube Music.' },
+        ] as source}
+          <li>
+            <a class="font-semibold text-zinc-300 transition-colors hover:text-white" href={source.url}
+              onclick={(event) => { event.preventDefault(); openExternal(source.url); }}>{source.name}</a>
+            <p class="mt-0.5">{source.description}</p>
+          </li>
+        {/each}
+      </ul>
+      <p class="mt-3 border-t border-white/[0.06] pt-3 text-[11px] leading-relaxed text-zinc-500">
+        Provider credits are shown alongside the lyrics when supplied.
+      </p>
       </div>
     </SettingsSection>
 

@@ -1,6 +1,15 @@
 /** Image fallbacks and bounded recovery after a connection failure or resume. */
 export type ArtworkOptions = { urls: string[]; onfailure?: () => void };
 
+function isMissingYouTubeArtwork(node: HTMLImageElement): boolean {
+  try {
+    const url = new URL(node.currentSrc || node.src);
+    return url.hostname === 'i.ytimg.com'
+      && /^\/(vi|vi_webp)\/[^/]+\/(maxresdefault|sddefault|hqdefault)\./.test(url.pathname)
+      && node.naturalWidth === 120 && node.naturalHeight === 90;
+  } catch { return false; }
+}
+
 export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
   let options = initial;
   let urls: string[] = [];
@@ -41,7 +50,15 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
     }
   }
 
-  function loaded() {
+  function loaded(event: Event) {
+    // Missing YouTube variants return a decodable 120×90 placeholder, even
+    // with a 404 response. Browsers can emit load rather than error for it.
+    if (isMissingYouTubeArtwork(node)) {
+      // Do not let consumers promote the placeholder into their crossfade.
+      event.stopImmediatePropagation();
+      error();
+      return;
+    }
     failed = false;
     clearRetry();
     node.style.visibility = originalVisibility;
@@ -66,7 +83,8 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
   }
 
   node.addEventListener('error', error);
-  node.addEventListener('load', loaded);
+  // Capture runs before component load handlers, regardless of mount order.
+  node.addEventListener('load', loaded, true);
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   document.addEventListener('visibilitychange', resume);
@@ -77,7 +95,7 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
     destroy() {
       clearRetry();
       node.removeEventListener('error', error);
-      node.removeEventListener('load', loaded);
+      node.removeEventListener('load', loaded, true);
       window.removeEventListener('online', resume);
       window.removeEventListener('focus', resume);
       document.removeEventListener('visibilitychange', resume);

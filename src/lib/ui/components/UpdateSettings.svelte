@@ -5,10 +5,6 @@
   $: supported = ['windows', 'appimage'].includes($updateStore.environment);
   $: busy = ['checking', 'downloading', 'installing'].includes($updateStore.phase);
   $: percent = $updateStore.total ? Math.min(100, Math.round($updateStore.received / $updateStore.total * 100)) : null;
-  async function releases() {
-    const { openUrl } = await import('@tauri-apps/plugin-opener');
-    await openUrl('https://github.com/inane-tools/cherry/releases/latest');
-  }
 </script>
 
 <div id="cherry-updates" class="mt-4 border-t border-white/[0.06] pt-4">
@@ -36,8 +32,6 @@
       {:else}
         <button class="update-button" disabled={busy} onclick={() => checkUpdates()}>{busy ? 'Please wait…' : 'Check for updates'}</button>
       {/if}
-    {:else}
-      <button class="update-button" onclick={releases}>View releases</button>
     {/if}
   </div>
   {#if $updateStore.phase === 'downloading'}

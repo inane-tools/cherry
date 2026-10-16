@@ -30,7 +30,7 @@
   <div
     data-upnext-panel
     class="absolute bottom-[136px] right-3 z-40 flex max-h-[72vh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)] sm:bottom-24"
-    in:fly={{ y: 10, duration: 170 }}
+    in:fly={{ y: 8, duration: 200 }}
     out:fade={{ duration: 120 }}
   >
     <QueueHeader {onClose} />

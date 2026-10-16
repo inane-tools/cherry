@@ -80,8 +80,8 @@
     <div
       role="menu"
       class="absolute bottom-full right-0 z-30 mb-2 w-52 overflow-hidden rounded-xl bg-[var(--color-popover)] py-1.5 text-[12px] shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
-      in:fly={{ y: 6, duration: 140 }}
-      out:fade={{ duration: 100 }}
+      in:fly={{ y: 6, duration: 180 }}
+      out:fade={{ duration: 110 }}
     >
       <p class="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Sleep timer</p>
       {#each SLEEP_PRESETS as minutes (minutes)}

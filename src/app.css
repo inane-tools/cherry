@@ -1,5 +1,12 @@
 @import 'tailwindcss';
 
+/* Quick response with a softer finish; opacity fades use a symmetric curve. */
+:root {
+  --default-transition-duration: 180ms;
+  --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.transition-opacity { transition-timing-function: cubic-bezier(0.37, 0, 0.63, 1); }
+
 /* Typed inherited theme tokens. Colour changes are immediate; the visible
    backdrop is crossfaded by washTransition instead of interpolating tokens. */
 @property --color-accent {
@@ -205,32 +212,6 @@ html.no-gradients .cherry-playerbar {
 /* Keep colour tokens immediate. Animating inherited custom properties forces
    gradient and blurred-surface repaints across the whole app every frame.
    washTransition crossfades painted background layers instead. */
-
-/* "Loading a track" equaliser inside the play button. */
-@keyframes cherry-eq-bar {
-  0%,
-  100% {
-    transform: scaleY(0.3);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-.cherry-eq > span {
-  display: block;
-  width: 3px;
-  height: 100%;
-  border-radius: 999px;
-  background: currentColor;
-  transform-origin: center;
-  animation: cherry-eq-bar 0.9s ease-in-out infinite;
-}
-.cherry-eq > span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.cherry-eq > span:nth-child(3) {
-  animation-delay: 0.3s;
-}
 
 /* Thin, sleek custom scrollbars: no arrow buttons, clean overlay thumb. */
 *::-webkit-scrollbar {

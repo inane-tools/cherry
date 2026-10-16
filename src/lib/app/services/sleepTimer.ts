@@ -45,18 +45,25 @@ export function startSleepTimer(minutes: number, now = Date.now()): void {
   // Start fading so the music reaches silence exactly at `endsAt`.
   timer = setTimeout(() => {
     timer = null;
-    void expire();
+    void expire(endsAt);
   }, Math.max(0, ms - FADE_MS));
 }
 
-async function expire(): Promise<void> {
+async function expire(endsAt: number): Promise<void> {
+  const remaining = Math.max(0, endsAt - Date.now());
   if (get(playerStore).status !== 'playing') {
+    // A pause during the fade window must not cancel the deadline: playback
+    // might resume before it. Recheck at the actual deadline instead.
+    if (remaining > 0) {
+      timer = setTimeout(() => { timer = null; void expire(endsAt); }, remaining);
+      return;
+    }
     sleepTimerStore.set({ mode: 'off' });
     return;
   }
   const controller = new AbortController();
   fade = controller;
-  await fadeOutAndPause(FADE_MS, controller.signal);
+  await fadeOutAndPause(Math.min(FADE_MS, remaining), controller.signal);
   if (fade === controller) {
     fade = null;
     sleepTimerStore.set({ mode: 'off' });
