@@ -1,0 +1,37 @@
+name: Publish updater manifest
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag (for example v1.6.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  manifest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download published installers and signatures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected stable vX.Y.Z tag'; exit 1; }
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq 'if .isDraft or .isPrerelease then error("Stable published release required") else "Stable release" end'
+          gh release download "$RELEASE_TAG" --dir release-assets --pattern '*-setup.exe' --pattern '*-setup.exe.sig' --pattern '*.AppImage' --pattern '*.AppImage.sig'
+          node scripts/updater-manifest.mjs release-assets latest.json "${RELEASE_TAG#v}"
+      - name: Publish update metadata last
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$RELEASE_TAG" latest.json --clobber

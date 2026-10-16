@@ -4,6 +4,18 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] — 2026-10-16
+
+Shibetsu maintenance update.
+
+### Added
+
+- Signed app updates from GitHub Releases for Windows NSIS and Linux AppImage,
+  with startup checks and a Settings download/install flow. Installation waits
+  for your confirmation and preserves the queue and settings before restarting.
+- Signed installer artifacts and update metadata in CI. Flatpak users get a
+  link to the latest release bundle instead of attempting an in-app installation.
+
 ## [1.6.1] — 2026-10-15
 
 Shibetsu maintenance update.
@@ -403,6 +415,7 @@ Initial release: a lightweight, native-feeling YouTube Music desktop client on
 Tauri v2 + Svelte 5, with in-app sign-in, multiple brand channels, OS media
 controls, Discord Rich Presence, and a cached Innertube backend.
 
+[1.6.2]: https://github.com/inane-tools/cherry/releases/tag/v1.6.2
 [1.6.1]: https://github.com/inane-tools/cherry/releases/tag/v1.6.1
 [1.6.0]: https://github.com/inane-tools/cherry/releases/tag/v1.6.0
 [1.5.0]: https://github.com/inane-tools/cherry/releases/tag/v1.5.0

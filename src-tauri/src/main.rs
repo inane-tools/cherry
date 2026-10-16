@@ -16,6 +16,7 @@ mod tray_menu;
 mod webview_memory;
 mod window_controls;
 mod ytm_login;
+mod updater;
 
 use std::sync::Mutex;
 use tauri::{
@@ -135,6 +136,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(media_controls::MediaState(Mutex::new(None)))
         .manage(discord::DiscordState::default())
@@ -190,6 +192,7 @@ fn main() {
             webview_memory::set_webview_memory_low,
             set_webview_zoom,
             desktop_platform,
+            updater::updater_environment,
             window_controls::set_linux_window_controls,
         ])
         .build(tauri::generate_context!())

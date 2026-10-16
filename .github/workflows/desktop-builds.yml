@@ -69,8 +69,16 @@ jobs:
             printf "%s" "cherry-ci-test-password" | gnome-keyring-daemon --unlock --components=secrets
             cargo test --release --locked --manifest-path src-tauri/Cargo.toml
           '
-      - name: Build installers
+      - name: Build signed installers
+        if: github.event_name != 'pull_request'
         run: npm run tauri -- build --config src-tauri/tauri.ci.conf.json ${{ matrix.args }}
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+      - name: Build unsigned PR validation installers
+        if: github.event_name == 'pull_request'
+        run: npm run tauri -- build --config src-tauri/tauri.ci.conf.json --config src-tauri/tauri.unsigned.conf.json ${{ matrix.args }}
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
       - name: Build self-distributed Flatpak
@@ -86,3 +94,25 @@ jobs:
             src-tauri/target/release/bundle/nsis/*-setup.exe
             src-tauri/target/release/bundle/appimage/*.AppImage
             packaging/flatpak/out/*.flatpak
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
+
+  updater-metadata:
+    if: github.event_name != 'pull_request'
+    needs: installers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cherry-*
+          path: installers
+      - run: node scripts/updater-manifest.mjs installers latest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cherry-updater
+          path: latest.json
+          if-no-files-found: error

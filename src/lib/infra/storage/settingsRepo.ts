@@ -290,3 +290,6 @@ export function resetSettingsCache(): void {
   store = null;
   savedSecrets = '';
 }
+
+/** Wait for pending writes before an updater exits the process. */
+export async function flushSettings(): Promise<void> { await writeChain; }

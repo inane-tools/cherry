@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Cherry",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "identifier": "com.cherry.app",
   "build": {
     "frontendDist": "../dist",
@@ -32,7 +32,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "category": "Music",
     "shortDescription": "Lightweight YouTube Music client",
     "icon": [
@@ -41,6 +43,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlCRDc0MUE5NjM3MTdGMTAKUldRUWYzRmpxVUhYbTl6cFM3RVJTVkl6aFhONW05SFN2RG1TdXZGU0FSRzB3clBUcDNCUjcwZlcK",
+      "endpoints": [
+        "https://github.com/inane-tools/cherry/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { startUpdateChecks } from '$lib/app/services/updates';
   import { get } from 'svelte/store';
   import { fade, fly } from '$lib/ui/transitions';
   import { pageStore, startMouseNavigation, go } from '$lib/app/services/navigation';
@@ -84,6 +85,7 @@
   // page opened "in the middle"), and the mouse Back/Forward (X1/X2) buttons
   // drive the same history stack.
   onMount(() => {
+    const stopUpdates = startUpdateChecks();
     const stopMouse = startMouseNavigation();
     const stopLayout = startLayoutTracking();
     const unsubscribe = pageStore.subscribe(() => {
@@ -108,6 +110,7 @@
     let stopMemory = () => {};
     void startMemoryTrimming().then((stop) => (stopMemory = stop));
     return () => {
+      stopUpdates();
       stopMouse();
       stopLayout();
       unsubscribe();

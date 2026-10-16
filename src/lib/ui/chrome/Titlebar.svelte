@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
   import { listen } from '@tauri-apps/api/event';
   import { isTauri, invokeSafe } from '$lib/app/services/platform';
@@ -9,6 +9,13 @@
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
   import { back, canGoBack, go } from '$lib/app/services/navigation';
+  import { updateStore } from '$lib/app/services/updates';
+
+  async function showUpdates() {
+    go('settings');
+    await tick();
+    document.getElementById('cherry-updates')?.scrollIntoView({ block: 'center' });
+  }
 
   /**
    * Signed-out / welcome view: keep only the native window controls (and the
@@ -169,6 +176,17 @@
   <!-- Right: account + native window controls. -->
   <div class="ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls ? '' : 'pr-3'}">
     {#if !minimal}
+      {#if $updateStore.phase === 'available' || $updateStore.phase === 'ready'}
+        <button
+          class="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-accent)]/15 px-2.5 text-[11px] font-semibold text-white hover:bg-[var(--color-accent)]/25 focus-visible:outline-2 focus-visible:outline-[var(--color-accent)]"
+          title={`Cherry ${$updateStore.version} ${$updateStore.phase === 'ready' ? 'is ready to install' : 'is available'}`}
+          aria-label={`Cherry ${$updateStore.version} ${$updateStore.phase === 'ready' ? 'ready to install' : 'available'}`}
+          onclick={showUpdates}
+        >
+          <i class="bx bx-up-arrow-circle text-base text-[var(--color-accent)]" aria-hidden="true"></i>
+          <span>v{$updateStore.version}</span>
+        </button>
+      {/if}
       <button
         class="group relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--color-avatar)] transition-colors"
         title={accountName}

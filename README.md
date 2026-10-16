@@ -51,6 +51,8 @@ measurements and the Windows landmines that were hit along the way.
 
 ## Changelog
 
+**v1.6.2 (Shibetsu)** adds signed GitHub updates for Windows and AppImage installs.
+
 **v1.6.1 (Shibetsu)** fixes Discord presence clearing and adds links to the
 current song on album artwork and to inane.tools on the Cherry badge.
 
@@ -106,6 +108,13 @@ npm run tauri -- build # package a release (NSIS on Windows)
 
 Linux/macOS builds, native window controls, direct Flatpak packaging and the
 Flathub submission constraints are documented in [docs/platforms.md](docs/platforms.md).
+
+## App updates
+
+Cherry 1.6.2 supports signed GitHub updates for Windows NSIS and Linux AppImage.
+Use **Settings → Updates** to check, download, and install when ready. Flatpak
+updates use the latest release bundle. See [the updater guide](docs/updating.md)
+for signing, release assets, and testing the upgrade to 1.7.
 
 ## Project layout
 

@@ -18,6 +18,9 @@
   <requires><internet>always</internet></requires>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="1.6.2" date="2026-10-16">
+      <description><p>Adds signed GitHub updates for Windows and AppImage, and a release link for Flatpak updates.</p></description>
+    </release>
     <release version="1.6.1" date="2026-10-15">
       <description><p>Fixes Discord presence clearing and adds clickable album artwork and Cherry badge links.</p></description>
     </release>

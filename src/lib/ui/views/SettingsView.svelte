@@ -36,6 +36,7 @@
     ZOOM_STEPS,
     zoomFillPercent,
   } from '$lib/app/services/zoom';
+  import UpdateSettings from '$lib/ui/components/UpdateSettings.svelte';
   import SettingsSection from '$lib/ui/components/SettingsSection.svelte';
   import { SHORTCUT_HELP } from '$lib/app/services/shortcuts';
 
@@ -1153,6 +1154,8 @@
           Releases
         </button>
       </div>
+
+      <UpdateSettings />
 
       <div class="mt-4 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
         <div class="flex items-center gap-1.5">
