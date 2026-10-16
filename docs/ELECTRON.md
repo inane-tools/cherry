@@ -1,4 +1,4 @@
-# Electron scaffold
+# Electron port
 
 Main: electron/main.mjs. Sandboxed preload: electron/preload.cjs. Renderer
 adapters: src/lib/desktop. Pure request/path/IPC policy: electron/policy.mjs.
@@ -53,3 +53,27 @@ to capture the selected account slot.
 The player-script cache remains enabled. The shared youtubei.js session cache is
 disabled so restoring a brand session cannot leak its page context into personal
 account discovery. Signed API requests preserve the origin used by SAPISIDHASH.
+
+
+Native integration follow-up:
+
+- Manual DASH quality changes use segment replacement; initial selection does not
+  discard the buffer, and preferences resolving to the same stream are deduplicated.
+  See [dash.js quality selection](https://dashif.org/dash.js/api/module-MediaPlayer.html#setRepresentationForTypeById).
+- Discord IPC uses Node sockets (Windows pipes, Unix runtime paths and Linux
+  Flatpak/Snap locations), bounded frame parsing, handshake/request timeouts and
+  acknowledged activity changes. Clear disconnects even when the request fails;
+  the next playback update reconnects. Quit drops the socket. No new packages.
+- Last.fm auth and scrobbles use the existing renderer lifecycle and encrypted
+  secret storage. Requests are signed in the main process against a fixed HTTPS
+  endpoint, with redirects disabled and bounded response sizes.
+- Playlist image uploads retain account slot and brand page headers, sign against
+  the Music origin, validate the resumable upload destination, and return the blob
+  ID to the existing playlist edit API. No upload occurs until the user chooses it.
+- Windows taskbar preview playback buttons and pinned/recent playlist Jump Lists
+  are native. Removed shortcuts are respected; cached 64px artwork is wrapped in
+  ICO files under this fork's userData. Launch requests queue until the renderer
+  listens, including cold starts and reloads. Other platforms skip Jump Lists.
+- Live verification still needed: Discord profile display, Last.fm authorization
+  and accepted scrobbles, playlist image uploads, Windows shell menus, and quality
+  switching on the Deck. Tests use synthetic data and local/mock services.

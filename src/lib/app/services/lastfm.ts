@@ -1,5 +1,4 @@
-// Renderer API wrapper retained for the future Last.fm main-process port.
-// Native commands currently reject explicitly in the Electron scaffold.
+// Last.fm requests are signed and sent by the Electron main process.
 
 import { get } from 'svelte/store';
 import type { Track } from '$lib/core/models';

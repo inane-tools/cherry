@@ -2,7 +2,7 @@
 
 Experimental Electron fork of [Cherry](https://github.com/inane-tools/cherry),
 starting from 1.7.0 Fukagawa. The Svelte frontend is retained; Electron replaces
-the Rust/Tauri host. This is a scaffold for comparing Chromium playback,
+the Rust/Tauri host. This experimental port compares Chromium playback,
 animations and resource usage, not a replacement stable release.
 
 ## Run
@@ -41,8 +41,14 @@ No CI, release workflows, signing, automatic updates or publishing are configure
   audio/video playback, lyrics, tray playback/pinned playlists, and Chromium
   Media Session integration are wired for local testing. Google may reject
   embedded sign-in; the existing cookie fallback remains available.
-- Still to port: Discord RPC, Last.fm API commands, playlist cover uploads,
-  taskbar thumbnail buttons/Jump Lists, native GTK caption glyphs, Flatpak,
+- Discord Rich Presence (including artwork links and clear/reconnect behavior),
+  Last.fm authorization/now-playing/scrobbling, and custom playlist cover uploads
+  are ported. Windows has playback buttons in taskbar previews and pinned/recent
+  playlist Jump Lists with cached artwork. These integrations need live-account
+  testing alongside the automated protocol and IPC checks.
+- Manual video-quality changes replace buffered segments so downgrades do not
+  wait for the old high-resolution buffer to drain. Auto remains adaptive.
+- Still to port: native GTK caption glyphs, Flatpak,
   installers/signing polish and an Electron-specific updater. Unsupported
   native commands reject explicitly; they do not impersonate a working port.
   The updater cannot consume the upstream Tauri NSIS/AppImage feed.

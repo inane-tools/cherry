@@ -614,7 +614,6 @@
       description="Connect Cherry to the services you use."
       collapsible
     >
-      <p class="mb-4 text-xs text-zinc-400">Discord and Last.fm are not ported in this Electron scaffold yet.</p>
       <span slot="action" class="flex items-center gap-1.5">
         <span
           class="flex h-7 w-7 items-center justify-center rounded-lg {$settingsStore.discordEnabled
@@ -658,7 +657,8 @@
             <Toggle
               checked={$settingsStore.discordEnabled}
               label="Discord"
-              disabled onchange={setDiscordEnabled}
+              disabled={!isDesktop()}
+              onchange={setDiscordEnabled}
             />
           </div>
           <div class="mt-3 flex items-center justify-between gap-4">

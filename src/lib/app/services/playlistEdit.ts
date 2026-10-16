@@ -220,7 +220,7 @@ export async function setPlaylistImage(
   try {
     const blobId = await invokeStrict<string>(
       'upload_playlist_thumbnail',
-      { cookie: session.cookie, dataBase64, mime },
+      { cookie: session.cookie, dataBase64, mime, accountIndex: session.accountIndex ?? 0, channelId: getActiveChannel() },
       'Changing playlist art needs the desktop app.',
     );
     await setPlaylistCustomThumbnail(playlist.browseId, blobId, session);

@@ -5,6 +5,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assetPath, trustedRenderer, externalUrl } from './policy.mjs';
 import { fetchAllowed, apiHeaders } from './network.mjs';
 import { captureYouTubeSession, createAuthPersistence } from './login.mjs';
+import { createDiscordPresence } from './discord.mjs';
+import { createLastfm } from './lastfm.mjs';
+import { createTaskbarControls } from './taskbar.mjs';
+import { createPlaylistImageUpload } from './playlist-image.mjs';
+import { createJumpLists, createPlaylistLaunch } from './jump-list.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const assets = join(here, 'assets');
@@ -12,7 +17,7 @@ const devUrl = process.env.CHERRY_DEV_URL;
 const smoke = process.argv.includes('--smoke-test');
 if (devUrl && !/^http:\/\/127\.0\.0\.1:1423\/?$/.test(devUrl)) throw new Error('Invalid development origin');
 app.setName('Cherry Electron');
-app.setAppUserModelId('tools.inane.cherry.electron');
+app.setAppUserModelId(smoke ? 'tools.inane.cherry.electron.smoke' : 'tools.inane.cherry.electron');
 // Never reuse the released app's settings, cookies, updater state or keychain.
 app.setPath('userData', smoke ? join(app.getPath('temp'), 'cherry-electron-smoke-' + Date.now()) : join(app.getPath('appData'), 'cherry-electron'));
 protocol.registerSchemesAsPrivileged([
@@ -26,6 +31,12 @@ let settings = {};
 let writeChain = Promise.resolve();
 const data = name => join(app.getPath('userData'), name);
 const send = (name, value) => { if (window && !window.isDestroyed()) window.webContents.send(name, value); };
+const discord = createDiscordPresence();
+const lastfm = createLastfm();
+const updateTaskbar = createTaskbarControls({ nativeImage, dispatch: id => send('tray://action', id) });
+const uploadPlaylistImage = createPlaylistImageUpload({ userAgent: browserAgent });
+const playlistLaunch = createPlaylistLaunch(process.argv, id => send('tray://action', 'playlist:' + id));
+const jumpLists = createJumpLists({ app, nativeImage, directory: data('jump-artwork'), iconPath: join(assets, 'icon.ico') });
 async function atomic(name, text) {
   await mkdir(app.getPath('userData'), { recursive: true });
   await writeFile(data(name + '.tmp'), text, { mode: 0o600 });
@@ -110,6 +121,7 @@ function openLogin() {
   void login.loadURL('https://music.youtube.com');
 }
 function updateTray(state) {
+  updateTaskbar(window, state);
   const action = id => () => send('tray://action', id);
   if (!tray) {
     tray = new Tray(nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 20, height: 20 }));
@@ -163,15 +175,27 @@ const commands = {
     await loginSession().clearStorageData();
     loginAttempt = false; await secureAuth.clear(); await secretWrite('lastfm', null);
     await enqueueWrite(async () => { settings = {}; await rm(data('settings.json'), { force: true }); });
-    return ['Electron cache', 'settings', 'sign-in session'];
+    await rm(data('jump-artwork'), { recursive: true, force: true });
+    // Clear optional integrations even if the Windows shell rejects a menu update.
+    await discord.clear().catch(() => {});
+    const removed = ['Electron cache', 'settings', 'sign-in session', 'shortcut artwork'];
+    try { await jumpLists.update([], []); } catch { removed.push('locked:Windows playlist shortcuts'); }
+    return removed;
   },
-  take_playlist_launch: () => null,
+  take_playlist_launch: () => playlistLaunch.take(),
   update_tray: ({ state }) => updateTray(state),
-  update_jump_list: () => null, // Scaffold: desktop Jump Lists are not ported yet.
-  jump_artwork_cached: () => true,
-  discord_set_app_id: () => ({ configured: false }),
-  discord_clear_presence: () => null,
-  discord_set_presence: () => { throw new Error('Discord RPC is not ported to Electron yet'); },
+  update_jump_list: ({ pinned, recent }) => jumpLists.update(pinned, recent),
+  jump_artwork_cached: ({ thumbnail }) => jumpLists.artworkCached(thumbnail),
+  cache_jump_artwork: ({ thumbnail, pngBase64 }) => jumpLists.cacheArtwork(thumbnail, pngBase64),
+  upload_playlist_thumbnail: args => uploadPlaylistImage(args),
+  lastfm_get_token: args => lastfm.getToken(args),
+  lastfm_get_session: args => lastfm.getSession(args),
+  lastfm_now_playing: args => lastfm.nowPlaying(args),
+  lastfm_scrobble: args => lastfm.scrobble(args),
+  discord_set_app_id: ({ appId }) => discord.setAppId(appId),
+  discord_status: () => discord.status(),
+  discord_clear_presence: () => discord.clear(),
+  discord_set_presence: ({ payload }) => discord.setPresence(payload),
 };
 async function main() {
   await app.whenReady();
@@ -211,6 +235,8 @@ async function main() {
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid command arguments');
     return commands[command](args);
   });
+  window.webContents.on('did-start-navigation', details => { if (details.isMainFrame && !details.isSameDocument) playlistLaunch.reset(); });
+  window.webContents.on('render-process-gone', () => { playlistLaunch.reset(); void discord.clear().catch(() => {}); });
   window.webContents.on('will-navigate', (event, url) => { if (!trustedRenderer(url, devUrl)) event.preventDefault(); });
   window.webContents.setWindowOpenHandler(({ url }) => { try { void shell.openExternal(externalUrl(url)); } catch {} return { action: 'deny' }; });
   window.once('ready-to-show', () => { if (!smoke) window.show(); });
@@ -229,6 +255,7 @@ async function main() {
     await loginSession().cookies.set({ url: 'https://www.youtube.com/', name: 'SAPISID', value: 'smoke-signing-cookie' });
     loginAttempt = true;
     loginContext = { accountIndex: 2, selectedChannelId: 'smoke-brand' };
+    const smokeArtwork = nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 64, height: 64 }).toPNG().toString('base64');
     const errors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
     const result = await window.webContents.executeJavaScript(`(async () => {
@@ -249,10 +276,41 @@ async function main() {
       if (captured.accountIndex !== 2 || captured.selectedChannelId !== 'smoke-brand') throw Error('Account identity capture incomplete');
       if ((await bridge.invoke('auth_load')).cookie !== captured.cookie) throw Error('Captured auth was not persisted');
       await bridge.invoke('auth_clear');
+      if (!(await bridge.invoke('discord_set_app_id', { appId: '' })).configured) throw Error('Discord configuration failed');
+      await bridge.invoke('discord_clear_presence');
+      await bridge.invoke('cache_jump_artwork', { thumbnail: 'smoke-artwork', pngBase64: ${JSON.stringify(smokeArtwork)} });
+      if (!(await bridge.invoke('jump_artwork_cached', { thumbnail: 'smoke-artwork' }))) throw Error('Shortcut artwork round trip failed');
+      const checkbox = document.querySelector('.cherry-gate input[type="checkbox"]');
+      if (!checkbox) throw Error('Welcome acceptance control missing');
+      checkbox.click(); await new Promise(resolve => setTimeout(resolve, 0));
+      const settingsButton = [...document.querySelectorAll('.cherry-gate button')].find(button => button.textContent.trim() === 'Settings');
+      settingsButton?.click(); await new Promise(resolve => setTimeout(resolve, 50));
+      const heading = [...document.querySelectorAll('h2')].find(node => node.textContent === 'Integrations');
+      const integrations = heading?.closest('section');
+      if (!integrations) throw Error('Integrations settings missing');
+      integrations.querySelector('[role="button"]').click();
+      await new Promise(resolve => setTimeout(resolve, 250));
+      const discordSwitch = integrations.querySelector('button[role="switch"][aria-label="Discord"]');
+      if (!discordSwitch || discordSwitch.disabled || discordSwitch.closest('[inert]')) throw Error('Discord integration cannot be enabled');
+      discordSwitch.click();
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if ((await bridge.invoke('settings:get', { key: 'settings' })).discordEnabled) break;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      if (!(await bridge.invoke('settings:get', { key: 'settings' })).discordEnabled) throw Error('Discord toggle did not persist');
+      discordSwitch.click();
+      for (const placeholder of ['API key', 'Shared secret']) {
+        const input = integrations.querySelector('input[placeholder="' + placeholder + '"]');
+        if (!input || input.disabled) throw Error('Last.fm settings unavailable');
+        input.value = 'synthetic-test'; input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const connectLastfm = [...integrations.querySelectorAll('button')].find(button => button.textContent.includes('Connect Last.fm'));
+      if (!connectLastfm || connectLastfm.disabled || connectLastfm.closest('[inert]')) throw Error('Last.fm cannot be connected from settings');
       let rejected = false;
       try { await bridge.invoke('http_proxy_fetch', { url: 'file:///private' }); } catch { rejected = true; }
       if (!rejected) throw Error('Network validation failed');
-      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true };
+      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true };
     })()`);
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('ELECTRON_SMOKE_PASS ' + JSON.stringify(result));
@@ -261,7 +319,7 @@ async function main() {
 }
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); });
-  app.on('will-quit', () => { tray?.destroy(); });
+  app.on('second-instance', (_event, argv) => { playlistLaunch.receive(argv); if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); });
+  app.on('will-quit', () => { discord.close(); tray?.destroy(); });
   void main().catch(error => { console.error('Electron startup failed:', error); app.exit(1); });
 }

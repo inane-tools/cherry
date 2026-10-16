@@ -16,13 +16,19 @@ export async function attachAdaptiveVideo(
   let restoreFallback: (() => void) | undefined;
   let initialized = false;
   let unsubscribe = () => {};
-  function applyQuality() {
+  let selectedRepresentation: string | undefined;
+  function applyQuality(replaceBuffered = false) {
     if (!initialized || disposed || stale()) return;
     const streams = player.getRepresentationsByType('video');
     videoQualities.set([...new Set(streams.map(stream => stream.height).filter(height => height > 0))].sort((a, b) => b - a));
     const stream = pickVideoRepresentation(streams, get(settingsStore).videoQuality);
     player.updateSettings({ streaming: { abr: { autoSwitchBitrate: { video: !stream } } } });
-    if (stream) player.setRepresentationForTypeById('video', stream.id, false);
+    // A manual downgrade otherwise waits for the old high-quality buffer to drain.
+    // Replace only on a user change; startup and Auto keep normal buffering.
+    if (stream && stream.id !== selectedRepresentation) {
+      player.setRepresentationForTypeById('video', stream.id, replaceBuffered);
+    }
+    selectedRepresentation = stream?.id;
   }
   let resolveReady: () => void;
   let rejectReady: (error: Error) => void;
@@ -78,7 +84,7 @@ export async function attachAdaptiveVideo(
   unsubscribe = settingsStore.subscribe(settings => {
     if (settings.videoQuality === lastQuality) return;
     lastQuality = settings.videoQuality;
-    applyQuality();
+    applyQuality(true);
   });
   try { player.initialize(media, url, false); }
   catch { useFallback('player initialization failed'); }
