@@ -1,6 +1,8 @@
 # Cherry
 
-Cherry is a YouTube Music desktop client, it features a completely custom frontend that speaks directly to YouTube Music's internal *Innertube* API, Cherry uses the same endpoints that the official YouTube Music Web app does. Built with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
+Cherry is a YouTube Music desktop client for **Windows and Linux**, with a custom
+frontend that talks directly to YouTube Music's internal *Innertube* API. Built
+with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
 ![Cherry](https://inane.tools/screenshot-compact.webp)
 
@@ -18,11 +20,12 @@ Cherry is a YouTube Music desktop client, it features a completely custom fronte
   reorder, drop a playlist onto a folder to file it, **pin** favourites to the
   top, resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
   collapses into a slide-in drawer.
-- **Full-screen player** - click the album art to open the full-screen music view.
+- **Expanded player** - click the album art for a larger music view with artwork,
+  playback controls and a matching queue.
 - **In-app sign in** - loads music.youtube.com and captures the session from the
   native cookie store; the session lives in the **OS keychain**, never in
   localStorage. Cherry also handles multiple brand accounts, as one YouTube account can have many, it is really easy to switch between them in Settings.
-- **Edit your library** - Currently you can create playlists, add or remove songs, rename, edit
+- **Edit your library** - create playlists, add or remove songs, rename, edit
   descriptions and set a **custom cover image**; pick a **default save
   playlist**; **save / unsave** playlists you did not create; and **delete your
   own playlists** with an explicit permanent-deletion confirmation.
@@ -33,9 +36,10 @@ Cherry is a YouTube Music desktop client, it features a completely custom fronte
   moods, genres, charts and new releases from the separate Explore page.
 - **Paste a link** - drop a YouTube / YouTube Music song or playlist URL into the
   search box to open it.
-- **OS media integration** - SMTC / MPRIS / Now Playing, taskbar preview
-  buttons, hardware media keys, and album-art-driven theming. Tray controls and
-  Windows taskbar shortcuts provide quick playback of pinned/recent playlists.
+- **Desktop integration** - Windows media controls and Linux MPRIS, hardware
+  media keys, tray playback controls and pinned playlists. Windows also gets
+  taskbar preview buttons and Jump Lists for pinned and recent playlists.
+  Closing the window exits Cherry; minimizing keeps it on the taskbar.
 - **Light & dark themes** - follow the system or pick one, with the accent taken
   from the album art or a custom colour and optional background gradients. The
   window title follows the current track.
@@ -44,7 +48,11 @@ Cherry is a YouTube Music desktop client, it features a completely custom fronte
   list in Settings).
 - **Sleep timer** - stop after 5 minutes to 1.5 hours with a gentle fade, or
   at the end of the current track.
-- **Integrations** - Cherry currently has the ability to display your currently playing music as an activity on Discord and you can also scrobble songs to last.fm.
+- **Integrations** - Discord Rich Presence with clickable artwork linking to the
+  current song, plus Last.fm scrobbling.
+- **Signed updates** - startup checks and an updater inside the Cherry card in
+  Settings for Windows NSIS and Linux AppImage installations. Download when you
+  choose, then install and restart. Flatpak updates use the latest release bundle.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design notes,
 measurements and the Windows landmines that were hit along the way.
@@ -66,15 +74,24 @@ See [platform support](docs/platforms.md) and
 
 ## Download
 
-Get **[v1.6.0 Shibetsu](https://github.com/inane-tools/cherry/releases/tag/v1.6.0)**:
+Get **[v1.6.2 Shibetsu](https://github.com/inane-tools/cherry/releases/tag/v1.6.2)**
+(or check the [latest release](https://github.com/inane-tools/cherry/releases/latest)):
 
-- **Windows:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.6.0/Cherry_1.6.0_x64-setup.exe).
-- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.6.0/Cherry_1.6.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.6.0/Cherry_1.6.0_amd64.AppImage).
+- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.6.2/Cherry_1.6.2_x64-setup.exe).
+- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.6.2/Cherry_1.6.2_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.6.2/Cherry_1.6.2_amd64.AppImage).
 
-Install the downloaded Flatpak with `flatpak install --user Cherry_1.6.0_x86_64.flatpak`,
-then run `flatpak run tools.inane.cherry`. For AppImage, make the downloaded file
-executable before opening it. See [platform support](docs/platforms.md) for
-Linux keyring requirements and known limitations.
+Install the downloaded Flatpak with `flatpak install --user Cherry_1.6.2_x86_64.flatpak`,
+then run `flatpak run tools.inane.cherry`. This is a self-distributed bundle;
+Cherry is not listed on Flathub.
+
+For AppImage, run `chmod +x Cherry_1.6.2_amd64.AppImage` before opening it, and
+keep it in a writable location to use the updater. See [platform support](docs/platforms.md)
+for Linux keyring requirements and known limitations, including animation flicker
+that can remain on some Linux systems.
+
+**Users on 1.6.1 or earlier need to install 1.6.2 manually once to add the updater.** The `.sig`
+files and `latest.json` on the release are updater assets; manual installation
+only needs the installer for your platform.
 
 ## Requirements
 
@@ -85,10 +102,12 @@ Linux keyring requirements and known limitations.
 ## Develop
 
 ```bash
-npm install
+npm ci
 npm run tauri -- dev   # desktop app with hot reload
-npm run dev:linux      # Linux dev launcher; prevents duplicate media players
 ```
+
+On Linux, use `npm run dev:linux` instead to filter duplicate WebKit media-player
+entries. Install `xdg-dbus-proxy` first; see [Linux development](docs/platforms.md#duplicate-media-players-in-direct-builds).
 
 The editable logo source is `src/lib/assets/logo.png`. The copy in
 `public/logo.png` is the browser favicon; `src-tauri/icons` contains generated
@@ -101,20 +120,33 @@ Other scripts:
 
 ```bash
 npm run typecheck      # svelte-check
-npm test               # unit tests (Vitest)
+npm test               # Vitest suites + updater manifest tests
 npm run build          # build the frontend to dist/
-npm run tauri -- build # package a release (NSIS on Windows)
+npm run tauri -- build --config src-tauri/tauri.unsigned.conf.json
+                      # unsigned local validation installer (NSIS on Windows)
 ```
+
+Release builds require the updater signing key. See [the updater guide](docs/updating.md)
+for local signing and CI release steps. CI produces Windows NSIS, Linux AppImage
+and Flatpak, with signatures and a combined updater manifest.
 
 Linux/macOS builds, native window controls, direct Flatpak packaging and the
 Flathub submission constraints are documented in [docs/platforms.md](docs/platforms.md).
 
 ## App updates
 
-Cherry 1.6.2 supports signed GitHub updates for Windows NSIS and Linux AppImage.
-Use **Settings → Updates** to check, download, and install when ready. Flatpak
-updates use the latest release bundle. See [the updater guide](docs/updating.md)
-for signing, release assets, and testing the upgrade to 1.7.
+Starting with 1.6.2, Cherry checks GitHub Releases at startup. When a newer
+version is available, a button beside the account image shows its version and
+opens the updater. You can also open **Settings → Cherry card → Updates** to
+check manually, read release notes, download, then choose **Install and restart**.
+Downloading leaves playback running; installation saves your queue and settings
+before restarting.
+
+Self-updating supports Windows NSIS and Linux AppImage installations. Flatpak
+installs link to the latest bundle for manual updating. Development builds do
+not self-update. Updates are verified against Cherry's public signing key before
+installation. See [the updater guide](docs/updating.md) for signing, release
+assets, and testing the upgrade from 1.6.2 to 1.7.
 
 ## Project layout
 
@@ -124,7 +156,10 @@ src/lib/infra/      Innertube client, storage, caches
 src/lib/app/        services (player, queue, auth, settings, …)
 src/lib/ui/         chrome (titlebar/sidebar/player) and views
 src-tauri/src/      Rust: tray, media controls, Discord, keychain, HTTP relay,
-                    Last.fm, playlist images
+                    Last.fm, playlist images, signed app updates
+scripts/           Linux launcher and updater manifest generation/validation
+packaging/flatpak/  self-distributed Flatpak packaging
+.github/workflows/  native builds, signing and release updater metadata
 ```
 
 Dependencies point inward: `ui → services → infra → core`. Raw youtubei.js nodes
@@ -133,21 +168,24 @@ never leave `src/lib/infra/ytmusic/`.
 ## Tests
 
 ```bash
-npm test                       # TypeScript unit tests (jsdom, no Tauri needed)
-cd src-tauri && cargo test     # Rust unit tests
+npm test                       # Vitest + updater manifest tests; no Tauri needed
+cargo test --locked --manifest-path src-tauri/Cargo.toml  # Rust unit tests
 ```
 
-Tests sit next to the code they cover (`*.test.ts`, Rust `mod tests`). Rust
+TypeScript and Rust tests sit next to the code they cover (`*.test.ts`, Rust
+`mod tests`); updater manifest tests live in `scripts/`. Rust
 tests that need the network are `#[ignore = "network"]`, and the keychain tests
 need a real OS keychain (on Linux, a running Secret Service such as
-gnome-keyring). Run everything with `cargo test -- --include-ignored`. See
+gnome-keyring). Include ignored tests with
+`cargo test --locked --manifest-path src-tauri/Cargo.toml -- --include-ignored`. See
 [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Credits
 
-Cherry is built with the use of LLM's (Majority of code has been generated with DeepSeek v4.1 Flash) additional work done with Claude (jannuary fork features). 
-
-As of update 1.4.2, Codex with GPT-6.1 Sol working from the ideas and feedback of [inane.tools](https://inane.tools).
+Cherry is developed with LLM assistance, from the ideas and feedback of
+[inane.tools](https://inane.tools). DeepSeek v4.1 Flash generated much of the
+original code through 1.4. Codex with GPT-6.1 Sol has contributed since 1.4.2,
+with additional work by Claude through the jannuary fork.
 
 Thanks to **[jannuary](https://github.com/jannuary/cherry)**, whose fork
 contributed the code audit, the Vitest test suite, keyboard shortcuts, the sleep
@@ -156,7 +194,7 @@ timer and the repeat button. Those commits were authored by **Claude**
 [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 **Codex (OpenAI)** contributed code review, playback and sign-out fixes,
-regression tests and UI refinements.
+regression tests, UI refinements, Linux packaging and the signed GitHub updater.
 
 **DeepSeek** v4.1 Flash contributed project scaffolding and most of the coding work from v1.0 to v1.4
 
