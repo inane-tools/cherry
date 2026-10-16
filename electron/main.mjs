@@ -210,7 +210,12 @@ async function main() {
   window.on('focus', () => send('window-focus', true)); window.on('blur', () => send('window-focus', false));
   // Closing exits; there is intentionally no minimize-to-tray behavior.
   window.on('closed', () => { login?.close(); app.quit(); });
+  if (devUrl) console.log('[desktop] Loading ' + devUrl);
   await window.loadURL(devUrl ?? 'cherry://app/index.html');
+  // Some Windows launch configurations suppress the first native ShowWindow.
+  // Reveal again after navigation instead of relying only on ready-to-show.
+  if (!smoke) { window.show(); window.focus(); }
+  if (devUrl) console.log('[desktop] App loaded' + (smoke ? ' (hidden smoke test)' : ''));
   if (smoke) {
     const errors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
