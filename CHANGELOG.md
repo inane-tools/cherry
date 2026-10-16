@@ -4,6 +4,34 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] — Unreleased
+
+Fukagawa. First release candidate using Electron on Windows and Linux.
+
+### Changed
+
+- Replaced the Tauri host with Electron/Chromium, retaining the Cherry frontend,
+  version sequence and minor-version codenames. Repository names stay unchanged
+  while the migration is prepared; macOS is deferred.
+- Windows caption buttons use the system Segoe Fluent/MDL2 glyphs, scale with
+  app zoom and use black or white ink for light and dark themes.
+- Added a compact Cherry-branded NSIS installer with a destination picker.
+  Windows packaging produces only NSIS; Linux targets AppImage and Flatpak.
+- GitHub-based updates for Windows and AppImage use explicit download and
+  install actions, progress in the accent color and the existing topbar badge.
+  Flatpak stays managed by Flatpak. The Electron feed is separate from Tauri.
+
+### Fixed
+
+- Brand-channel login/session capture, streaming recovery and video-quality
+  switching. Created playlists retain edit permissions and refresh after edits.
+- Windows Jump Lists open the selected playlist; preview playback controls and
+  media-card identity are wired to Electron.
+- Cache clearing preserves preferences and credentials, full reset prevents
+  stale settings writes, logout clears browser sign-in data, and Settings sizes
+  the full local profile rather than only the HTTP cache.
+- Ported Discord Rich Presence, Last.fm scrobbling and playlist-art uploads.
+
 ## [1.7.0] — 2026-10-16
 
 Fukagawa.

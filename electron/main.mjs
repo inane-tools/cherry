@@ -12,6 +12,7 @@ import { createLastfm } from './lastfm.mjs';
 import { createTaskbarControls } from './taskbar.mjs';
 import { createPlaylistImageUpload } from './playlist-image.mjs';
 import { createJumpLists, createPlaylistLaunch, playlistArgument } from './jump-list.mjs';
+import { createUpdates, updateEnvironment } from './updates.mjs';
 import { profileSize, cleanupSteps, clearSessionCaches } from './maintenance.mjs';
 import { prepareWindowsIdentity } from './windows-identity.mjs';
 
@@ -20,7 +21,7 @@ const assets = join(here, 'assets');
 const devUrl = process.env.CHERRY_DEV_URL;
 const smoke = process.argv.includes('--smoke-test');
 if (devUrl && !/^http:\/\/127\.0\.0\.1:1423\/?$/.test(devUrl)) throw new Error('Invalid development origin');
-app.setName('Cherry Electron');
+app.setName('Cherry');
 const appId = smoke ? 'tools.inane.cherry.electron.smoke' : 'tools.inane.cherry.electron';
 app.setAppUserModelId(appId);
 // Never reuse the released app's settings, cookies, updater state or keychain.
@@ -42,6 +43,12 @@ const data = name => join(app.getPath('userData'), name);
 const send = (name, value) => { if (window && !window.isDestroyed()) window.webContents.send(name, value); };
 const discord = createDiscordPresence();
 const lastfm = createLastfm();
+const updates = createUpdates({
+  environment: updateEnvironment({ packaged: app.isPackaged, platform: process.platform, env: process.env, smoke }),
+  loadUpdater: async () => { const { default: module } = await import('electron-updater'); return module.autoUpdater; },
+  emit: state => send('updater-state', state),
+  beforeInstall: async () => { await writeChain; await session.defaultSession.flushStorageData(); await discord.clear().catch(() => {}); },
+});
 const updateTaskbar = createTaskbarControls({ nativeImage, dispatch: id => send('tray://action', id) });
 const uploadPlaylistImage = createPlaylistImageUpload({ userAgent: browserAgent });
 const playlistLaunch = createPlaylistLaunch(process.argv, id => {
@@ -159,7 +166,7 @@ function updateTray(state) {
   const action = id => () => send('tray://action', id);
   if (!tray) {
     tray = new Tray(nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 20, height: 20 }));
-    tray.setToolTip('Cherry Electron'); tray.on('click', () => { window?.show(); window?.focus(); });
+    tray.setToolTip('Cherry'); tray.on('click', () => { window?.show(); window?.focus(); });
   }
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: state.playing ? 'Pause' : 'Play', enabled: !!state.hasTrack, click: action('toggle') },
@@ -168,14 +175,19 @@ function updateTray(state) {
     { label: 'Shuffle', type: 'checkbox', checked: !!state.shuffle, click: action('shuffle') },
     { label: 'Repeat', submenu: ['off', 'all', 'one'].map(mode => ({ label: mode, type: 'radio', checked: state.repeat === mode, click: action('repeat:' + mode) })) },
     ...((state.pinned ?? []).length ? [{ type: 'separator' }, ...(state.pinned ?? []).slice(0, 30).map(p => ({ label: String(p.title).replaceAll('&', '&&'), click: action('playlist:' + p.browseId) }))] : []),
-    { type: 'separator' }, { label: 'Show Cherry Electron', click: () => window?.show() }, { label: 'Quit', click: () => app.quit() },
+    { type: 'separator' }, { label: 'Show Cherry', click: () => window?.show() }, { label: 'Quit', click: () => app.quit() },
   ]));
 }
 const commands = {
   ...(smoke ? {
+    'smoke:zoom': () => window.webContents.getZoomFactor(),
     'smoke:dispatch': ({ action }) => send('tray://action', action),
     'smoke:second-instance': ({ legacy = false }) => promisify(execFile)(process.execPath, [...(!app.isPackaged ? [app.getAppPath()] : []), '--smoke-test', ...(legacy ? ['--open-playlist', 'VLSMOKE'] : ['--open-playlist=VLSMOKE'])], { windowsHide: true, timeout: 10000 }),
   } : {}),
+  updater_state: () => updates.state(),
+  updater_check: () => updates.check(),
+  updater_download: () => updates.download(),
+  updater_install: () => updates.install(),
   desktop_platform: () => process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
   'window:minimize': () => window.minimize(),
   'window:close': () => window.close(),
@@ -285,17 +297,17 @@ async function main() {
       return new Response(response.body, { status: response.status, headers: output });
     } catch { return new Response('Media request failed', { status: 502, headers: cors }); }
   });
-  window = new BrowserWindow({ title: 'Cherry Electron', width: 1280, height: 850, minWidth: 460, minHeight: 540,
+  window = new BrowserWindow({ title: 'Cherry', width: 1280, height: 850, minWidth: 460, minHeight: 540,
     frame: false, show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
-  if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry Electron', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
+  if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
   ipcMain.handle('desktop:invoke', async (event, command, args = {}) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !trustedRenderer(event.senderFrame.url, devUrl)) throw new Error('Untrusted IPC sender');
     if (!Object.hasOwn(commands, command)) throw new Error('Desktop feature not ported: ' + String(command));
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid command arguments');
     if (resettingData) {
       if (['settings:set', 'secret_save', 'update_jump_list', 'cache_jump_artwork'].includes(command)) return;
-      if (['auth_save', 'ytm_login_finish', 'open_ytm_login'].includes(command)) throw new Error('Restart Cherry to finish clearing data.');
+      if (['auth_save', 'ytm_login_finish', 'open_ytm_login', 'updater_check', 'updater_download', 'updater_install'].includes(command)) throw new Error('Restart Cherry to finish clearing data.');
       if (command === 'auth_load' || command === 'secret_load') return null;
     }
     return commands[command](args);
@@ -322,6 +334,8 @@ async function main() {
     loginContext = { accountIndex: 2, selectedChannelId: 'smoke-brand' };
     const smokeArtwork = nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 64, height: 64 }).toPNG().toString('base64');
     if (process.platform === 'win32' && updateTaskbar(window, { hasTrack: true, playing: true }) !== true) throw new Error('Native taskbar toolbar rejected enabled buttons');
+    const { default: updaterModule } = await import('electron-updater');
+    if (typeof updaterModule.autoUpdater.checkForUpdates !== 'function') throw new Error('Packaged updater dependency missing');
     const errors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
     const result = await window.webContents.executeJavaScript(`(async () => {
@@ -345,6 +359,23 @@ async function main() {
       for (let i = 0; i < 250 && !(await bridge.invoke('settings:get', { key: 'settings' })).shuffle; i++) await new Promise(resolve => setTimeout(resolve, 20));
       if (!(await bridge.invoke('settings:get', { key: 'settings' })).shuffle) throw Error('Native action did not reach the app action router');
       const platform = await bridge.invoke('desktop_platform');
+      const updateState = await bridge.invoke('updater_state');
+      if (updateState.environment !== 'development' || (await bridge.invoke('updater_check')).phase !== 'idle') throw Error('Smoke profile attempted real updates');
+      if (platform === 'windows') {
+        const caption = document.querySelector('.win-caption');
+        if (!caption || caption.querySelectorAll('.win-glyph').length !== 3) throw Error('Windows Segoe captions missing');
+        const glyph = caption.querySelector('.win-glyph');
+        if (glyph.textContent !== '\uE921' || !getComputedStyle(glyph).fontFamily.includes('Segoe')) throw Error('Incorrect native caption glyph');
+        const wasLight = document.documentElement.classList.contains('light');
+        document.documentElement.classList.add('light');
+        if (getComputedStyle(caption.querySelector('button')).color !== 'rgb(0, 0, 0)') throw Error('Light captions must be black');
+        document.documentElement.classList.remove('light');
+        if (getComputedStyle(caption.querySelector('button')).color !== 'rgb(255, 255, 255)') throw Error('Dark captions must be white');
+        document.documentElement.classList.toggle('light', wasLight);
+        await bridge.invoke('set_window_zoom', { scale: 1.65 });
+        if (Math.abs(await bridge.invoke('smoke:zoom') - 1.65) > .001) throw Error('Caption/app zoom mismatch');
+        await bridge.invoke('set_window_zoom', { scale: 1.1 });
+      }
       await bridge.invoke('settings:set', { key: 'settings', value: { lyricsEnabled: true, theme: 'dark' } });
       const settings = await bridge.invoke('settings:get', { key: 'settings' });
       if (!settings.lyricsEnabled) throw Error('Settings round trip failed');
@@ -405,7 +436,7 @@ async function main() {
       await bridge.invoke('secret_save', { name: 'lastfm', value: 'stale-secret' });
       if (Object.keys(await bridge.invoke('settings:get', { key: 'settings' })).length) throw Error('Stale renderer settings survived reset');
       if (localStorage.getItem('smoke-preserved')) throw Error('Full reset retained localStorage');
-      return { platform, maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
+      return { platform, updater: true, windowsCaptions: platform === 'windows', maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
     })()`);
     for (const name of ['settings.json', 'lastfm.encrypted', 'auth.encrypted']) {
       try { await readFile(data(name)); throw new Error('Reset retained ' + name); } catch (error) { if (error.code !== 'ENOENT') throw error; }

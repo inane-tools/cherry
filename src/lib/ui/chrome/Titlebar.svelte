@@ -24,12 +24,14 @@
   export let narrow = false;
   export let onMenu: () => void = () => {};
 
+  let windows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
   let maximized = false;
   onMount(() => {
     let disposed = false;
     let stop = () => {};
     void (async () => {
       if (!isDesktop() || disposed) return;
+      windows = await window.cherryDesktop?.invoke<string>('desktop_platform') === 'windows';
       const win = getCurrentWindow();
       maximized = await win.isMaximized();
       const unlisten = await win.onResized(() => { void win.isMaximized().then(value => { if (!disposed) maximized = value; }); });
@@ -136,14 +138,14 @@
            (E921 minimise, E922 maximise, E923 restore, E8BB close).
            `z-40` keeps them clickable above the sign-in gate, which covers the
            rest of the window. -->
-      <div class="relative z-40 flex h-full items-stretch" data-desktop-drag-region>
+      <div class="relative z-40 flex h-full items-stretch" class:win-caption={windows} data-desktop-drag-region>
         <button
           class="flex w-[46px] items-center justify-center text-white hover:bg-white/10"
           title="Minimize"
           aria-label="Minimize"
           onclick={minimize}
         >
-          <i class="bx bx-minus text-lg" aria-hidden="true"></i>
+          {#if windows}<span class="win-glyph" aria-hidden="true">&#xE921;</span>{:else}<i class="bx bx-minus text-lg" aria-hidden="true"></i>{/if}
         </button>
         <button
           class="flex w-[46px] items-center justify-center text-white hover:bg-white/10"
@@ -151,7 +153,7 @@
           aria-label={maximized ? 'Restore' : 'Maximize'}
           onclick={toggleMaximize}
         >
-          <i class="bx {maximized ? 'bx-windows' : 'bx-square'} text-sm" aria-hidden="true"></i>
+          {#if windows}<span class="win-glyph" aria-hidden="true">{maximized ? '\uE923' : '\uE922'}</span>{:else}<i class="bx {maximized ? 'bx-windows' : 'bx-square'} text-sm" aria-hidden="true"></i>{/if}
         </button>
         <button
           class="flex w-[46px] items-center justify-center text-white hover:bg-[#c42b1c]"
@@ -159,7 +161,7 @@
           aria-label="Close"
           onclick={close}
         >
-          <i class="bx bx-x text-xl" aria-hidden="true"></i>
+          {#if windows}<span class="win-glyph" aria-hidden="true">&#xE8BB;</span>{:else}<i class="bx bx-x text-xl" aria-hidden="true"></i>{/if}
         </button>
       </div>
     {/if}

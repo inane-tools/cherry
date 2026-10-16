@@ -5,7 +5,7 @@ test('registers only this fork identity in the current-user app-name/icon regist
   const values = identityValues('tools.inane.cherry.electron', 'C:/Cherry/icon.png');
   assert.ok(values[0][1].startsWith('HKCU'));
   assert.ok(values[0][1].endsWith('tools.inane.cherry.electron'));
-  assert.ok(values[0].includes('Cherry Electron')); assert.ok(values[1].includes('C:/Cherry/icon.png'));
+  assert.ok(values[0].includes('Cherry')); assert.ok(values[1].includes('C:/Cherry/icon.png'));
   assert.throws(() => identityValues('bad/path', ''), /Invalid/);
 });
 test('does not register a Windows identity on Linux', async () => {

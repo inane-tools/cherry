@@ -7,7 +7,7 @@ export function identityValues(appId, iconPath) {
   if (!/^[a-zA-Z0-9.]+$/.test(appId)) throw new Error('Invalid Windows app identity');
   const key = ['HKCU', 'Software', 'Classes', 'AppUserModelId', appId].join(String.fromCharCode(92));
   return [
-    ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', 'Cherry Electron', '/f'],
+    ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', 'Cherry', '/f'],
     ['add', key, '/v', 'IconUri', '/t', 'REG_SZ', '/d', iconPath, '/f'],
   ];
 }

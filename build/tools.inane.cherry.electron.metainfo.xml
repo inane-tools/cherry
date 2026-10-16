@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>tools.inane.cherry.electron</id>
+  <name>Cherry</name>
+  <summary>A desktop YouTube Music player</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description><p>Listen to YouTube Music in a dedicated desktop app, with playlists, timed lyrics, music videos and desktop playback controls.</p></description>
+  <launchable type="desktop-id">tools.inane.cherry.electron.desktop</launchable>
+  <url type="homepage">https://inane.tools</url>
+  <url type="bugtracker">https://github.com/inane-tools/cherry-electron/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases><release version="1.7.1" date="2026-10-16" /></releases>
+</component>

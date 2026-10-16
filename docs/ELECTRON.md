@@ -27,8 +27,10 @@ Local test checklist:
 - Review all remaining ports before considering releases or automatic updates.
 
 CI was deliberately removed. Run typecheck, Vitest, Node policy tests and
-local packaging manually. Windows/macOS/Linux signed installers and CI are
-future work. Do not reuse the stable Cherry updater key or release repository.
+local packaging manually. Windows NSIS and Linux AppImage/Flatpak packaging are configured; macOS and CI
+are deferred. GitHub updates use electron-updater with opt-in download/install.
+See RELEASING.md and MIGRATION.md before publishing or changing the feed.
+Do not reuse the Tauri updater key or feed.
 
 Login and streaming follow-up:
 

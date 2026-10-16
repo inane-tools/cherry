@@ -1094,6 +1094,7 @@
     >
       <ul class="grid grid-cols-1 gap-x-6 text-[11px] text-zinc-400 sm:grid-cols-2">
         {#each [
+          { name: 'electron-updater', use: 'GitHub release updates for Windows and AppImage', license: 'MIT', url: 'https://github.com/electron-userland/electron-builder' },
           { name: 'Electron', use: 'Chromium desktop shell, windowing and OS integration', license: 'MIT', url: 'https://github.com/electron/electron' },
           { name: 'Svelte', use: 'UI framework', license: 'MIT', url: 'https://github.com/sveltejs/svelte' },
           { name: 'svelte-check', use: 'Svelte diagnostics and type checking', license: 'MIT', url: 'https://github.com/sveltejs/language-tools' },
