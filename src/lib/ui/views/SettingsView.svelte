@@ -76,7 +76,7 @@
       message = '';
       const parts: string[] = [];
       if (removed.length > 0) parts.push(`removed ${removed.join(', ')}`);
-      if (locked.length > 0) parts.push(`${locked.join(', ')} is locked until Cherry restarts`);
+      if (locked.length > 0) parts.push(`${locked.join(', ')} could not be cleared; restart Cherry and try again`);
       // Nothing on disk and nothing locked means there was nothing to do — a
       // second press must be a quiet no-op, not an error or a pointless restart.
       if (parts.length === 0) {
@@ -111,8 +111,8 @@
     clearingCache = true;
     clearNotice = '';
     try {
-      await clearCache();
-      clearNotice = 'Cache cleared.';
+      const { locked } = await clearCache();
+      clearNotice = locked.length ? `Some caches could not be cleared: ${locked.join(', ')}. Restart Cherry and try again.` : 'Cache cleared.';
       await refreshCacheLabel();
     } catch (e) {
       clearNotice = e instanceof Error ? e.message : String(e);
@@ -394,6 +394,7 @@
     try {
       await signOut();
       message = 'Signed out.';
+      await refreshCacheLabel();
     } catch (e) {
       error = `Could not sign out: ${errorMessage(e)} Please try again.`;
     }
@@ -1021,7 +1022,7 @@
       description="Everything Cherry keeps on this device."
     >
       <div class="flex items-center justify-between gap-4 text-[12px]">
-        <span class="text-zinc-300">Your settings, playlist cache, sign-in info</span>
+        <span class="text-zinc-300">Local data: settings, sign-in, playlists and browser caches</span>
         <span class="shrink-0 text-[11px] tabular-nums text-zinc-500">{cacheLabel}</span>
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">

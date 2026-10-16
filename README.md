@@ -37,6 +37,12 @@ No CI, release workflows, signing, automatic updates or publishing are configure
   Cherry settings and credentials are never imported or modified. On Linux without
   a secure keyring, sign-in works for the current session only,
   with a visible notice; credentials are never written as plaintext.
+- Settings shows the approximate size of the full local profile, including the
+  login partition. Clear cache removes playlist/player caches and Chromium HTTP
+  and code caches while keeping preferences, the queue and credentials. Clear
+  everything also removes local settings and sign-ins, then restarts. Locked
+  resources are reported rather than silently skipped. Signing out closes the
+  login window and removes saved YouTube credentials and login browser data.
 - YouTube Music sign-in/cookie capture, manual cookie fallback, home/library,
   audio/video playback, lyrics, tray playback/pinned playlists, and Chromium
   Media Session integration are wired for local testing. Google may reject

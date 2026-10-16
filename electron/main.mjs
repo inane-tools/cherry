@@ -12,6 +12,7 @@ import { createLastfm } from './lastfm.mjs';
 import { createTaskbarControls } from './taskbar.mjs';
 import { createPlaylistImageUpload } from './playlist-image.mjs';
 import { createJumpLists, createPlaylistLaunch, playlistArgument } from './jump-list.mjs';
+import { profileSize, cleanupSteps, clearSessionCaches } from './maintenance.mjs';
 import { prepareWindowsIdentity } from './windows-identity.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,7 @@ app.setAppUserModelId(appId);
 // Never reuse the released app's settings, cookies, updater state or keychain.
 const profilePath = smoke ? process.env.CHERRY_SMOKE_PROFILE || join(app.getPath('temp'), 'cherry-electron-smoke-' + Date.now()) : join(app.getPath('appData'), 'cherry-electron');
 app.setPath('userData', profilePath);
+app.setPath('sessionData', profilePath);
 if (smoke) process.env.CHERRY_SMOKE_PROFILE = profilePath;
 protocol.registerSchemesAsPrivileged([
   { scheme: 'cherry', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -34,6 +36,7 @@ let window;
 let login;
 let tray;
 let settings = {};
+let resettingData = false;
 let writeChain = Promise.resolve();
 const data = name => join(app.getPath('userData'), name);
 const send = (name, value) => { if (window && !window.isDestroyed()) window.webContents.send(name, value); };
@@ -88,6 +91,7 @@ async function boundedBytes(response, max = 32 * 1024 * 1024) {
 }
 const loginSession = () => session.fromPartition('persist:youtube-login');
 let loginAttempt = false;
+let loginGeneration = 0;
 let loginContext = {};
 const secureAuth = createAuthPersistence({
   available: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
@@ -95,26 +99,47 @@ const secureAuth = createAuthPersistence({
 });
 async function captureLoginContext() {
   if (!login || login.isDestroyed() || new URL(login.webContents.getURL() || 'about:blank').origin !== 'https://music.youtube.com') return;
+  const generation = loginGeneration;
   let timeout;
   const value = await Promise.race([
     login.webContents.executeJavaScript("globalThis.ytcfg?.get ? ({ accountIndex: Number(globalThis.ytcfg.get('SESSION_INDEX') ?? 0), selectedChannelId: String(globalThis.ytcfg.get('DELEGATED_SESSION_ID') ?? '') }) : null"),
     new Promise(resolve => { timeout = setTimeout(() => resolve(null), 1000); }),
   ]).catch(() => null).finally(() => clearTimeout(timeout));
-  if (value && Number.isInteger(value.accountIndex) && value.accountIndex >= 0) loginContext = value;
+  if (generation === loginGeneration && value && Number.isInteger(value.accountIndex) && value.accountIndex >= 0) loginContext = value;
 }
 async function capturedSession() {
   await captureLoginContext();
   if (!Number.isInteger(loginContext.accountIndex)) throw new Error('Waiting for the YouTube Music account page to finish loading.');
   return captureYouTubeSession(loginSession().cookies, Date.now(), loginContext);
 }
+function cancelLogin() {
+  loginGeneration++;
+  loginAttempt = false;
+  loginContext = {};
+  // Destroy bypasses the normal close handler that captures a successful login.
+  if (login && !login.isDestroyed()) login.destroy();
+  login = undefined;
+}
+async function clearAuth() {
+  cancelLogin();
+  const result = await cleanupSteps([
+    ['saved sign-in', () => secureAuth.clear()],
+    ['login browser data', () => loginSession().clearData()],
+    ['login HTTP credentials', () => loginSession().clearAuthCache()],
+    ['login connections', () => loginSession().closeAllConnections()],
+  ]);
+  if (result.locked.length) throw new Error('Could not clear ' + result.locked.join(', ') + '. Try signing out again.');
+}
 function browserAgent() { return app.userAgentFallback.replace(/\s(?:Electron|Cherry[^ /]*)\/[^ ]+/g, ''); }
 function openLogin() {
+  if (resettingData) throw new Error('Restart Cherry to finish clearing data.');
   loginAttempt = true;
   if (login && !login.isDestroyed()) { login.focus(); return; }
   loginContext = {};
   const ses = loginSession(); permissions(ses);
   login = new BrowserWindow({ title: 'Sign in to YouTube Music', width: 1020, height: 780, parent: window,
     webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  const popup = login;
   const valid = value => { try { const u = new URL(value); return u.protocol === 'https:' && ['youtube.com', 'google.com'].some(host => u.hostname === host || u.hostname.endsWith('.' + host)); } catch { return false; } };
   login.webContents.on('will-navigate', (event, url) => { if (!valid(url)) event.preventDefault(); });
   login.webContents.on('will-redirect', (event, url) => { if (!valid(url)) event.preventDefault(); });
@@ -124,9 +149,9 @@ function openLogin() {
   login.on('close', event => {
     if (closing) return;
     event.preventDefault(); closing = true;
-    void captureLoginContext().finally(() => login?.close());
+    void captureLoginContext().finally(() => { if (!popup.isDestroyed()) popup.close(); });
   });
-  login.on('closed', () => { login = undefined; });
+  login.on('closed', () => { if (login === popup) login = undefined; });
   void login.loadURL('https://music.youtube.com');
 }
 function updateTray(state) {
@@ -167,13 +192,22 @@ const commands = {
   close_devtools: () => window.webContents.closeDevTools(),
   auth_load: () => secureAuth.load(),
   auth_save: ({ session: value }) => { if (value?.kind !== 'cookie' || typeof value.cookie !== 'string' || value.cookie.length > 100000) throw new Error('Invalid session'); return secureAuth.save(value); },
-  auth_clear: async () => { loginAttempt = false; await secureAuth.clear(); await loginSession().clearStorageData(); },
+  auth_clear: clearAuth,
   secret_load: ({ name }) => { if (name !== 'lastfm') throw new Error('Unknown secret'); return secretRead('lastfm'); },
   secret_save: ({ name, value }) => { if (name !== 'lastfm' || typeof value !== 'string' || value.length > 100000) throw new Error('Invalid secret'); return secretWrite('lastfm', value); },
   open_ytm_login: openLogin,
   close_ytm_login: () => { loginAttempt = false; login?.close(); },
   ytm_login_status: async () => ({ open: !!login, url: login?.webContents.getURL() ?? '', loggedIn: loginAttempt && await capturedSession().then(() => true, () => false) }),
-  ytm_login_finish: async () => { const value = await secureAuth.save(await capturedSession()); await loginSession().cookies.flushStore(); login?.close(); loginAttempt = false; return value; },
+  ytm_login_finish: async () => {
+    const generation = loginGeneration;
+    if (!loginAttempt || resettingData) throw new Error('Sign-in was cancelled.');
+    const captured = await capturedSession();
+    if (generation !== loginGeneration || !loginAttempt) throw new Error('Sign-in was cancelled.');
+    const value = await secureAuth.save(captured);
+    await loginSession().cookies.flushStore();
+    if (generation !== loginGeneration) throw new Error('Sign-in was cancelled.');
+    login?.close(); loginAttempt = false; return value;
+  },
   http_proxy_fetch: async ({ url, method = 'GET', headers = {}, body }) => {
     if (!['GET', 'POST', 'PUT', 'DELETE', 'HEAD'].includes(method) || (body && (typeof body !== 'string' || body.length > 20 * 1024 * 1024))) throw new Error('Invalid HTTP request');
     const clean = apiHeaders(url, headers, browserAgent());
@@ -182,18 +216,29 @@ const commands = {
     return { status: response.status, headers: Object.fromEntries(response.headers), body: bytes.toString('utf8') };
   },
   http_proxy_fetch_base64: async ({ url }) => (await boundedBytes(await fetchAllowed(url))).toString('base64'),
-  cache_size: () => session.defaultSession.getCacheSize(),
+  cache_size: () => profileSize(profilePath),
+  clear_cache: () => clearSessionCaches([['App', session.defaultSession], ['Login', loginSession()]]),
   clear_local_data: async () => {
-    await writeChain; await session.defaultSession.clearCache(); await session.defaultSession.clearStorageData();
-    await loginSession().clearStorageData();
-    loginAttempt = false; await secureAuth.clear(); await secretWrite('lastfm', null);
-    await enqueueWrite(async () => { settings = {}; await rm(data('settings.json'), { force: true }); });
-    await rm(data('jump-artwork'), { recursive: true, force: true });
-    // Clear optional integrations even if the Windows shell rejects a menu update.
-    await discord.clear().catch(() => {});
-    const removed = ['Electron cache', 'settings', 'sign-in session', 'shortcut artwork'];
-    try { await jumpLists.update([], []); } catch { removed.push('locked:Windows playlist shortcuts'); }
-    return removed;
+    // Ignore subsequent stale renderer writes until relaunch, including queued
+    // settings and secret saves. Existing writes finish before deletion.
+    resettingData = true;
+    cancelLogin();
+    await writeChain;
+    const result = await cleanupSteps([
+      // Chromium clearData does not cover localStorage on our custom scheme.
+      ['app browser data', async () => {
+        await window.webContents.executeJavaScript('localStorage.clear(); sessionStorage.clear();');
+        await session.defaultSession.clearStorageData();
+        await session.defaultSession.clearData();
+      }],
+      ['login browser data', () => clearAuth()],
+      ['Last.fm credentials', () => secretWrite('lastfm', null)],
+      ['settings', () => enqueueWrite(async () => { settings = {}; await rm(data('settings.json'), { force: true }); })],
+      ['Windows playlist shortcuts', () => jumpLists.update([], [])],
+      ['shortcut artwork', () => rm(data('jump-artwork'), { recursive: true, force: true })],
+      ['Discord presence', () => discord.clear()],
+    ]);
+    return [...result.removed, ...result.locked.map(name => 'locked:' + name)];
   },
   take_playlist_launch: () => playlistLaunch.take(),
   update_tray: ({ state }) => updateTray(state),
@@ -248,6 +293,11 @@ async function main() {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !trustedRenderer(event.senderFrame.url, devUrl)) throw new Error('Untrusted IPC sender');
     if (!Object.hasOwn(commands, command)) throw new Error('Desktop feature not ported: ' + String(command));
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid command arguments');
+    if (resettingData) {
+      if (['settings:set', 'secret_save', 'update_jump_list', 'cache_jump_artwork'].includes(command)) return;
+      if (['auth_save', 'ytm_login_finish', 'open_ytm_login'].includes(command)) throw new Error('Restart Cherry to finish clearing data.');
+      if (command === 'auth_load' || command === 'secret_load') return null;
+    }
     return commands[command](args);
   });
   window.webContents.on('did-start-navigation', details => { if (details.isMainFrame && !details.isSameDocument) playlistLaunch.reset(); });
@@ -307,6 +357,8 @@ async function main() {
       if (captured.accountIndex !== 2 || captured.selectedChannelId !== 'smoke-brand') throw Error('Account identity capture incomplete');
       if ((await bridge.invoke('auth_load')).cookie !== captured.cookie) throw Error('Captured auth was not persisted');
       await bridge.invoke('auth_clear');
+      if (await bridge.invoke('auth_load')) throw Error('Logout retained saved auth');
+      if ((await bridge.invoke('ytm_login_status')).loggedIn) throw Error('Logout retained login cookies');
       if (!(await bridge.invoke('discord_set_app_id', { appId: '' })).configured) throw Error('Discord configuration failed');
       await bridge.invoke('discord_clear_presence');
       await bridge.invoke('cache_jump_artwork', { thumbnail: 'smoke-artwork', pngBase64: ${JSON.stringify(smokeArtwork)} });
@@ -341,8 +393,24 @@ async function main() {
       let rejected = false;
       try { await bridge.invoke('http_proxy_fetch', { url: 'file:///private' }); } catch { rejected = true; }
       if (!rejected) throw Error('Network validation failed');
-      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
+      localStorage.setItem('smoke-preserved', 'queue and preferences');
+      const cleanup = await bridge.invoke('clear_cache');
+      if (cleanup.locked.length) throw Error('Native cache clear failed: ' + cleanup.locked.join(', '));
+      if (localStorage.getItem('smoke-preserved') !== 'queue and preferences') throw Error('Cache clear removed app data');
+      if (await bridge.invoke('secret_load', { name: 'lastfm' }) !== 'smoke-secret') throw Error('Cache clear removed credentials');
+      if (!(await bridge.invoke('cache_size') > 0)) throw Error('Profile size did not include local data');
+      const wiped = await bridge.invoke('clear_local_data');
+      if (wiped.some(name => name.startsWith('locked:'))) throw Error('Full reset incomplete: ' + wiped.join(', '));
+      await bridge.invoke('settings:set', { key: 'settings', value: { stale: true } });
+      await bridge.invoke('secret_save', { name: 'lastfm', value: 'stale-secret' });
+      if (Object.keys(await bridge.invoke('settings:get', { key: 'settings' })).length) throw Error('Stale renderer settings survived reset');
+      if (localStorage.getItem('smoke-preserved')) throw Error('Full reset retained localStorage');
+      return { platform, maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
     })()`);
+    for (const name of ['settings.json', 'lastfm.encrypted', 'auth.encrypted']) {
+      try { await readFile(data(name)); throw new Error('Reset retained ' + name); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    if ((await loginSession().cookies.get({})).length) throw new Error('Logout retained browser cookies');
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('ELECTRON_SMOKE_PASS ' + JSON.stringify(result));
     app.quit();
