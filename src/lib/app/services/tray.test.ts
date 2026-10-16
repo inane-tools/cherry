@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 const events = vi.hoisted(() => new Map<string, (event: { payload: string }) => void>());
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name, handler) => { events.set(name, handler); return () => events.delete(name); }) }));
-vi.mock('./platform', () => ({ isTauri: () => true, invokeSafe: vi.fn(async () => null) }));
+vi.mock('$lib/desktop/event', () => ({ listen: vi.fn(async (name, handler) => { events.set(name, handler); return () => events.delete(name); }) }));
+vi.mock('./platform', () => ({ isDesktop: () => true, invokeSafe: vi.fn(async () => null) }));
 vi.mock('./player', async () => {
   const { writable } = await import('svelte/store');
   return { playerStore: writable({ status: 'playing', track: { videoId: 'song', title: 'Song', artists: [{ name: 'Artist' }], thumbnails: [] }, positionSeconds: 20, durationSeconds: 100, volume: 0.8, muted: false }), toggle: vi.fn(), next: vi.fn(), prev: vi.fn(), seekTo: vi.fn(), setVolume: vi.fn(), setMuted: vi.fn(), toggleShuffle: vi.fn() };

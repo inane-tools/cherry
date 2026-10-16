@@ -9,7 +9,7 @@
 //  3. the keychain session (cleared in Rust via `auth_clear`).
 
 import { cacheClear } from '$lib/infra/storage/cache';
-import { invokeSafe, invokeStrict, isTauri } from './platform';
+import { invokeSafe, invokeStrict, isDesktop } from './platform';
 import { resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
 
 export interface ClearResult {
@@ -21,7 +21,7 @@ export interface ClearResult {
 
 /** Approximate size of the on-disk app data, formatted for display. */
 export async function formatCacheSize(): Promise<string> {
-  if (!isTauri()) return 'unknown';
+  if (!isDesktop()) return 'unknown';
   const bytes = await invokeSafe<number>('cache_size');
   if (bytes === null) return 'unknown';
   if (bytes < 1024) return `${bytes} B`;
@@ -50,7 +50,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 /**
- * Delete every in-page cache. Safe to call whether or not we are in Tauri.
+ * Delete every in-page cache. Safe to call whether or not we are in Electron.
  *
  * Every step is independently guarded and time-boxed: `indexedDB.deleteDatabase`
  * fires `onblocked` (and never `onsuccess`) while youtubei.js still holds a
@@ -116,7 +116,7 @@ export async function clearCache(): Promise<ClearResult> {
  * Clear everything Cherry stores locally.
  *
  * The in-page caches are dropped first so the running app stops reading them
- * immediately; the Rust side then removes the settings store and any on-disk
+ * immediately; the Electron side then removes the settings store and any on-disk
  * caches it can get at.
  */
 export async function clearAllData(): Promise<ClearResult> {
@@ -124,7 +124,7 @@ export async function clearAllData(): Promise<ClearResult> {
   resetInnertubeClient();
 
   let removed: string[] = [];
-  if (isTauri()) {
+  if (isDesktop()) {
     removed = await invokeStrict<string[]>('clear_local_data');
   }
 

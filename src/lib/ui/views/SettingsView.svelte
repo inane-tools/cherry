@@ -28,7 +28,7 @@
   import { refreshDiscord } from '$lib/app/services/player';
   import { clearAllData, clearCache, formatCacheSize } from '$lib/app/services/maintenance';
   import { DISCLAIMER } from '$lib/app/services/gate';
-  import { errorMessage, isTauri } from '$lib/app/services/platform';
+  import { errorMessage, isDesktop } from '$lib/app/services/platform';
   import {
     applyZoom,
     ZOOM_MAX,
@@ -89,9 +89,9 @@
       // would make a cleared settings file reappear. A relaunch starts clean.
       // Its failure must never look like the *clear* failed, so it is caught
       // separately.
-      if (isTauri()) {
+      if (isDesktop()) {
         try {
-          const { relaunch } = await import('@tauri-apps/plugin-process');
+          const { relaunch } = await import('$lib/desktop/process');
           await relaunch();
         } catch {
           clearNotice = `Cleared — ${parts.join('; ')}. Restart Cherry to finish.`;
@@ -441,11 +441,11 @@
   }
 
   async function openExternal(url: string) {
-    if (!isTauri()) {
+    if (!isDesktop()) {
       window.open(url, '_blank', 'noopener');
       return;
     }
-    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    const { openUrl } = await import('$lib/desktop/opener');
     await openUrl(url);
   }
 
@@ -495,13 +495,13 @@
       {#if !$authStore && phase !== 'waiting'}
         <button
           class="cherry-btn-scrim flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
-          disabled={phase === 'starting' || !isTauri()}
+          disabled={phase === 'starting' || !isDesktop()}
           onclick={loginWithYouTube}
         >
           <i class="bx bxl-youtube text-base"></i>
           {phase === 'starting' ? 'Opening…' : 'Sign in with YouTube Music'}
         </button>
-        {#if !isTauri()}
+        {#if !isDesktop()}
           <p class="mt-2 text-[10px] text-zinc-600">In-app sign-in needs the desktop app.</p>
         {/if}
       {/if}
@@ -608,6 +608,7 @@
       description="Connect Cherry to the services you use."
       collapsible
     >
+      <p class="mb-4 text-xs text-zinc-400">Discord and Last.fm are not ported in this Electron scaffold yet.</p>
       <span slot="action" class="flex items-center gap-1.5">
         <span
           class="flex h-7 w-7 items-center justify-center rounded-lg {$settingsStore.discordEnabled
@@ -651,7 +652,7 @@
             <Toggle
               checked={$settingsStore.discordEnabled}
               label="Discord"
-              onchange={setDiscordEnabled}
+              disabled onchange={setDiscordEnabled}
             />
           </div>
           <div class="mt-3 flex items-center justify-between gap-4">
@@ -1055,13 +1056,13 @@
         </label>
         <div class="flex items-center justify-between gap-4 py-3 last:pb-0">
           <span class="flex items-center gap-2 text-[12px] text-zinc-300">
-            <i class="bx bx-code-alt shrink-0 text-sm text-zinc-500"></i>WebView DevTools
+            <i class="bx bx-code-alt shrink-0 text-sm text-zinc-500"></i>Chromium DevTools
             <span class="text-zinc-600">(F12)</span>
           </span>
           <div class="flex gap-2">
             <button
               class="rounded-lg bg-white/[0.06] h-8 px-3 text-[11px] text-zinc-400 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
-              disabled={!$settingsStore.devToolsEnabled || !isTauri()}
+              disabled={!$settingsStore.devToolsEnabled || !isDesktop()}
               onclick={() => openDevTools()}
             >
               Open DevTools
@@ -1086,8 +1087,7 @@
     >
       <ul class="grid grid-cols-1 gap-x-6 text-[11px] text-zinc-400 sm:grid-cols-2">
         {#each [
-          { name: 'Tauri', use: 'desktop shell, windowing, OS integration', license: 'MIT / Apache-2.0', url: 'https://github.com/tauri-apps/tauri' },
-          { name: 'Tauri plugins', use: 'signed updates, restart, settings storage, links, shortcuts and single-instance handling', license: 'MIT / Apache-2.0', url: 'https://github.com/tauri-apps/plugins-workspace' },
+          { name: 'Electron', use: 'Chromium desktop shell, windowing and OS integration', license: 'MIT', url: 'https://github.com/electron/electron' },
           { name: 'Svelte', use: 'UI framework', license: 'MIT', url: 'https://github.com/sveltejs/svelte' },
           { name: 'svelte-check', use: 'Svelte diagnostics and type checking', license: 'MIT', url: 'https://github.com/sveltejs/language-tools' },
           { name: 'TypeScript', use: 'frontend type checking', license: 'Apache-2.0', url: 'https://github.com/microsoft/TypeScript' },
@@ -1098,18 +1098,8 @@
           { name: 'youtubei.js', use: 'YouTube / YouTube Music (Innertube) API', license: 'MIT', url: 'https://github.com/LuanRT/YouTube.js' },
           { name: 'hls.js', use: 'live station playback', license: 'Apache-2.0', url: 'https://github.com/video-dev/hls.js' },
           { name: 'dash.js', use: 'adaptive HD music videos', license: 'BSD-3-Clause', url: 'https://github.com/Dash-Industry-Forum/dash.js' },
-          { name: 'souvlaki', use: 'OS media controls (SMTC / MPRIS)', license: 'MIT', url: 'https://github.com/Sinono3/souvlaki' },
-          { name: 'discord-rich-presence', use: 'Discord Rich Presence', license: 'MIT', url: 'https://github.com/EmbarkStudios/discord-rich-presence' },
           { name: 'Boxicons', use: 'icon set', license: 'CC BY 4.0', url: 'https://github.com/atisawd/boxicons' },
           { name: 'Gabarito', use: 'typeface', license: 'OFL-1.1', url: 'https://github.com/googlefonts/gabarito' },
-          { name: 'keyring', use: 'OS credential storage', license: 'MIT / Apache-2.0', url: 'https://github.com/hwchen/keyring-rs' },
-          { name: 'serde / reqwest / tokio', use: 'Rust serialization, HTTP, async runtime', license: 'MIT / Apache-2.0', url: 'https://github.com/serde-rs/serde' },
-          { name: 'base64', use: 'base64 (relay, playlist images)', license: 'MIT / Apache-2.0', url: 'https://github.com/marshallpierce/rust-base64' },
-          { name: 'url', use: 'URL parsing', license: 'MIT / Apache-2.0', url: 'https://github.com/servo/rust-url' },
-          { name: 'md5', use: 'Last.fm API request signing', license: 'Apache-2.0 / MIT', url: 'https://github.com/ivan-ukhov/rust-md5' },
-          { name: 'sha1', use: 'SAPISIDHASH (playlist image upload)', license: 'MIT / Apache-2.0', url: 'https://github.com/RustCrypto/hashes' },
-          { name: 'webview2-com', use: 'WebView2 memory trimming', license: 'MIT', url: 'https://github.com/wravery/webview2-rs' },
-          { name: 'windows-rs', use: 'Windows API bindings', license: 'MIT / Apache-2.0', url: 'https://github.com/microsoft/windows-rs' },
         ] as dep}
           <li class="flex items-baseline justify-between gap-2 py-1.5">
             <a
@@ -1181,7 +1171,7 @@
         <button
           class="flex h-8 shrink-0 items-center gap-1.5 self-center rounded-lg bg-white/[0.06] px-3 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
           title="Releases on GitHub"
-          onclick={() => openExternal('https://github.com/inane-tools/cherry/releases')}
+          onclick={() => openExternal('https://github.com/inane-tools/cherry-electron/releases')}
         >
           <i class="bx bxl-github text-base"></i>
           Releases
@@ -1208,7 +1198,7 @@
             class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
             title="GitHub repository"
             aria-label="GitHub repository"
-            onclick={() => openExternal('https://github.com/inane-tools/cherry')}
+            onclick={() => openExternal('https://github.com/inane-tools/cherry-electron')}
           >
             <i class="bx bxl-github text-lg"></i>
           </button>

@@ -1,9 +1,4 @@
-// UI zoom: scales the whole window like browser zoom, using WebView2's native
-// zoom factor (via the `set_webview_zoom` Rust command) rather than a CSS
-// transform, so fixed-position chrome and the overlay scrollbar stay correct.
-//
-// The level lives in settings; this module is the single place that pushes it
-// to the webview.
+// Scale the whole window with Electron webContents.setZoomFactor.
 
 import { invokeSafe } from './platform';
 import { settingsStore } from './settings';
@@ -48,7 +43,7 @@ export function applyZoom(scale: number): void {
   if (next === applied) return;
   applied = next;
   renderedZoom.set(next * ZOOM_BASE);
-  void invokeSafe('set_webview_zoom', { scale: next * ZOOM_BASE });
+  void invokeSafe('set_window_zoom', { scale: next * ZOOM_BASE });
 }
 
 let started = false;

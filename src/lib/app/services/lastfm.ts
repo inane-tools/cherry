@@ -1,13 +1,9 @@
-// Last.fm scrobbling (frontend).
-//
-// The user supplies their own API key + secret and authorizes the app in the
-// browser; the resulting session key is kept in settings. All signing and HTTP
-// happens in Rust (`lastfm.rs`) — this module is the typed wrapper plus the
-// configuration checks that gate the scrobble service.
+// Renderer API wrapper retained for the future Last.fm main-process port.
+// Native commands currently reject explicitly in the Electron scaffold.
 
 import { get } from 'svelte/store';
 import type { Track } from '$lib/core/models';
-import { invokeStrict as invokeDesktop, isTauri } from './platform';
+import { invokeStrict as invokeDesktop, isDesktop } from './platform';
 
 const DESKTOP_ONLY = 'Last.fm scrobbling needs the desktop app.';
 const invokeStrict = <T>(cmd: string, args?: Record<string, unknown>) =>
@@ -21,11 +17,11 @@ export function lastfmActive(): boolean {
 }
 
 export async function openExternal(url: string): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     window.open(url, '_blank', 'noopener');
     return;
   }
-  const { openUrl } = await import('@tauri-apps/plugin-opener');
+  const { openUrl } = await import('$lib/desktop/opener');
   await openUrl(url);
 }
 

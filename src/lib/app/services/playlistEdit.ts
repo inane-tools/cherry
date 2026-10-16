@@ -198,7 +198,7 @@ function applyThumbnails(playlist: Playlist, thumbnails: Thumbnail[]): void {
 /**
  * Set a custom cover image on a playlist.
  *
- * Two steps: Rust uploads the bytes and returns an encrypted blob id (the
+ * Two steps: The desktop host uploads the bytes and returns an encrypted blob id (the
  * upload endpoints are not Innertube calls, so they need the browser
  * `SAPISIDHASH` signed request), then the normal edit endpoint attaches it with
  * `ACTION_SET_CUSTOM_THUMBNAIL`.

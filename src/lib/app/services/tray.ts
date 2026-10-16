@@ -1,6 +1,6 @@
 import { derived, get } from 'svelte/store';
-import { listen } from '@tauri-apps/api/event';
-import { invokeSafe, isTauri } from './platform';
+import { listen } from '$lib/desktop/event';
+import { invokeSafe, isDesktop } from './platform';
 import { playerStore, toggle, next, prev, toggleShuffle } from './player';
 import { repeatMode, shuffleMode, setRepeat } from './queue';
 import { pinnedStore } from './pins';
@@ -11,7 +11,7 @@ import { trackDisplayArtists, type RepeatMode } from '$lib/core/models';
 import { prepareJumpArtwork, type PlaylistShortcut } from './jumpArtwork';
 
 export async function startTray(): Promise<() => void> {
-  if (!isTauri()) return () => {};
+  if (!isDesktop()) return () => {};
   const windows = await invokeSafe<string>('desktop_platform') === 'windows';
   async function action(id: string) {
     if (id.startsWith('playlist:')) {

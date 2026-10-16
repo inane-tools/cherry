@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.mock('./platform', () => ({ isTauri: () => true, invokeStrict: vi.fn(), invokeSafe: vi.fn() }));
+vi.mock('./platform', () => ({ isDesktop: () => true, invokeStrict: vi.fn(), invokeSafe: vi.fn() }));
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
   clearStreamCache: vi.fn(), getInnertube: vi.fn(), resetInnertubeClient: vi.fn(),
 }));

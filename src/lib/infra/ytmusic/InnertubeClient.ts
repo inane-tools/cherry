@@ -11,7 +11,7 @@
 //   YouTube Music") or pasted manually. Stored in the OS keychain.
 //   Anonymous mode works for search; anonymous *playback* falls back to
 //   TV/ANDROID player clients when YouTube bot-walls the WEB client.
-// - In Tauri, youtubei.js traffic relays through Rust (CORS-free); the
+// - In Electron, youtubei.js traffic relays through Rust (CORS-free); the
 //   Cookie header rides along like any other header.
 // - All raw-API access stays in this file + mappers.ts. Services/UI only
 //   see stable core models.
@@ -32,7 +32,7 @@ import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
 import { scanHome, scanPageHeader, homeContinuation, scanHomeFilters, isNoiseSegment, type HomeSection, type HomeFilter } from './rawHome';
-import { innertubeFetch } from './tauriFetch';
+import { innertubeFetch } from './desktopFetch';
 import { mediaProxyUrl } from './mediaProxy';
 import { installEvaluator } from './evaluator';
 import { lyricsBrowseId, parseLyrics, parseRadio, musicVideoCounterpart, findPlaybackNode } from './rawPlayback';
@@ -168,8 +168,8 @@ export async function getInnertube(
         cookie: session?.cookie,
         retrieve_player: retrievePlayer,
         ...(channel ? { on_behalf_of_user: channel } : {}),
-        // In Tauri, direct fetch() to Google is CORS-blocked in the webview;
-        // relay through Rust (reqwest). No-op outside Tauri.
+        // In Electron, direct fetch() to Google is CORS-blocked in the webview;
+        // relay through the Electron main process. No-op outside Electron.
         fetch: innertubeFetch(),
         cache: getYtCache(Platform),
       } as never)) as AnyInnertube;

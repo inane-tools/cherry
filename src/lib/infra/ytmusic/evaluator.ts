@@ -10,7 +10,7 @@
 // Isolation: the script is code extracted from YouTube's player JS, fetched at
 // run time. It is pure string shuffling, but it is still remote code, so it runs
 // in a dedicated **Web Worker** rather than the page: a worker has no DOM, no
-// `window.__TAURI_INTERNALS__` and therefore no IPC — it cannot call the
+// `window.cherryDesktop` and therefore no IPC — it cannot call the
 // keychain, the HTTP relay or any other command even if the fetched code were
 // ever malicious. Each evaluation is time-boxed; a script that hangs gets its
 // worker terminated (and replaced) instead of freezing playback forever.

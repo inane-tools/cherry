@@ -1,6 +1,6 @@
-// Settings persistence: tauri-plugin-store on desktop, localStorage in browser.
+// Settings persistence: the Electron atomic JSON store on desktop, localStorage in browser.
 // Auth cookies/visitor-data are sensitive → they go to the OS keychain via
-// Rust commands (`auth_save`/`auth_load`/`auth_clear`), never here.
+// Electron commands (`auth_save`/`auth_load`/`auth_clear`), never here.
 //
 // The Last.fm API secret and session key are part of `CherrySettings` (the UI
 // treats them like any other setting) but are **never written to the store**:
@@ -8,8 +8,8 @@
 // `secret_save`/`secret_load` commands. Older versions wrote them in plaintext;
 // `loadSettings` moves any it finds into the keychain and rewrites the store.
 
-import { Store } from '@tauri-apps/plugin-store';
-import { isTauri } from '$lib/app/services/platform';
+import { Store } from '$lib/desktop/store';
+import { isDesktop } from '$lib/app/services/platform';
 import type { PinnedPlaylist, PlaylistFolder } from '$lib/core/models';
 
 export interface CherrySettings {
@@ -98,7 +98,7 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   muted: false,
   repeat: 'off',
   shuffle: false,
-  discordEnabled: true,
+  discordEnabled: false,
   discordAppId: '',
   discordStatusDisplay: 'details',
   channelPageId: '',
@@ -188,7 +188,7 @@ function hasSecrets(secrets: Secrets): boolean {
 }
 
 async function invoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('$lib/desktop/core');
   return invoke<T>(cmd, args);
 }
 
@@ -212,7 +212,7 @@ async function saveSecrets(secrets: Secrets): Promise<void> {
 }
 
 async function getStore(): Promise<Store | null> {
-  if (!isTauri()) return null;
+  if (!isDesktop()) return null;
   if (!store) store = await Store.load(STORE_PATH);
   return store;
 }

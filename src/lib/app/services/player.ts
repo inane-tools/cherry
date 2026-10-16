@@ -1,11 +1,11 @@
 // Player service: owns the single <audio> element, stream resolution,
-// OS integration (media keys metadata via Rust, Discord presence).
+// OS integration (media keys metadata via Electron IPC, Discord presence).
 //
 // Flow: playTrack(s) → queue.setQueue → loadCurrent() → Innertube stream URL
 // → audio.src → play. Autoplay advances via queue.step().
 
 import { get, writable } from 'svelte/store';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '$lib/desktop/window';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
 import { toCherryError } from '$lib/core/errors';
@@ -13,7 +13,7 @@ import { getAudioStream, getInnertube, prefetchAudioStream, getMusicVideo } from
 import { authStore } from './auth';
 import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
 import type { RepeatMode } from '$lib/core/models';
-import { invokeSafe, isTauri } from './platform';
+import { invokeSafe, isDesktop } from './platform';
 import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
 import { rememberPosition, restoreQueue, watchQueue } from './queuePersistence';
@@ -278,7 +278,7 @@ function initWindowTitle(): void {
       : 'Cherry';
     if (title === lastWindowTitle) return;
     lastWindowTitle = title;
-    if (!isTauri()) return;
+    if (!isDesktop()) return;
     void getCurrentWindow().setTitle(title).catch(() => undefined);
   });
 }
@@ -828,10 +828,10 @@ function flushDiscord(): Promise<void> {
 }
 
 async function sendDiscordState(): Promise<void> {
-  if (!isTauri()) return;
+  if (!isDesktop()) return;
   // Read state after importing IPC and after prior writes finish, so an old
   // snapshot cannot restore presence after Stop, disable, or a long pause.
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('$lib/desktop/core');
   discordDirty = false;
   discordLastPush = Date.now();
   const st = get(playerStore);
@@ -868,7 +868,7 @@ async function sendDiscordState(): Promise<void> {
 /** Configure the Discord application id (Settings → Integrations). */
 export async function setDiscordAppId(appId: string): Promise<{ configured: boolean }> {
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('$lib/desktop/core');
     return await invoke<{ configured: boolean }>('discord_set_app_id', { appId });
   } catch (e) {
     // eslint-disable-next-line no-console

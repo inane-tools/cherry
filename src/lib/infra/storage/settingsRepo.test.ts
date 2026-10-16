@@ -5,8 +5,8 @@ const file = new Map<string, unknown>();
 const keychain = new Map<string, string>();
 let keychainBroken = false;
 
-vi.mock('$lib/app/services/platform', () => ({ isTauri: () => true }));
-vi.mock('@tauri-apps/plugin-store', () => ({
+vi.mock('$lib/app/services/platform', () => ({ isDesktop: () => true }));
+vi.mock('$lib/desktop/store', () => ({
   Store: {
     load: async () => ({
       get: async (key: string) => structuredClone(file.get(key)),
@@ -15,7 +15,7 @@ vi.mock('@tauri-apps/plugin-store', () => ({
     }),
   },
 }));
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('$lib/desktop/core', () => ({
   invoke: vi.fn(async (cmd: string, args: { name: string; value?: string }) => {
     if (keychainBroken) throw new Error('no secret service');
     if (cmd === 'secret_load') return keychain.get(args.name) ?? null;

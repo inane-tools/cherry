@@ -1,17 +1,14 @@
-// Listens for OS media events forwarded by the Rust backend (SMTC on Windows:
-// the taskbar preview and the Action Center media card, plus hardware media
-// keys) and routes them to the player. Also registers app-level global
-// shortcuts as fallback.
+// OS media actions use Chromium Media Session through the desktop adapter.
 
-import { listen } from '@tauri-apps/api/event';
+import { listen } from '$lib/desktop/event';
 import { next, prev, toggle, playerStore, seekTo, setVolume } from './player';
-import { isTauri } from './platform';
+import { isDesktop } from './platform';
 import { get } from 'svelte/store';
 
 let started = false;
 
 export async function startMediaKeyListener(): Promise<void> {
-  if (started || !isTauri()) return;
+  if (started || !isDesktop()) return;
   started = true;
   const routes: Record<string, () => Promise<void> | void> = {
     'media-key://playpause': () => toggle(),

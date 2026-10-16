@@ -7,7 +7,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const host = process.env.TAURI_DEV_HOST;
+const host = '127.0.0.1';
 
 /** Single source of truth for the app version shown in Settings. */
 function appVersion(): string {
@@ -31,7 +31,7 @@ function buildStamp(): string {
   return `${rev} · ${new Date().toISOString().replace('T', ' ').slice(0, 19)}Z`;
 }
 
-// https://vite.dev/config/ + https://v2.tauri.app/reference/config/
+// Frontend served by Vite in development and the app protocol when packaged.
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   resolve: { alias: { $lib: path.resolve(dirname, 'src/lib') } },
@@ -41,19 +41,19 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
-    port: 1420,
+    port: 1423,
     strictPort: true,
     host: host || '127.0.0.1',
-    // WebView2 caches dev modules across app restarts, which made edits look
+    // Electron caches dev modules across app restarts, which made edits look
     // like they were not applied. Never cache them while developing.
     headers: { 'Cache-Control': 'no-store' },
-    hmr: host ? { protocol: 'ws', host, port: 1421 } : undefined,
-    watch: { ignored: ['**/src-tauri/**'] },
+    hmr: { host, port: 1423 },
+    watch: { ignored: ['**/electron/**'] },
   },
   build: {
-    // Match Tailwind 4's browser floor; older WebKit cannot render the UI.
-    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome111' : 'safari16.4',
-    minify: !process.env.TAURI_ENV_DEBUG ? 'oxc' : false,
-    sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    // Match Tailwind 4's browser floor; older browsers cannot render the UI.
+    target: 'chrome146',
+    minify: 'oxc',
+    sourcemap: false,
   },
 });

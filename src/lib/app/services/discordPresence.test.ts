@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => undefined) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
-vi.mock('./platform', () => ({ isTauri: () => true, invokeSafe: (cmd: string, args?: unknown) => invoke(cmd, args) }));
+vi.mock('$lib/desktop/core', () => ({ invoke }));
+vi.mock('./platform', () => ({ isDesktop: () => true, invokeSafe: (cmd: string, args?: unknown) => invoke(cmd, args) }));
 vi.mock('./settings', async () => ({ settingsStore: (await import('svelte/store')).writable({ discordEnabled: true, discordStatusDisplay: 'details' }), updateSettings: vi.fn() }));
 vi.mock('./auth', async () => ({ authStore: (await import('svelte/store')).writable(null) }));
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ getAudioStream: vi.fn(), getInnertube: vi.fn(), prefetchAudioStream: vi.fn() }));

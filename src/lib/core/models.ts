@@ -1,5 +1,5 @@
 // ── Cherry core domain ─────────────────────────────────────────────
-// Pure types. No Tauri, no Innertube, no DOM imports allowed here.
+// Pure types. No Electron, no Innertube, no DOM imports allowed here.
 
 export type VideoId = string;
 export type BrowseId = string;

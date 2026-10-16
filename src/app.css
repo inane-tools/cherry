@@ -513,3 +513,7 @@ html.cherry-linux-window .cherry-range::-webkit-slider-thumb {
     scroll-behavior: auto !important;
   }
 }
+
+/* Native draggable region; interactive controls opt out. */
+[data-desktop-drag-region] { -webkit-app-region: drag; }
+[data-desktop-drag-region] button, [data-desktop-drag-region] input, [data-desktop-drag-region] a, [data-desktop-drag-region] form { -webkit-app-region: no-drag; }

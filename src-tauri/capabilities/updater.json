@@ -1,6 +1,0 @@
-{
-  "identifier": "updater",
-  "description": "Only the main app can check, download and install signed updates.",
-  "windows": ["main"],
-  "permissions": ["updater:default"]
-}
