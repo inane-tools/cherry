@@ -29,3 +29,16 @@ Local test checklist:
 CI was deliberately removed. Run typecheck, Vitest, Node policy tests and
 local packaging manually. Windows/macOS/Linux signed installers and CI are
 future work. Do not reuse the stable Cherry updater key or release repository.
+
+Login and streaming follow-up:
+
+- Capture YouTube Music and www.youtube.com cookies; require signing and session
+  cookies, excluding Google-domain collisions. The login can finish after the
+  remote window closes. Without secure OS storage, sign-in is explicitly temporary.
+- API relays preserve requested mobile identities and add browser User-Agent and
+  Origin defaults for desktop requests. Googlevideo progressive/DASH/fallback
+  requests use the same range-aware relay.
+- Connection and stalled-body waits are bounded; active streams have no fixed
+  total-duration cutoff. Canceling media cancels its upstream transfer.
+- Runtime stream failures refresh once with the play/pause state and position
+  retained. Repeat failures display an error instead of retrying indefinitely.

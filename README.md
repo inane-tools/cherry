@@ -32,9 +32,11 @@ No CI, release workflows, signing, automatic updates or publishing are configure
   stays enabled. Local assets use a secure custom protocol; API and media relays
   validate destinations and redirects, and DASH media streams without base64 IPC.
 - Persistent settings and encrypted auth/Last.fm secrets using Electron
-  safeStorage. Data lives in a separate cherry-electron directory. Existing
-  Cherry settings and credentials are never imported or modified. Linux refuses
-  secret writes when only the insecure basic_text backend is available.
+  safeStorage. Login captures both YouTube cookie scopes, including after the
+  login window closes. Data lives in a separate cherry-electron directory. Existing
+  Cherry settings and credentials are never imported or modified. On Linux without
+  a secure keyring, sign-in works for the current session only,
+  with a visible notice; credentials are never written as plaintext.
 - YouTube Music sign-in/cookie capture, manual cookie fallback, home/library,
   audio/video playback, lyrics, tray playback/pinned playlists, and Chromium
   Media Session integration are wired for local testing. Google may reject

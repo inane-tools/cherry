@@ -1,7 +1,7 @@
 // CORS-free fetch for youtubei.js inside Electron.
 // The Chromium renderer blocks direct `fetch` to Google origins (CORS), so
 // every Innertube request (session, player JS, API, OAuth) is relayed
-// through the Electron `http_proxy_fetch` command (reqwest, no origin checks)
+// through the Electron `http_proxy_fetch` command (validated destinations)
 // and re-wrapped as a real `Response`. Outside Electron (plain browser dev /
 // Node) the platform default fetch is used.
 
@@ -47,7 +47,7 @@ async function proxiedFetch(input: any, init?: any): Promise<Response> {
   // hosts. youtubei.js only sets it on its "server" shim, and without it some
   // endpoints (e.g. accounts_list) return a degraded body.
   const res = await invoke<ProxyResult>('http_proxy_fetch', { url, method, headers, body });
-  return new Response(res.body, { status: res.status, headers: res.headers });
+  return new Response([204, 205, 304].includes(res.status) || method === 'HEAD' ? null : res.body, { status: res.status, headers: res.headers });
 }
 
 /** Fetch implementation for `Innertube.create({ fetch })`. */

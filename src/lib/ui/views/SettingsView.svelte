@@ -11,7 +11,7 @@
     signInWithCookie,
     signOut,
   } from '$lib/app/services/auth';
-  import { libraryLoading, playlistStore, refreshLibrary, reloadAll } from '$lib/app/services/playlists';
+  import { libraryError, libraryLoading, playlistStore, refreshLibrary, reloadAll } from '$lib/app/services/playlists';
   import {
     activeChannelStore,
     channelsStore,
@@ -329,7 +329,7 @@
     polling = true;
     try {
       const status = await pollYtmStatus();
-      if (!status.open) {
+      if (!status.open && !status.loggedIn) {
         // The user closed the window. Stop polling instead of hammering the
         // native cookie store for a webview that is gone.
         stopPolling();
@@ -492,6 +492,12 @@
         {/if}
       </span>
 
+      {#if $authStore && $libraryError}
+        <p class="mb-3 text-xs text-amber-200">Signed in, but the library could not be loaded: {$libraryError}</p>
+      {/if}
+      {#if $authStore?.persistence === 'memory'}
+        <p class="mb-3 text-xs text-amber-200">Signed in for this session only. Secure credential storage is unavailable; unlock your system keyring to remember sign-in after closing Cherry.</p>
+      {/if}
       {#if !$authStore && phase !== 'waiting'}
         <button
           class="cherry-btn-scrim flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"

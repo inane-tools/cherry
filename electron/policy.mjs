@@ -1,6 +1,6 @@
 import { resolve, sep } from 'node:path';
 
-const hosts = ['youtube.com', 'youtu.be', 'youtubei.googleapis.com', 'googleapis.com', 'google.com', 'googlevideo.com', 'ytimg.com', 'googleusercontent.com', 'gstatic.com', 'lrclib.net', 'ws.audioscrobbler.com'];
+const hosts = ['youtube.com', 'youtu.be', 'youtubei.googleapis.com', 'googleapis.com', 'google.com', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'googleusercontent.com', 'gstatic.com', 'lrclib.net', 'ws.audioscrobbler.com'];
 export function allowedRequest(value) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')
@@ -13,6 +13,7 @@ export function mediaRequest(value) {
   return url;
 }
 export function assetPath(root, pathname) {
+  if (decodeURIComponent(pathname).includes('\\')) throw new Error('Refused asset separator');
   const file = resolve(root, '.' + decodeURIComponent(pathname));
   if (!file.startsWith(resolve(root) + sep)) throw new Error('Refused asset path');
   return file;

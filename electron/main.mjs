@@ -2,7 +2,9 @@ import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { allowedRequest, mediaRequest, assetPath, trustedRenderer, externalUrl } from './policy.mjs';
+import { assetPath, trustedRenderer, externalUrl } from './policy.mjs';
+import { fetchAllowed, apiHeaders } from './network.mjs';
+import { captureYouTubeSession, createAuthPersistence } from './login.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const assets = join(here, 'assets');
@@ -54,25 +56,6 @@ function permissions(ses) {
   ses.setPermissionRequestHandler((_contents, _permission, answer) => answer(false));
   ses.setPermissionCheckHandler(() => false);
 }
-async function fetchAllowed(value, options = {}, media = false) {
-  let url = media ? mediaRequest(value) : allowedRequest(value);
-  for (let redirects = 0; redirects <= 5; redirects++) {
-    const response = await fetch(url, { ...options, redirect: 'manual', signal: AbortSignal.timeout(30000) });
-    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-    await response.body?.cancel();
-    const next = new URL(response.headers.get('location') ?? '', url);
-    if (next.origin !== url.origin) {
-      const headers = new Headers(options.headers);
-      headers.delete('cookie'); headers.delete('authorization');
-      options = { ...options, headers };
-    }
-    url = media ? mediaRequest(next) : allowedRequest(next);
-    if (response.status === 303 || ((response.status === 301 || response.status === 302) && options.method === 'POST')) {
-      options = { ...options, method: 'GET', body: undefined };
-    }
-  }
-  throw new Error('Too many network redirects');
-}
 async function boundedBytes(response, max = 32 * 1024 * 1024) {
   if (Number(response.headers.get('content-length')) > max) { await response.body?.cancel(); throw new Error('Response too large'); }
   const chunks = []; let size = 0;
@@ -84,12 +67,15 @@ async function boundedBytes(response, max = 32 * 1024 * 1024) {
   return Buffer.concat(chunks);
 }
 const loginSession = () => session.fromPartition('persist:youtube-login');
-async function capturedSession() {
-  const cookies = await loginSession().cookies.get({ url: 'https://music.youtube.com' });
-  if (!cookies.some(cookie => ['SID', 'SAPISID', '__Secure-3PAPISID'].includes(cookie.name))) throw new Error('Complete YouTube sign-in first');
-  return { kind: 'cookie', cookie: cookies.map(cookie => cookie.name + '=' + cookie.value).join('; '), savedAt: Date.now() };
-}
+let loginAttempt = false;
+const secureAuth = createAuthPersistence({
+  available: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
+  read: () => secretRead('auth'), write: value => secretWrite('auth', value), clear: () => secretWrite('auth', null),
+});
+async function capturedSession() { return captureYouTubeSession(loginSession().cookies); }
+function browserAgent() { return app.userAgentFallback.replace(/\s(?:Electron|Cherry[^ /]*)\/[^ ]+/g, ''); }
 function openLogin() {
+  loginAttempt = true;
   if (login && !login.isDestroyed()) { login.focus(); return; }
   const ses = loginSession(); permissions(ses);
   login = new BrowserWindow({ title: 'Sign in to YouTube Music', width: 1020, height: 780, parent: window,
@@ -132,20 +118,18 @@ const commands = {
   'app:open-url': ({ url }) => shell.openExternal(externalUrl(url)),
   open_devtools: () => window.webContents.openDevTools({ mode: 'detach' }),
   close_devtools: () => window.webContents.closeDevTools(),
-  auth_load: () => secretRead('auth'),
-  auth_save: ({ session: value }) => { if (value?.kind !== 'cookie' || typeof value.cookie !== 'string' || value.cookie.length > 100000) throw new Error('Invalid session'); return secretWrite('auth', value); },
-  auth_clear: async () => { await secretWrite('auth', null); await loginSession().clearStorageData(); },
+  auth_load: () => secureAuth.load(),
+  auth_save: ({ session: value }) => { if (value?.kind !== 'cookie' || typeof value.cookie !== 'string' || value.cookie.length > 100000) throw new Error('Invalid session'); return secureAuth.save(value); },
+  auth_clear: async () => { loginAttempt = false; await secureAuth.clear(); await loginSession().clearStorageData(); },
   secret_load: ({ name }) => { if (name !== 'lastfm') throw new Error('Unknown secret'); return secretRead('lastfm'); },
   secret_save: ({ name, value }) => { if (name !== 'lastfm' || typeof value !== 'string' || value.length > 100000) throw new Error('Invalid secret'); return secretWrite('lastfm', value); },
   open_ytm_login: openLogin,
-  close_ytm_login: () => login?.close(),
-  ytm_login_status: async () => ({ open: !!login, url: login?.webContents.getURL() ?? '', loggedIn: await capturedSession().then(() => true, () => false) }),
-  ytm_login_finish: async () => { const value = await capturedSession(); await secretWrite('auth', value); login?.close(); return value; },
+  close_ytm_login: () => { loginAttempt = false; login?.close(); },
+  ytm_login_status: async () => ({ open: !!login, url: login?.webContents.getURL() ?? '', loggedIn: loginAttempt && await capturedSession().then(() => true, () => false) }),
+  ytm_login_finish: async () => { const value = await secureAuth.save(await capturedSession()); await loginSession().cookies.flushStore(); login?.close(); loginAttempt = false; return value; },
   http_proxy_fetch: async ({ url, method = 'GET', headers = {}, body }) => {
     if (!['GET', 'POST', 'PUT', 'DELETE', 'HEAD'].includes(method) || (body && (typeof body !== 'string' || body.length > 20 * 1024 * 1024))) throw new Error('Invalid HTTP request');
-    const clean = new Headers(headers); for (const key of ['host', 'connection', 'content-length', 'transfer-encoding']) clean.delete(key);
-    const destination = allowedRequest(url);
-    if (destination.hostname.endsWith('youtube.com') || destination.hostname.endsWith('google.com')) clean.set('Origin', 'https://music.youtube.com');
+    const clean = apiHeaders(url, headers, browserAgent());
     const response = await fetchAllowed(url, { method, headers: clean, body: body ?? undefined });
     const bytes = await boundedBytes(response);
     return { status: response.status, headers: Object.fromEntries(response.headers), body: bytes.toString('utf8') };
@@ -155,7 +139,7 @@ const commands = {
   clear_local_data: async () => {
     await writeChain; await session.defaultSession.clearCache(); await session.defaultSession.clearStorageData();
     await loginSession().clearStorageData();
-    await secretWrite('auth', null); await secretWrite('lastfm', null);
+    loginAttempt = false; await secureAuth.clear(); await secretWrite('lastfm', null);
     await enqueueWrite(async () => { settings = {}; await rm(data('settings.json'), { force: true }); });
     return ['Electron cache', 'settings', 'sign-in session'];
   },
@@ -188,7 +172,9 @@ async function main() {
     try {
       const source = new URL(request.url).searchParams.get('url');
       const headers = new Headers(); const range = request.headers.get('range'); if (range) headers.set('range', range);
-      const response = await fetchAllowed(source, { headers }, true);
+      headers.set('user-agent', browserAgent()); headers.set('accept-encoding', 'identity');
+      const response = await fetchAllowed(source, { headers, signal: request.signal }, true);
+      if (!response.ok) console.warn('[media] CDN returned HTTP ' + response.status);
       const output = new Headers(cors);
       for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) if (response.headers.has(name)) output.set(name, response.headers.get(name));
       return new Response(response.body, { status: response.status, headers: output });
@@ -217,6 +203,9 @@ async function main() {
   if (!smoke) { window.show(); window.focus(); }
   if (devUrl) console.log('[desktop] App loaded' + (smoke ? ' (hidden smoke test)' : ''));
   if (smoke) {
+    await loginSession().cookies.set({ url: 'https://music.youtube.com/', name: 'SID', value: 'smoke-session-identity' });
+    await loginSession().cookies.set({ url: 'https://www.youtube.com/', name: 'SAPISID', value: 'smoke-signing-cookie' });
+    loginAttempt = true;
     const errors = [];
     window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
     const result = await window.webContents.executeJavaScript(`(async () => {
@@ -230,10 +219,16 @@ async function main() {
       if (!settings.lyricsEnabled) throw Error('Settings round trip failed');
       await bridge.invoke('secret_save', { name: 'lastfm', value: 'smoke-secret' });
       if (await bridge.invoke('secret_load', { name: 'lastfm' }) !== 'smoke-secret') throw Error('Encrypted secret round trip failed');
+      const login = await bridge.invoke('ytm_login_status');
+      if (!login.loggedIn || login.open) throw Error('Closed login cookie detection failed');
+      const captured = await bridge.invoke('ytm_login_finish');
+      if (!captured.cookie.includes('SID=smoke-session-identity') || !captured.cookie.includes('SAPISID=smoke-signing-cookie')) throw Error('Cookie capture incomplete');
+      if ((await bridge.invoke('auth_load')).cookie !== captured.cookie) throw Error('Captured auth was not persisted');
+      await bridge.invoke('auth_clear');
       let rejected = false;
       try { await bridge.invoke('http_proxy_fetch', { url: 'file:///private' }); } catch { rejected = true; }
       if (!rejected) throw Error('Network validation failed');
-      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, networkPolicy: true };
+      return { platform, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true };
     })()`);
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('ELECTRON_SMOKE_PASS ' + JSON.stringify(result));

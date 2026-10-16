@@ -18,7 +18,7 @@ export const authStatus = writable<AuthStatus>('checking');
 
 async function persist(session: AuthSession): Promise<void> {
   if (isDesktop()) {
-    await invokeStrict('auth_save', { session });
+    session = await invokeStrict<AuthSession | null>('auth_save', { session }) ?? session;
   } else {
     // Browser dev fallback (not secure — dev only).
     try {

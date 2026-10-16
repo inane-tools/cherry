@@ -18,6 +18,7 @@ import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
 import { rememberPosition, restoreQueue, watchQueue } from './queuePersistence';
 import { applyArtworkTheme, resetArtworkTheme } from './theme';
+import { mediaProxyUrl } from '$lib/infra/ytmusic/mediaProxy';
 import { attachAdaptiveVideo } from './adaptiveVideo';
 import { videoQualities } from './videoQuality';
 
@@ -168,6 +169,7 @@ function ensureAudio(): HTMLMediaElement {
       void pushOsState();
     });
     listen('pause', () => {
+      if (media.error) return; // An interrupted transfer must not erase playback intent.
       // Any pause counts, not just one that interrupted "playing" — otherwise a
       // pause during buffering left the presence looking like it was still on.
       playerStore.update((p) => (p.track ? { ...p, status: 'paused' } : p));
@@ -176,10 +178,22 @@ function ensureAudio(): HTMLMediaElement {
     });
     listen('ended', () => void onEnded());
     listen('error', () => {
-      // Releasing the element in stopPlayback() can emit an "empty src" error;
-      // ignore it so tearing down never resurrects a stale track.
-      if (!audio?.getAttribute('src')) return;
-      playerStore.update((p) => ({ ...p, status: 'error', error: 'Playback failed for this track.' }));
+      if (!media.getAttribute('src') || recoveryPending) return;
+      const state = get(playerStore);
+      if (state.status === 'loading' || media.error?.code === 1) return;
+      const current = get(currentItem);
+      const key = current ? current.queueId + ':' + get(videoPreferred) : '';
+      // Refresh a rejected/expired URL once, retaining the current position.
+      // A second failure is shown instead of restarting in an endless loop.
+      if (current && key && key !== recoveredMediaKey && get(authStore)) {
+        recoveredMediaKey = key;
+        recoveryPending = true;
+        pendingResume = { videoId: current.track.videoId, seconds: media.currentTime || state.positionSeconds };
+        void loadCurrent(state.status === 'playing', true).finally(() => { recoveryPending = false; });
+        return;
+      }
+      const reason = ({ 2: 'Network stream failed.', 3: 'The media could not be decoded.', 4: 'The stream format is unavailable.' } as Record<number, string>)[media.error?.code ?? 0] ?? 'Playback failed for this track.';
+      playerStore.update(p => ({ ...p, status: 'error', error: reason }));
       void pushOsState();
     });
   }
@@ -620,18 +634,23 @@ async function prefetchNext(): Promise<void> {
  * source again — so A played while the UI showed B.
  */
 let loadGeneration = 0;
+let recoveredMediaKey = '';
+let recoveryPending = false;
 
 function isAbort(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError';
 }
 
-async function loadCurrent(autoplay: boolean): Promise<void> {
+async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<void> {
   clearHls();
   cancelPauseClear();
   const generation = ++loadGeneration;
   const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
   let el = ensureAudio();
+  el.pause();
+  el.removeAttribute('src');
+  el.load();
   if (!item) {
     el.pause();
     el.removeAttribute('src');
@@ -697,7 +716,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
     clearHls();
     if (stream.dashManifest && get(videoMode)) {
-      const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, stream.url, stale);
+      const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, mediaProxyUrl(new URL(stream.url)).href, stale);
       if (stale()) { adaptive.destroy(); await adaptive.ready; return; }
       clearHls = () => { adaptive.destroy(); clearHls = () => {}; };
       await adaptive.ready;
@@ -723,7 +742,10 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
         hls.loadSource(stream.url);
       });
       if (stale()) return;
-    } else el.src = stream.url;
+    } else {
+      const source = new URL(stream.url);
+      el.src = source.hostname === 'googlevideo.com' || source.hostname.endsWith('.googlevideo.com') ? mediaProxyUrl(source).href : source.href;
+    }
     applyPendingResume(el, videoId);
     if (track.durationSeconds) {
       playerStore.update((p) => ({ ...p, durationSeconds: track.durationSeconds as number }));
@@ -745,7 +767,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
   };
 
   try {
-    await start(false);
+    await start(refreshStream);
   } catch (e) {
     // An overtaken load, or a play() interrupted by a newer source, is not a
     // failure of this track — there is nothing to retry or report.

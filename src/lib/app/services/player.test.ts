@@ -51,6 +51,7 @@ async function flush(): Promise<void> {
 let playImpl: (el: HTMLMediaElement) => Promise<void>;
 
 beforeEach(() => {
+  delete window.cherryDesktop;
   playImpl = () => Promise.resolve();
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
     return playImpl(this);
@@ -292,6 +293,40 @@ describe('loadCurrent', () => {
     authStore.set(null);
     await player.playTracks([track('a')]);
     expect(pending).toHaveLength(0);
+  });
+});
+
+describe('runtime media failures', () => {
+  it('refreshes a failing stream once and resumes from the same position', async () => {
+    const started = player.playTracks([track('runtime')]); await flush();
+    pending[0].resolve('https://media/first'); await started;
+    const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    media.currentTime = 37;
+    player.playerStore.update(s => ({ ...s, status: 'playing', positionSeconds: 37 }));
+    media.dispatchEvent(new Event('error')); await flush();
+    expect(pending[1]).toMatchObject({ videoId: 'runtime', refresh: true });
+    pending[1].resolve('https://media/refreshed'); await flush();
+    await vi.waitFor(() => expect(media.src).toBe('https://media/refreshed'));
+    media.dispatchEvent(new Event('play'));
+    await flush();
+    media.dispatchEvent(new Event('loadedmetadata'));
+    expect(media.currentTime).toBe(37);
+    media.dispatchEvent(new Event('error')); await flush();
+    expect(pending).toHaveLength(2);
+    expect(get(player.playerStore).status).toBe('error');
+    await player.stopPlayback();
+  });
+  it('uses the native range relay for Googlevideo progressive playback', async () => {
+    Object.defineProperty(window, 'cherryDesktop', { configurable: true, value: { invoke: vi.fn(async () => null) } });
+    const started = player.playTracks([track('relay')]);
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    pending[0].resolve('https://rr1.googlevideo.com/video?sig=a%2Bb'); await started;
+    const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    const source = new URL(media.src);
+    expect(source.protocol).toBe('cherry-media:');
+    expect(source.searchParams.get('url')).toBe('https://rr1.googlevideo.com/video?sig=a%2Bb');
+    await player.stopPlayback();
+    delete window.cherryDesktop;
   });
 });
 
