@@ -48,7 +48,7 @@ frontend; `npm run dev:web` is a browser-only preview.
 ## Package
 
 ```sh
-npm run dist:win       # Windows x64: compact Cherry NSIS installer
+npm run dist:win       # Windows x64: one-click Cherry NSIS installer
 npm run dist:linux     # Linux x64: AppImage and Flatpak bundle
 npm run dist:appimage  # Linux: AppImage only
 npm run dist:flatpak   # Linux: Flatpak only

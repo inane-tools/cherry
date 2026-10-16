@@ -4,15 +4,20 @@
 
 Run `npm ci`, `npm run typecheck`, `npm test`, `npm run test:smoke`, then
 `npm run dist:win`. The output is `release/Cherry-Setup-1.7.1-x64.exe`.
-The compact NSIS page uses the Cherry icon, current version, a destination
-picker and an Install action. Installs are per-user. A chosen parent directory
-gets a Cherry subfolder. NSIS handles replacement, shortcuts and uninstall;
-updater installs run silently through the same engine. Uninstall keeps app data.
+The one-click NSIS installer immediately shows a small progress window, installs
+for the current Windows account in its default location, then launches Cherry.
+There is no destination picker, wizard or completion page. NSIS handles
+replacement, shortcuts and uninstall; updates use the same engine silently.
+Uninstall keeps app data.
 
-`build/installer.nsh` customizes the supported electron-builder hooks rather
-than copying its installation engine. Signing is currently disabled: configure
-Windows signing and publisher verification together before shipping signed
-updates. The updater's SHA-512 metadata is not a replacement for code signing.
+`install-cherry.png` is the installer artwork. `npm run dist:win` converts it to
+`build/install-cherry.ico` for the setup executable and progress window; the
+installed app keeps its existing icon. Regenerate just the ICO with
+`npm run installer:icon`. There is no custom NSIS installation script to maintain.
+
+Signing is currently disabled: configure Windows signing and publisher
+verification together before shipping signed updates. The updater's SHA-512
+metadata is not a replacement for code signing.
 
 If local Electron archive extraction fails, an already installed matching runtime
 can be used with `npm run dist:win -- --config.electronDist=node_modules/electron/dist`.

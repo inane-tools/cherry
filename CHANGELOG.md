@@ -15,7 +15,8 @@ Fukagawa. First release candidate using Electron on Windows and Linux.
   while the migration is prepared; macOS is deferred.
 - Windows caption buttons use the system Segoe Fluent/MDL2 glyphs, scale with
   app zoom and use black or white ink for light and dark themes.
-- Added a compact Cherry-branded NSIS installer with a destination picker.
+- Added a minimal one-click NSIS installer: progress, then launch Cherry.
+  Setup uses the dedicated install-cherry artwork; the app icon stays unchanged.
   Windows packaging produces only NSIS; Linux targets AppImage and Flatpak.
 - GitHub-based updates for Windows and AppImage use explicit download and
   install actions, progress in the accent color and the existing topbar badge.
