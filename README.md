@@ -1,247 +1,88 @@
 # Cherry
 
-Cherry is a YouTube Music desktop client for **Windows and Linux**, with a custom
-frontend that talks directly to YouTube Music's internal *Innertube* API. Built
-with **Tauri v2 + Rust**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
+Cherry is a desktop YouTube Music player with a custom Svelte interface and an
+Electron/Chromium host for Windows and Linux. **2.0.0 Furano** is in development;
+no 2.0 installers have been released. Patch versions keep the same codename;
+minor and major versions advance it automatically. macOS is deferred.
 
-![Cherry](https://inane.tools/screenshot-compact.webp)
-
-> ### ⚠️ Disclaimer
-> Cherry is an unofficial client and is **not affiliated with, endorsed by, or
-> associated with YouTube, Google or YouTube Music**. All trademarks and content
-> belong to their respective owners. To use Cherry, you need your **own YouTube account**. You are responsible for how you use it
-> and for any consequences, including any effect on your account. The software is
-> provided **as is**, without warranty of any kind.
-
-## Platform status
-
-**Windows is currently the most polished version. Linux is still rough.** The
-current Linux release uses WebKitGTK, where animation flicker, rendering glitches
-and inconsistent responsiveness can remain despite the existing workarounds.
-The Flatpak and AppImage downloads below are still the Tauri builds and have
-these limitations.
-
-An **Electron-based Linux build is being explored** to use Chromium instead.
-Early testing on Steam Deck has eliminated the observed rendering glitches and
-felt much smoother; the Fedora VM remains sluggish. This is an experimental
-fork with missing desktop integrations, not a replacement stable release yet.
-Its memory usage and the maintenance cost of supporting both desktop hosts are
-still being evaluated. macOS remains deferred.
+This is the original Cherry repository, now continuing development with Electron.
+The Tauri implementation and its releases are preserved in
+[inane-tools/cherry-tauri](https://github.com/inane-tools/cherry-tauri).
+The last stable Tauri release is 1.7.0. The Electron 1.7.1 preview has been
+withdrawn from public distribution and retained as a draft for updater testing.
 
 ## Features
 
-- **Fully custom UI** - Cherry is not a wrapper on the YouTube Music web app, it has a fully custom built user interface, with a focus on simplicity and good looks.
-- **A customizable sidebar** - one user-organised list of playlists and folders. Drag to
-  reorder, drop a playlist onto a folder to file it, **pin** favourites to the
-  top, resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
-  collapses into a slide-in drawer.
-- **Expanded player** - click the album art for Art, Queue and Lyrics tabs over
-  the artwork background. The selected tab is remembered when collapsed, and
-  artwork preloads and transitions with the background and accent colors.
-- **Lyrics** - enabled by default, with a centered strip above the compact player
-  and a larger expanded view. LRCLIB is preferred, with YouTube Music as a
-  fallback. Timed lyrics follow playback and support click-to-seek; lyrics
-  without timestamps stay readable. Configure them in Settings → Player.
-- **Music videos** - switch from the expanded player to adaptive HD video up to
-  1080p where available. Choose Highest, Auto or a remembered resolution, with
-  optional black letterboxing. Collapsing keeps playback running; video
-  preference survives audio-only tracks and restarts. Lyrics pause in video mode.
-- **Stations & radio** - play station recommendations or start radio from a song,
-  with more tracks loaded as playback continues.
-- **In-app sign in** - loads music.youtube.com and captures the session from the
-  native cookie store; the session lives in the **OS keychain**, never in
-  localStorage. Cherry also handles multiple brand accounts, as one YouTube account can have many, it is really easy to switch between them in Settings.
-- **Edit your library** - create playlists, add or remove songs, rename, edit
-  descriptions and set a **custom cover image**; pick a **default save
-  playlist**; **save / unsave** playlists you did not create; and **delete your
-  own playlists** with an explicit permanent-deletion confirmation.
-- **Queue control** - jump to any track (dropping the ones before it),
-  drag-reorder, remove tracks, and clear. Keep the queue in a right sidebar
-  when there is room, with the player queue button available in smaller windows.
-- **Home & Explore** - browse recommendations, filter the Home feed, and open
-  moods, genres, charts and new releases from the separate Explore page.
-- **Paste a link** - drop a YouTube / YouTube Music song or playlist URL into the
-  search box to preview it, then click the result to play or open it.
-- **Desktop integration** - Windows media controls and Linux MPRIS, hardware
-  media keys, tray playback controls and pinned playlists. Windows also gets
-  taskbar preview buttons and Jump Lists for pinned and recent playlists.
-  Closing the window exits Cherry; minimizing keeps it on the taskbar.
-- **Light & dark themes** - follow the system or pick one, with the accent taken
-  from the album art or a custom colour and optional background gradients. The
-  window title follows the current track.
-- **Keyboard shortcuts** - Space to play/pause, arrows to seek, Ctrl+arrows
-  to skip and change volume, S/R for shuffle/repeat, Ctrl+F to search (full
-  list in Settings).
-- **Sleep timer** - stop after 5 minutes to 1.5 hours with a gentle fade, or
-  at the end of the current track.
-- **Integrations** - Discord Rich Presence with clickable artwork linking to the
-  current song, plus Last.fm scrobbling.
-- **Signed updates** - startup checks and an updater inside the Cherry card in
-  Settings for Windows NSIS and Linux AppImage installations. Download when you
-  choose, then install and restart. Flatpak updates use the latest release bundle.
+- YouTube Music sign-in, including brand channels, home/explore, library,
+  playlists, folders, pinned playlists and search.
+- Audio playback, queue, stations, adaptive music videos with quality selection,
+  and timed lyrics from LRCLIB with YouTube Music fallback.
+- Themes, accent colors, tinted surfaces, app scaling and configurable controls.
+- Windows Segoe caption glyphs that follow app scaling and light/dark themes.
+- Tray playback/pinned playlists, Windows taskbar playback buttons and playlist
+  Jump Lists, Chromium media-session controls, Discord Rich Presence and Last.fm.
+- Encrypted saved sign-in and Last.fm credentials through Electron safeStorage.
+  On Linux without a secure keyring, sign-in lasts for the current session only;
+  credentials are never stored as plaintext.
+- GitHub-based update checks for Windows and AppImage, with explicit Download
+  and Install and restart actions. Flatpak uses its own update mechanism.
+- Settings shows the full local profile size. Cache clearing preserves settings,
+  queue and logins; clearing everything resets settings and credentials and
+  restarts. Logout removes saved YouTube credentials and login-browser data.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design notes,
-measurements and the Windows landmines that were hit along the way.
+## Run
 
-## Changelog
+Requires Node 22.12+ and npm. Rust and Tauri are not needed.
 
-**v1.7.0 (Fukagawa)** adds lyrics, music videos and station playback, with
-smoother transitions, improved artwork handling and a calmer startup.
-
-Lyrics are enabled by default. Hide the strip with the captions button, or
-configure lyrics and player buttons under **Settings → Player**. Lyrics prefer
-LRCLIB, then YouTube Music. Only provider-supplied timestamps are used; untimed
-lyrics stay readable. LRCLIB receives song title, artist, album and duration,
-without sign-in data, and its lookup can be disabled in Settings.
-
-The expanded player has **Art, Queue and Lyrics** tabs and remembers the selected
-tab when collapsed. Video controls sit beside Collapse, with **Highest**, adaptive
-**Auto** and remembered resolution choices. Music videos use adaptive HD up to
-1080p where available, with progressive fallback. Video mode survives audio-only
-songs and app restarts; restored video loads paused. Collapsing keeps playback
-running. Lyrics are suspended during video playback. Optional letterboxing adds
-black bars without resizing the player.
-
-**v1.6.2 (Shibetsu)** adds signed GitHub updates for Windows and AppImage installs.
-
-**v1.6.1 (Shibetsu)** fixes Discord presence clearing and adds links to the
-current song on album artwork and to inane.tools on the Cherry badge.
-
-**v1.6.0 (Shibetsu)** refreshes Home with more YouTube Music layouts, filters
-and pagination, separates Explore into its own page, and adds an optional queue
-sidebar. It also adds confirmed playlist deletion, expanded tray controls and
-Windows playlist shortcuts, with improved artwork recovery and accent gradients.
-Windows NSIS and Linux Flatpak/AppImage are supported; macOS builds are deferred.
-See [platform support](docs/platforms.md) and
-[CHANGELOG.md](CHANGELOG.md) for the full history.
-
-## Download
-
-Get **[v1.7.0 Fukagawa](https://github.com/inane-tools/cherry/releases/tag/v1.7.0)**
-(or check the [latest release](https://github.com/inane-tools/cherry/releases/latest)):
-
-- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v1.7.0/Cherry_1.7.0_x64-setup.exe).
-- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v1.7.0/Cherry_1.7.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v1.7.0/Cherry_1.7.0_amd64.AppImage).
-
-Install the downloaded Flatpak with `flatpak install --user Cherry_1.7.0_x86_64.flatpak`,
-then run `flatpak run tools.inane.cherry`. This is a self-distributed bundle;
-Cherry is not listed on Flathub.
-
-For AppImage, run `chmod +x Cherry_1.7.0_amd64.AppImage` before opening it, and
-keep it in a writable location to use the updater. Read the [Linux status](#platform-status)
-before downloading; the current packages retain the WebKitGTK rendering issues.
-See [platform support](docs/platforms.md) for Linux keyring requirements and
-other limitations.
-
-**Users on 1.6.1 or earlier need to install 1.7.0 manually once to add the updater.** The `.sig`
-files and `latest.json` on the release are updater assets; manual installation
-only needs the installer for your platform.
-
-## Requirements
-
-- **Windows 10/11** (with WebView2), or Linux x86_64. macOS builds are deferred.
-- To develop: **Node 22+**, **Rust** stable, and the **VS Build Tools C++ workload**
-  on Windows or the [Linux build dependencies](docs/platforms.md#linux).
-
-## Develop
-
-```bash
+```sh
 npm ci
-npm run tauri -- dev   # desktop app with hot reload
+npm run dev         # Vite on 127.0.0.1:1423 + Electron, frontend hot reload
+npm run typecheck
+npm test
+npm run test:smoke  # hidden test with isolated data; never uses your login
+npm run pack        # unpacked local app in release/
 ```
 
-On Linux, use `npm run dev:linux` instead to filter duplicate WebKit media-player
-entries. Install `xdg-dbus-proxy` first; see [Linux development](docs/platforms.md#duplicate-media-players-in-direct-builds).
+Restart Electron after editing main/preload code. `npm start` opens the built
+frontend; `npm run dev:web` is a browser-only preview.
 
-The editable logo source is `src/lib/assets/logo.png`. The copy in
-`public/logo.png` is the browser favicon; `src-tauri/icons` contains generated
-desktop launcher/installer assets. Regenerate those with
-`npm run tauri -- icon src/lib/assets/logo.png`. Mobile/UWP output, root-level
-Figma exports, build output and downloaded release artifacts are ignored.
-Keep installed dependencies and Rust compilation caches locally for faster builds.
+## Package
 
-Other scripts:
-
-```bash
-npm run typecheck      # svelte-check
-npm test               # Vitest suites + updater manifest tests
-npm run build          # build the frontend to dist/
-npm run tauri -- build --config src-tauri/tauri.unsigned.conf.json
-                      # unsigned local validation installer (NSIS on Windows)
+```sh
+npm run dist:win       # Windows x64: one-click Cherry NSIS installer
+npm run dist:linux     # Linux x64: AppImage and Flatpak bundle
+npm run dist:appimage  # Linux: AppImage only
+npm run dist:flatpak   # Linux: Flatpak only
 ```
 
-Release builds require the updater signing key. See [the updater guide](docs/updating.md)
-for local signing and CI release steps. CI produces Windows NSIS, Linux AppImage
-and Flatpak, with signatures and a combined updater manifest.
+Build Windows on Windows and Linux on Linux. Outputs go in `release/`.
+Linux Flatpak builds require `flatpak`, `flatpak-builder`, Freedesktop 25.08
+Platform/SDK and `org.electronjs.Electron2.BaseApp//25.08` from Flathub. See
+[packaging and release instructions](docs/RELEASING.md) for setup and testing.
+Windows produces NSIS only; there are no MSI, portable, DEB, RPM or macOS targets.
+GitHub Actions checks types and runs tests on development pushes and pull requests.
+Installer builds run only for an explicit manual run or a release tag. Tagged
+releases publish NSIS, AppImage and Flatpak after both platforms pass. The installer is unsigned until code signing is configured.
 
-Linux/macOS builds, native window controls, direct Flatpak packaging and the
-Flathub submission constraints are documented in [docs/platforms.md](docs/platforms.md).
+## Updates and migration
 
-## App updates
+New Electron builds use GitHub Releases in `inane-tools/cherry`.
+The `cherry-electron` repository remains an update bridge for installed 1.7.1
+previews; it mirrors future public Electron releases without rebuilding them.
+Publish the installer/AppImage plus electron-builder's matching `latest*.yml`
+and blockmaps to enable updates. This repository is public; no GitHub access
+token is bundled in the app. Development builds
+and Flatpaks do not download or execute self-updates.
 
-Starting with 1.6.2, Cherry checks GitHub Releases at startup. When a newer
-version is available, a button beside the account image shows its version and
-opens the updater. You can also open **Settings → Cherry card → Updates** to
-check manually, read release notes, download, then choose **Install and restart**.
-Downloading leaves playback running; installation saves your queue and settings
-before restarting.
+The repository transition is documented in
+[the migration checklist](docs/MIGRATION.md). Electron cannot consume the Tauri
+update feed or signing files. Moving existing Tauri users requires a manual
+installation; credentials are not imported from Tauri. Existing Electron test
+settings remain in the `cherry-electron` data directory, independently of Tauri.
 
-Self-updating supports Windows NSIS and Linux AppImage installations. Flatpak
-installs link to the latest bundle for manual updating. Development builds do
-not self-update. Updates are verified against Cherry's public signing key before
-installation. See [the updater guide](docs/updating.md) for signing, release
-assets, and testing the upgrade from 1.6.2 to 1.7.
+See [the architecture and test checklist](docs/ELECTRON.md). Windows packaged
+smoke tests cover desktop IPC, captions/themes/scaling and native integrations.
+Linux hardware, Flatpak sandbox integration and an update between two published
+Electron versions still need release testing.
 
-## Project layout
-
-```
-src/lib/core/       pure domain models
-src/lib/infra/      Innertube client, storage, caches
-src/lib/app/        services (player, queue, auth, settings, …)
-src/lib/ui/         chrome (titlebar/sidebar/player) and views
-src-tauri/src/      Rust: tray, media controls, Discord, keychain, HTTP relay,
-                    Last.fm, playlist images, signed app updates
-scripts/           Linux launcher and updater manifest generation/validation
-packaging/flatpak/  self-distributed Flatpak packaging
-.github/workflows/  native builds, signing and release updater metadata
-```
-
-Dependencies point inward: `ui → services → infra → core`. Raw youtubei.js nodes
-never leave `src/lib/infra/ytmusic/`.
-
-## Tests
-
-```bash
-npm test                       # Vitest + updater manifest tests; no Tauri needed
-cargo test --locked --manifest-path src-tauri/Cargo.toml  # Rust unit tests
-```
-
-TypeScript and Rust tests sit next to the code they cover (`*.test.ts`, Rust
-`mod tests`); updater manifest tests live in `scripts/`. Rust
-tests that need the network are `#[ignore = "network"]`, and the keychain tests
-need a real OS keychain (on Linux, a running Secret Service such as
-gnome-keyring). Include ignored tests with
-`cargo test --locked --manifest-path src-tauri/Cargo.toml -- --include-ignored`. See
-[`docs/TESTING.md`](docs/TESTING.md).
-
-## Credits
-
-Cherry is developed with LLM assistance, from the ideas and feedback of
-[inane.tools](https://inane.tools). DeepSeek v4.1 Flash generated much of the
-original code through 1.4. Codex with GPT-6.1 Sol has contributed since 1.4.2,
-with additional work by Claude through the jannuary fork.
-
-Thanks to **[jannuary](https://github.com/jannuary/cherry)**, whose fork
-contributed the code audit, the Vitest test suite, keyboard shortcuts, the sleep
-timer and the repeat button. Those commits were authored by **Claude**
-(Anthropic) and are preserved in this repository's history. See
-[CONTRIBUTORS.md](CONTRIBUTORS.md).
-
-**Codex (OpenAI)** contributed code review, playback and sign-out fixes,
-regression tests, UI refinements, Linux packaging and the signed GitHub updater.
-
-**DeepSeek** v4.1 Flash contributed project scaffolding and most of the coding work from v1.0 to v1.4
-
-## License
-
-[MIT](LICENSE) © 2026 inane.tools
+[Changelog](CHANGELOG.md) · [License](LICENSE) · [Contributors](CONTRIBUTORS.md)

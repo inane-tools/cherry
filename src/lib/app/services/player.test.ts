@@ -51,6 +51,7 @@ async function flush(): Promise<void> {
 let playImpl: (el: HTMLMediaElement) => Promise<void>;
 
 beforeEach(() => {
+  delete window.cherryDesktop;
   playImpl = () => Promise.resolve();
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
     return playImpl(this);
@@ -295,6 +296,40 @@ describe('loadCurrent', () => {
   });
 });
 
+describe('runtime media failures', () => {
+  it('refreshes a failing stream once and resumes from the same position', async () => {
+    const started = player.playTracks([track('runtime')]); await flush();
+    pending[0].resolve('https://media/first'); await started;
+    const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    media.currentTime = 37;
+    player.playerStore.update(s => ({ ...s, status: 'playing', positionSeconds: 37 }));
+    media.dispatchEvent(new Event('error')); await flush();
+    expect(pending[1]).toMatchObject({ videoId: 'runtime', refresh: true });
+    pending[1].resolve('https://media/refreshed'); await flush();
+    await vi.waitFor(() => expect(media.src).toBe('https://media/refreshed'));
+    media.dispatchEvent(new Event('play'));
+    await flush();
+    media.dispatchEvent(new Event('loadedmetadata'));
+    expect(media.currentTime).toBe(37);
+    media.dispatchEvent(new Event('error')); await flush();
+    expect(pending).toHaveLength(2);
+    expect(get(player.playerStore).status).toBe('error');
+    await player.stopPlayback();
+  });
+  it('uses the native range relay for Googlevideo progressive playback', async () => {
+    Object.defineProperty(window, 'cherryDesktop', { configurable: true, value: { invoke: vi.fn(async () => null) } });
+    const started = player.playTracks([track('relay')]);
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    pending[0].resolve('https://rr1.googlevideo.com/video?sig=a%2Bb'); await started;
+    const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    const source = new URL(media.src);
+    expect(source.protocol).toBe('cherry-media:');
+    expect(source.searchParams.get('url')).toBe('https://rr1.googlevideo.com/video?sig=a%2Bb');
+    await player.stopPlayback();
+    delete window.cherryDesktop;
+  });
+});
+
 describe('end of track', () => {
   async function playToEnd(ids: string[]): Promise<HTMLAudioElement> {
     const done = player.playTracks(ids.map(track));
@@ -303,6 +338,8 @@ describe('end of track', () => {
     await done;
     // The player owns a single <audio>; find it through a spy on play().
     const el = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement;
+    // Mock play() does not emit the real browser's play event.
+    el.dispatchEvent(new Event('play'));
     return el;
   }
 
@@ -341,4 +378,75 @@ describe('shuffle / repeat controls', () => {
     player.toggleShuffle();
     expect(get(queueStore.shuffle)).toBe(false);
   });
+});
+
+
+it('keeps the outgoing source attached while the next track is resolving', async () => {
+  const first = player.playTracks([track('first')]); await flush();
+  pending[0].resolve('https://media/first'); await first;
+  const remove = vi.spyOn(HTMLMediaElement.prototype, 'removeAttribute');
+  const nextTrack = player.playTracks([track('second')]); await flush();
+  expect(remove.mock.calls.filter(([attribute]) => attribute === 'src')).toHaveLength(0);
+  expect(get(player.playerStore).status).toBe('loading');
+  pending[1].resolve('https://media/second'); await nextTrack;
+  remove.mockRestore();
+});
+
+it('drops the outgoing source if its replacement fails, so retry cannot play the wrong song', async () => {
+  const first = player.playTracks([track('first')]); await flush();
+  pending[0].resolve('https://media/first'); await first;
+  const remove = vi.spyOn(HTMLMediaElement.prototype, 'removeAttribute');
+  const replacement = player.playTracks([track('second')]); await flush();
+  pending[1].reject(new Error('offline')); await flush();
+  pending[2].reject(new Error('still offline')); await replacement;
+  expect(get(player.playerStore).status).toBe('error');
+  expect(remove.mock.calls.some(([attribute]) => attribute === 'src')).toBe(true);
+  remove.mockRestore();
+});
+
+
+describe('track handoff isolation', () => {
+  it('ignores late end/error/metadata events from the outgoing track while the next song loads', async () => {
+    const first = player.playTracks([track('handoff-a'), track('handoff-b'), track('handoff-c')]);
+    await flush(); pending[0].resolve('https://media/a'); await first;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    old.currentTime = 95;
+    const next = player.next(); await flush();
+    old.dispatchEvent(new Event('ended'));
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('loadedmetadata')); await flush();
+    expect(pending.map(p => p.videoId)).toEqual(['handoff-a', 'handoff-b']);
+    expect(get(player.playerStore)).toMatchObject({ status: 'loading', positionSeconds: 0, track: { videoId: 'handoff-b' } });
+    pending[1].resolve('https://media/b'); await next;
+    const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    expect(current).not.toBe(old); expect(current.currentTime).toBe(0);
+    old.dispatchEvent(new Event('ended')); await flush();
+    expect(get(player.playerStore).track?.videoId).toBe('handoff-b');
+  });
+  it('does not apply a restored seek to a different queue entry containing the same song', async () => {
+    localStorage.setItem('cherry.queue.v1', JSON.stringify({
+      items: [{ queueId: 'old-copy', track: track('same-song') }], index: 0,
+      order: [0], shuffle: false, repeat: 'off', position: 93,
+    }));
+    await player.restorePlayback();
+    const fresh = player.playTracks([track('same-song')]); await flush();
+    pending[0].resolve('https://media/fresh'); await fresh;
+    const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    media.dispatchEvent(new Event('loadedmetadata'));
+    expect(media.currentTime).toBe(0);
+  });
+});
+
+it('starts the next video with a fresh zero-based clock instead of the previous video position', async () => {
+  await player.setVideoMode(true);
+  const first = player.playTracks([{ ...track('video-a'), isMusicVideo: true }, { ...track('video-b'), isMusicVideo: true }]);
+  await flush(); pending[0].resolve('https://media/video-a'); await first;
+  const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLVideoElement;
+  expect(old).toBeInstanceOf(HTMLVideoElement); old.currentTime = 120;
+  old.dispatchEvent(new Event('play'));
+  const next = player.next(); await vi.waitFor(() => expect(pending).toHaveLength(2)); pending[1].resolve('https://media/video-b'); await next;
+  const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLVideoElement;
+  expect(current).toBeInstanceOf(HTMLVideoElement); expect(current).not.toBe(old); expect(current.currentTime).toBe(0);
+  old.dispatchEvent(new Event('ended')); await flush();
+  expect(get(player.playerStore).track?.videoId).toBe('video-b');
 });

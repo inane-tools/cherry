@@ -32,7 +32,7 @@ it('applies and remembers the preferred quality and changes streams without relo
   expect(mocks.setRepresentationForTypeById).toHaveBeenLastCalledWith('video', '720', false);
   expect(get(settingsStore).videoQuality).toBe('1080');
   settingsStore.update(settings => ({ ...settings, videoQuality: '360' }));
-  expect(mocks.setRepresentationForTypeById).toHaveBeenLastCalledWith('video', '360', false);
+  expect(mocks.setRepresentationForTypeById).toHaveBeenLastCalledWith('video', '360', true);
   settingsStore.update(settings => ({ ...settings, videoQuality: 'auto' }));
   expect(mocks.updateSettings).toHaveBeenLastCalledWith({ streaming: { abr: { autoSwitchBitrate: { video: true } } } });
   expect(mocks.initialize).toHaveBeenCalledTimes(1);
@@ -86,4 +86,18 @@ it('cancels an unfinished load without starting its fallback', async () => {
 it('rejects a superseded request before creating a DASH player', async () => {
   await expect(attachAdaptiveVideo(media, '<MPD/>', 'https://fallback.test/video', () => true)).rejects.toMatchObject({ name: 'AbortError' });
   expect(mocks.initialize).not.toHaveBeenCalled();
+});
+
+
+it('does not replace the buffer when two preferences resolve to the same representation', async () => {
+  settingsStore.update(settings => ({ ...settings, videoQuality: 'highest' }));
+  const adaptive = await attachAdaptiveVideo(media, '<MPD/>', 'https://fallback.test/video', () => false);
+  mocks.on.mock.calls.find(call => call[0] === 'initialized')![1]();
+  settingsStore.update(settings => ({ ...settings, videoQuality: '1080' }));
+  expect(mocks.setRepresentationForTypeById).toHaveBeenCalledTimes(1);
+  settingsStore.update(settings => ({ ...settings, videoQuality: '360' }));
+  settingsStore.update(settings => ({ ...settings, videoQuality: '720' }));
+  expect(mocks.setRepresentationForTypeById).toHaveBeenLastCalledWith('video', '720', true);
+  media.dispatchEvent(new Event('loadedmetadata')); await adaptive.ready;
+  adaptive.destroy();
 });

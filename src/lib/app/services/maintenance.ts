@@ -1,141 +1,89 @@
-// Settings → "Clear data and cache".
-//
-// Clearing has to touch three layers, because "cache" for Cherry spans all of
-// them:
-//  1. in-page storage — youtubei.js's IndexedDB cache, the app's
-//     `localStorage`/`sessionStorage` and service-worker caches (cleared here);
-//  2. the native webview profile + settings store (Linux defers disk deletion
-//     until restart so the running WebKit process cannot recreate the data);
-//  3. the keychain session (cleared in Rust via `auth_clear`).
-
+// Settings maintenance: cached responses live in the renderer; Chromium's
+// caches, login partition and encrypted credentials belong to the main process.
 import { cacheClear } from '$lib/infra/storage/cache';
-import { invokeSafe, invokeStrict, isTauri } from './platform';
+import { flushSettings } from '$lib/infra/storage/settingsRepo';
+import { invokeSafe, invokeStrict, isDesktop } from './platform';
 import { resetInnertubeClient } from '$lib/infra/ytmusic/InnertubeClient';
 
 export interface ClearResult {
-  /** Human-readable list of what was removed. */
   removed: string[];
-  /** Anything the OS refused to release while the app was running. */
   locked: string[];
 }
 
-/** Approximate size of the on-disk app data, formatted for display. */
+/** Approximate bytes of the entire Electron profile, not just the HTTP cache. */
 export async function formatCacheSize(): Promise<string> {
-  if (!isTauri()) return 'unknown';
+  if (!isDesktop()) return 'unknown';
   const bytes = await invokeSafe<number>('cache_size');
-  if (bytes === null) return 'unknown';
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return 'unknown';
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB'];
   let value = bytes / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-/** Resolve `promise`, or `fallback` if it takes longer than `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (value: T) => {
-      if (done) return;
-      done = true;
-      resolve(value);
-    };
-    setTimeout(() => finish(fallback), ms);
-    promise.then(finish, () => finish(fallback));
+function bounded<T>(promise: Promise<T>, ms = 4000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Storage is busy')), ms);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 }
 
-/**
- * Delete every in-page cache. Safe to call whether or not we are in Tauri.
- *
- * Every step is independently guarded and time-boxed: `indexedDB.deleteDatabase`
- * fires `onblocked` (and never `onsuccess`) while youtubei.js still holds a
- * connection, which would otherwise hang the whole "Clear data" action.
- */
-async function clearInPageCaches(): Promise<void> {
-  cacheClear();
-  try {
-    localStorage.clear();
-  } catch {
-    /* ignore */
-  }
-  try {
-    sessionStorage.clear();
-  } catch {
-    /* ignore */
-  }
-  try {
-    if (typeof caches !== 'undefined') {
-      const keys = await withTimeout(caches.keys(), 2000, []);
-      await withTimeout(Promise.all(keys.map((key) => caches.delete(key))), 2000, []);
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    // youtubei.js stores its persistent cache in IndexedDB.
-    if (typeof indexedDB !== 'undefined' && indexedDB.databases) {
-      const dbs = await withTimeout(indexedDB.databases(), 2000, []);
-      await withTimeout(
-        Promise.all(
-          dbs.map(
-            (db) =>
-              new Promise<void>((resolve) => {
-                if (!db.name) return resolve();
-                const req = indexedDB.deleteDatabase(db.name);
-                req.onsuccess = req.onerror = req.onblocked = () => resolve();
-                // `onblocked` can fire without ever settling; the outer timeout
-                // covers that case.
-              }),
-          ),
-        ),
-        4000,
-        [],
-      );
-    }
-  } catch {
-    /* ignore */
-  }
+/** Empty the player cache without deleting a database that youtubei keeps open. */
+async function clearPlayerCache(): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  if (indexedDB.databases && !(await indexedDB.databases()).some(db => db.name === 'youtubei.js')) return;
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('youtubei.js');
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('Player cache is busy'));
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('kv-store')) { db.close(); resolve(); return; }
+      const tx = db.transaction('kv-store', 'readwrite');
+      tx.objectStore('kv-store').clear();
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onabort = tx.onerror = () => { db.close(); reject(tx.error); };
+    };
+  });
 }
 
-/**
- * Drop the cached playlist/library data (and the Innertube client that reads
- * it), leaving settings, the signed-in session and the WebView profile intact.
- */
+/** Preserve sign-in, preferences, saved queue and Last.fm when clearing caches. */
 export async function clearCache(): Promise<ClearResult> {
   cacheClear();
   resetInnertubeClient();
-  return { removed: ['playlist cache'], locked: [] };
+  const result: ClearResult = { removed: ['playlist cache'], locked: [] };
+  for (const [name, run] of [
+    ['player cache', clearPlayerCache],
+    ['web caches', async () => {
+      if (typeof caches === 'undefined') return;
+      const deleted = await Promise.all((await caches.keys()).map(key => caches.delete(key)));
+      if (deleted.some(value => !value)) throw new Error('Cache deletion failed');
+    }],
+  ] as const) {
+    try { await bounded(run()); result.removed.push(name); }
+    catch { result.locked.push(name); }
+  }
+  if (isDesktop()) {
+    const native = await invokeStrict<ClearResult>('clear_cache');
+    result.removed.push(...native.removed);
+    result.locked.push(...native.locked);
+  }
+  return result;
 }
 
-/**
- * Clear everything Cherry stores locally.
- *
- * The in-page caches are dropped first so the running app stops reading them
- * immediately; the Rust side then removes the settings store and any on-disk
- * caches it can get at.
- */
 export async function clearAllData(): Promise<ClearResult> {
-  await clearInPageCaches();
+  // Finish pending settings saves before the main process freezes writes and wipes.
+  await flushSettings();
+  cacheClear();
   resetInnertubeClient();
-
-  let removed: string[] = [];
-  if (isTauri()) {
-    removed = await invokeStrict<string[]>('clear_local_data');
-  }
-
-  const locked = removed
-    .filter((entry) => entry.startsWith('locked:'))
-    .flatMap((entry) =>
-      entry
-        .slice('locked:'.length)
-        .split(',')
-        .map((name) => name.trim())
-        .filter(Boolean),
-    );
-  return { removed: removed.filter((entry) => !entry.startsWith('locked:')), locked };
+  localStorage.clear();
+  sessionStorage.clear();
+  if (!isDesktop()) return clearCache();
+  const entries = await invokeStrict<string[]>('clear_local_data');
+  return {
+    removed: entries.filter(entry => !entry.startsWith('locked:')),
+    locked: entries.filter(entry => entry.startsWith('locked:')).map(entry => entry.slice(7)),
+  };
 }

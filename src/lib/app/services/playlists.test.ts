@@ -7,6 +7,8 @@ vi.mock('./auth', async () => {
   const { writable } = await import('svelte/store');
   return { authStore: writable<AuthSession | null>(null) };
 });
+const editableMocks = vi.hoisted(() => ({ add: vi.fn() }));
+vi.mock('./addablePlaylists', async () => ({ addablePlaylistsStore: (await import('svelte/store')).writable<Playlist[]>([]), addPlaylistLocally: editableMocks.add }));
 vi.mock('./account', () => ({ initChannel: vi.fn(async () => null) }));
 vi.mock('./player', () => ({ playTracks: vi.fn(), playTracksShuffled: vi.fn() }));
 vi.mock('$lib/infra/storage/cache', () => ({ cacheClear: vi.fn() }));
@@ -150,4 +152,52 @@ describe('account and channel loads', () => {
     expect(get(service.libraryLoading)).toBe(false);
     expect(get(service.playlistStore)).toEqual([playlist('new')]);
   });
+});
+
+
+it('restores edit controls from the playlist header even when the menu omitted it', async () => {
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce({ canEdit: true, title: 'Owned' });
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([]);
+  await service.loadOpenPlaylist(playlist('VLNEW'));
+  expect(api.getPlaylistMeta, String(get(service.openPlaylistError))).toHaveBeenCalled();
+  const { addPlaylistLocally } = await import('./addablePlaylists');
+  await vi.waitFor(() => expect(addPlaylistLocally).toHaveBeenCalledWith(expect.objectContaining({ browseId: 'VLNEW', title: 'Owned' })));
+});
+it('does not infer ownership from a regular playlist header', async () => {
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce({ title: 'Saved' });
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([]);
+  await service.loadOpenPlaylist(playlist('VLSAVED'));
+  const { addPlaylistLocally } = await import('./addablePlaylists');
+  await settle(); expect(addPlaylistLocally).not.toHaveBeenCalled();
+});
+
+
+it('refreshes an edited open playlist without clearing its content or reloading the library', async () => {
+  const song = (videoId: string): Track => ({ videoId, title: videoId, artists: [], thumbnails: [] });
+  const target = { ...playlist('VLEDIT'), trackCount: 1 };
+  service.playlistStore.set([target, playlist('OTHER')]);
+  service.openPlaylistStore.set(target); service.openPlaylistTracks.set([song('old')]);
+  service.openPlaylistLoading.set(false);
+  const response = deferred<Track[]>();
+  vi.mocked(api.streamCollectionTracks).mockReturnValueOnce(response.promise);
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce({ title: 'Updated', thumbnails: [{ url: 'https://image.test/new-art' }] });
+  const refresh = service.refreshEditedPlaylist(target, [song('added')]);
+  await settle();
+  expect(get(service.openPlaylistTracks).map(track => track.videoId)).toEqual(['old', 'added']);
+  expect(get(service.openPlaylistLoading)).toBe(false);
+  response.resolve([song('old'), song('added')]); await refresh;
+  expect(get(service.playlistStore)[0]).toMatchObject({ title: 'Updated', trackCount: 2, thumbnails: [{ url: 'https://image.test/new-art' }] });
+  expect(get(service.playlistStore)[1]).toEqual(playlist('OTHER'));
+  expect(api.getLibraryPlaylists).not.toHaveBeenCalled();
+});
+it('refreshes only the changed playlist header when another playlist is open', async () => {
+  const target = { ...playlist('TARGET'), trackCount: 2 };
+  service.playlistStore.set([target]);
+  service.openPlaylistStore.set(playlist('OTHER')); service.openPlaylistTracks.set([]);
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce({ thumbnails: [{ url: 'https://image.test/target' }] });
+  await service.refreshEditedPlaylist(target, [{ videoId: 'song', title: 'Song', artists: [], thumbnails: [] }]);
+  expect(api.getPlaylistMeta).toHaveBeenCalledWith('TARGET', session);
+  expect(api.streamCollectionTracks).not.toHaveBeenCalled();
+  expect(get(service.openPlaylistStore)?.browseId).toBe('OTHER');
+  expect(get(service.playlistStore)[0]).toMatchObject({ trackCount: 3, thumbnails: [{ url: 'https://image.test/target' }] });
 });

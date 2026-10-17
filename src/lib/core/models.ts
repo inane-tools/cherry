@@ -1,5 +1,5 @@
 // ── Cherry core domain ─────────────────────────────────────────────
-// Pure types. No Tauri, no Innertube, no DOM imports allowed here.
+// Pure types. No Electron, no Innertube, no DOM imports allowed here.
 
 export type VideoId = string;
 export type BrowseId = string;
@@ -93,6 +93,11 @@ export interface StreamInfo {
 /** YouTube Music web session: the raw `Cookie` header from music.youtube.com
  *  (captured automatically from the embedded login window, or pasted). */
 export interface AuthSession {
+  /** Google account slot from the login page, distinct from a brand page ID. */
+  accountIndex?: number;
+  selectedChannelId?: string;
+  /** No secure OS storage: this sign-in lasts until the app exits. */
+  persistence?: 'memory';
   kind: 'cookie';
   cookie: string;
   accountLabel?: string;

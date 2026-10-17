@@ -513,3 +513,14 @@ html.cherry-linux-window .cherry-range::-webkit-slider-thumb {
     scroll-behavior: auto !important;
   }
 }
+
+/* Native draggable region; interactive controls opt out. */
+[data-desktop-drag-region] { -webkit-app-region: drag; }
+[data-desktop-drag-region] button, [data-desktop-drag-region] input, [data-desktop-drag-region] a, [data-desktop-drag-region] form { -webkit-app-region: no-drag; }
+
+/* OS ink colors stay independent of the tinted color ramp. CSS glyphs and
+   hit targets scale together through Electron's app zoom. */
+html:not(.light) .win-caption > button { color: #fff; }
+html.light .win-caption > button { color: #000; }
+.win-caption > button:last-child:hover,
+html.light .win-caption > button:last-child:hover { color: #fff; }

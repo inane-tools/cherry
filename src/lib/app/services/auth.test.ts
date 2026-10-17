@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.mock('./platform', () => ({ isTauri: () => true, invokeStrict: vi.fn(), invokeSafe: vi.fn() }));
+vi.mock('./platform', () => ({ isDesktop: () => true, invokeStrict: vi.fn(), invokeSafe: vi.fn() }));
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
-  clearStreamCache: vi.fn(), getInnertube: vi.fn(), resetInnertubeClient: vi.fn(),
+  clearStreamCache: vi.fn(), getInnertube: vi.fn(async () => ({})), resetInnertubeClient: vi.fn(),
 }));
 vi.mock('$lib/infra/storage/cache', () => ({ cacheClear: vi.fn() }));
 vi.mock('./queue', () => ({ clearQueue: vi.fn() }));
@@ -11,7 +11,7 @@ vi.mock('./queuePersistence', () => ({ clearStoredQueue: vi.fn() }));
 
 const { invokeStrict } = await import('./platform');
 const { clearQueue } = await import('./queue');
-const { authStore, authStatus, restoreAuth, signOut } = await import('./auth');
+const { authStore, authStatus, restoreAuth, signOut, signInWithCookie } = await import('./auth');
 const session = { kind: 'cookie' as const, cookie: `SID=${'x'.repeat(50)}`, savedAt: 0 };
 
 beforeEach(() => {
@@ -44,4 +44,11 @@ describe('sign out', () => {
     expect(get(authStatus)).toBe('signed-out');
     expect(clearQueue).toHaveBeenCalledOnce();
   });
+});
+
+it('keeps the temporary-session warning returned by the desktop auth store', async () => {
+  vi.mocked(invokeStrict).mockResolvedValueOnce({ ...session, persistence: 'memory' });
+  await signInWithCookie(session.cookie);
+  expect(get(authStore)?.persistence).toBe('memory');
+  expect(get(authStatus)).toBe('signed-in');
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import { waitForStartup } from '$lib/app/services/startup';
+  import { authIdentity } from '$lib/infra/ytmusic/authContext';
   import { startLyrics } from '$lib/app/services/lyrics';
   import { startRadioRefill } from '$lib/app/services/radio';
   import { startUpdateChecks } from '$lib/app/services/updates';
@@ -179,7 +180,7 @@
   // Re-run when the stored session changes (sign-in / sign-out).
   let lastCookie = '';
   authStore.subscribe((session) => {
-    const cookie = session?.cookie ?? '';
+    const cookie = authIdentity(session);
     if (cookie === lastCookie) return;
     const wasSignedOut = lastCookie === '';
     lastCookie = cookie;

@@ -1,11 +1,8 @@
 <script lang="ts">
-  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { getCurrentWindow } from '$lib/desktop/window';
   import { onMount, tick } from 'svelte';
-  import { get } from 'svelte/store';
-  import { listen } from '@tauri-apps/api/event';
-  import { isTauri, invokeSafe } from '$lib/app/services/platform';
+  import { isDesktop } from '$lib/app/services/platform';
   import { settingsStore } from '$lib/app/services/settings';
-  import { renderedZoom } from '$lib/app/services/zoom';
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
   import { back, canGoBack, go } from '$lib/app/services/navigation';
@@ -27,80 +24,27 @@
   export let narrow = false;
   export let onMenu: () => void = () => {};
 
+  let windows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
   let maximized = false;
-  let platform = '';
-  let linuxInsets = { left: 0, right: 0 };
-
   onMount(() => {
-    if (!isTauri()) return;
     let disposed = false;
-    let stopSettings: (() => void) | undefined;
-    let stopResize: (() => void) | undefined;
-    let stopInsets: (() => void) | undefined;
-    let themeObserver: MutationObserver | undefined;
-    let stopZoom: (() => void) | undefined;
+    let stop = () => {};
     void (async () => {
-      platform = await invokeSafe<string>('desktop_platform') ?? '';
-      if (disposed) return;
+      if (!isDesktop() || disposed) return;
+      windows = await window.cherryDesktop?.invoke<string>('desktop_platform') === 'windows';
       const win = getCurrentWindow();
-      if (platform === 'linux') {
-        document.documentElement.classList.add('cherry-linux-window');
-        const unlisten = await listen<typeof linuxInsets>('linux-controls-insets', ({ payload }) => {
-          linuxInsets = payload;
-        });
-        if (disposed) { unlisten(); return; }
-        stopInsets = unlisten;
-      }
-      if (platform === 'linux' || platform === 'macos') {
-        // GTK buttons on Linux and native decorations on macOS. Queue
-        // changes so rapid toggles cannot leave the wrong frame on screen.
-        let frameUpdate = Promise.resolve();
-        let lastVisible: string | undefined;
-        const updateControls = () => {
-          const { windowControls } = get(settingsStore);
-          const zoom = get(renderedZoom);
-          const light = document.documentElement.classList.contains('light');
-          const key = `${windowControls}:${zoom}:${light}`;
-          if (lastVisible === key) return;
-          lastVisible = key;
-          frameUpdate = frameUpdate.then(async () => {
-            if (disposed) return;
-            if (platform === 'linux') {
-              const insets = await invokeSafe<typeof linuxInsets>('set_linux_window_controls', { visible: windowControls, zoom, light });
-              if (!disposed && insets) linuxInsets = insets;
-            } else {
-              await win.setDecorations(windowControls);
-            }
-          }).catch(console.error);
-        };
-        stopSettings = settingsStore.subscribe(updateControls);
-        if (platform === 'linux') {
-          stopZoom = renderedZoom.subscribe(updateControls);
-          // Observe the resolved theme, including OS changes in system mode.
-          themeObserver = new MutationObserver(updateControls);
-          themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        }
-      }
-      const updateWindowShape = async () => {
-        maximized = await win.isMaximized().catch(() => maximized);
-        const fullscreen = await win.isFullscreen().catch(() => false);
-        if (!disposed && platform === 'linux') {
-          document.documentElement.classList.toggle('cherry-window-expanded', maximized || fullscreen);
-        }
-      };
-      await updateWindowShape();
-      const unlisten = await win.onResized(updateWindowShape);
-      if (disposed) unlisten();
-      else stopResize = unlisten;
+      maximized = await win.isMaximized();
+      const unlisten = await win.onResized(() => { void win.isMaximized().then(value => { if (!disposed) maximized = value; }); });
+      if (disposed) unlisten(); else stop = unlisten;
     })().catch(console.error);
-    return () => { disposed = true; themeObserver?.disconnect(); stopZoom?.(); stopSettings?.(); stopResize?.(); stopInsets?.(); };
+    return () => { disposed = true; stop(); };
   });
 
   $: profile = $activeChannelStore;
   $: accountName = profile?.name || $authStore?.accountLabel || 'Guest';
   $: initial = accountName.trim().charAt(0).toUpperCase() || 'G';
 
-  if (isTauri()) {
+  if (isDesktop()) {
     void getCurrentWindow()
       .isMaximized()
       .then((value) => (maximized = value))
@@ -108,32 +52,17 @@
   }
 
   async function minimize() {
-    if (isTauri()) await getCurrentWindow().minimize();
+    if (isDesktop()) await getCurrentWindow().minimize();
   }
   async function toggleMaximize() {
-    if (!isTauri()) return;
+    if (!isDesktop()) return;
     await getCurrentWindow().toggleMaximize();
     maximized = await getCurrentWindow().isMaximized().catch(() => maximized);
   }
   async function close() {
-    if (isTauri()) await getCurrentWindow().close();
+    if (isDesktop()) await getCurrentWindow().close();
   }
 
-  async function onBarMouseDown(e: MouseEvent) {
-    if (e.button !== 0 || !isTauri()) return;
-    const t = e.target;
-    if (t instanceof Element && t.closest('button, input, form, a')) return;
-    e.preventDefault();
-    // The second press of a double-click must maximize/restore. startDragging()
-    // on the first press hands the mouse to the OS (which ends on mouseup), so
-    // the native dblclick event is never delivered — the press count has to be
-    // checked here instead.
-    if (e.detail === 2) {
-      await toggleMaximize();
-      return;
-    }
-    await getCurrentWindow().startDragging().catch(() => undefined);
-  }
 </script>
 
 <!-- The header is the OS window drag handle: dragging moves the window and a
@@ -142,10 +71,8 @@
 <!-- `z-40` keeps the whole bar (drag region + icons) above the sign-in gate,
      which covers everything below it. -->
 <header
-  onmousedown={onBarMouseDown}
+  data-desktop-drag-region
   class="absolute inset-x-0 top-0 z-40 flex h-12 items-center gap-2 pl-2"
-  style:padding-left={platform === 'linux' ? `${Math.max(8, linuxInsets.left / $renderedZoom)}px` : undefined}
-  style:padding-right={platform === 'linux' ? `${linuxInsets.right / $renderedZoom || 12}px` : undefined}
 >
   <!-- Left: back + menu, shown only in the narrow layout (where the sidebar is a
        drawer). Hidden on the welcome screen. -->
@@ -206,19 +133,19 @@
       </button>
     {/if}
 
-    {#if isTauri() && platform === 'windows' && $settingsStore.windowControls}
+    {#if isDesktop() && $settingsStore.windowControls}
       <!-- Native Windows caption buttons: Segoe system glyphs
            (E921 minimise, E922 maximise, E923 restore, E8BB close).
            `z-40` keeps them clickable above the sign-in gate, which covers the
            rest of the window. -->
-      <div class="relative z-40 flex h-full items-stretch" data-tauri-drag-region>
+      <div class="relative z-40 flex h-full items-stretch" class:win-caption={windows} data-desktop-drag-region>
         <button
           class="flex w-[46px] items-center justify-center text-white hover:bg-white/10"
           title="Minimize"
           aria-label="Minimize"
           onclick={minimize}
         >
-          <span class="win-glyph">&#xE921;</span>
+          {#if windows}<span class="win-glyph" aria-hidden="true">&#xE921;</span>{:else}<i class="bx bx-minus text-lg" aria-hidden="true"></i>{/if}
         </button>
         <button
           class="flex w-[46px] items-center justify-center text-white hover:bg-white/10"
@@ -226,7 +153,7 @@
           aria-label={maximized ? 'Restore' : 'Maximize'}
           onclick={toggleMaximize}
         >
-          <span class="win-glyph">{maximized ? '\uE923' : '\uE922'}</span>
+          {#if windows}<span class="win-glyph" aria-hidden="true">{maximized ? '\uE923' : '\uE922'}</span>{:else}<i class="bx {maximized ? 'bx-windows' : 'bx-square'} text-sm" aria-hidden="true"></i>{/if}
         </button>
         <button
           class="flex w-[46px] items-center justify-center text-white hover:bg-[#c42b1c]"
@@ -234,7 +161,7 @@
           aria-label="Close"
           onclick={close}
         >
-          <span class="win-glyph text-[11px]">&#xE8BB;</span>
+          {#if windows}<span class="win-glyph" aria-hidden="true">&#xE8BB;</span>{:else}<i class="bx bx-x text-xl" aria-hidden="true"></i>{/if}
         </button>
       </div>
     {/if}

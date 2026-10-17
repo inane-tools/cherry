@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-vi.mock('./platform', () => ({ isTauri: () => false }));
+vi.mock('./platform', () => ({ isDesktop: () => false }));
 import { applyArtworkTheme, applyCustomAccent, coordinateArtworkPresentation, setAccentSource, resetArtworkTheme } from './theme';
 
 afterEach(() => { setAccentSource('song'); resetArtworkTheme(); });

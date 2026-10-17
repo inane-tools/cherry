@@ -47,6 +47,8 @@ export interface HomeFilter { label: string; browseId: string; params?: string }
 
 /** Header shared by artist / album / (playlist) browse pages. */
 export interface PageHeader {
+  /** Positive proof from YouTube's editable playlist header. */
+  canEdit?: boolean;
   title: string;
   subtitle?: string;
   /** Best-effort artist line (album/artist pages). */
@@ -80,6 +82,7 @@ export function scanPageHeader(raw: Json): PageHeader | null {
     header?.header?.musicVisualHeaderRenderer;
   if (inner) header = inner;
   return {
+    ...(node.musicEditablePlaylistDetailHeaderRenderer ? { canEdit: true } : {}),
     title: textOf(header.title) ?? textOf(node.title) ?? '',
     subtitle: textOf(header.subtitle) ?? textOf(node.subtitle),
     artist: artistHintOf(header),

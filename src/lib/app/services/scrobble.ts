@@ -124,13 +124,14 @@ function onState(state: PlaybackState): void {
   // Seeking back before the scrobble point does not reset the listened time.
   const position = state.positionSeconds || 0;
   const restarted = scrobbled && position < 3 && lastPosition - position > 10;
-  if (track.videoId !== currentVideoId || restarted) {
+  const changed = track.videoId !== currentVideoId || restarted;
+  if (changed) {
     beginTrack(track, state);
   }
   lastPosition = position;
   const playing = state.status === 'playing';
   // Send "now playing" on the transition into playing (and on a fresh track).
-  if (playing && !wasPlaying && (get(settingsStore).lastfmNowPlaying ?? true)) {
+  if (playing && (changed || !wasPlaying) && (get(settingsStore).lastfmNowPlaying ?? true)) {
     void nowPlaying(track);
   }
   wasPlaying = playing;

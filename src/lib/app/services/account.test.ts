@@ -16,6 +16,7 @@ vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
 }));
 
 const { authStore } = await import('./auth');
+const { settingsStore } = await import('./settings');
 const api = await import('$lib/infra/ytmusic/InnertubeClient');
 const service = await import('./account');
 const session: AuthSession = { kind: 'cookie', cookie: 'SID=restored', savedAt: 0 };
@@ -23,6 +24,7 @@ const profile: AccountProfile = { name: 'Channel A', pageId: 'a', isChannel: tru
 
 beforeEach(() => {
   vi.clearAllMocks();
+  settingsStore.update(settings => ({ ...settings, channelPageId: 'a' }));
   authStore.set(null);
   authStore.set(session);
   vi.mocked(api.getChannels).mockResolvedValue([profile]);
@@ -66,4 +68,21 @@ describe('channel lifecycle', () => {
     expect(get(service.activeChannelStore)).toEqual(newer);
     expect(get(service.channelsStore)).toEqual([newer]);
   });
+});
+
+it('uses the brand selected in the login window when no saved channel exists', async () => {
+ settingsStore.update(settings => ({ ...settings, channelPageId: '' }));
+ authStore.set({...session,accountIndex:2,selectedChannelId:'brand'});
+ const brand={name:'Brand',pageId:'brand',isChannel:true};
+ vi.mocked(api.getChannels).mockResolvedValue([profile,brand]);
+ await service.initChannel();
+ expect(get(service.activeChannelStore)).toEqual(brand);
+ expect(api.setActiveChannel).toHaveBeenLastCalledWith('brand');
+ expect(api.pickPrimaryChannel).not.toHaveBeenCalled();
+});
+it('reinitializes channels when the account slot changes with the same cookies', async () => {
+ await service.initChannel();
+ authStore.set({...session,accountIndex:1});
+ expect(get(service.activeChannelStore)).toBeNull();
+ expect(get(service.channelsStore)).toEqual([]);
 });

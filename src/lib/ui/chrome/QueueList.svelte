@@ -11,6 +11,8 @@
   } from '$lib/app/services/queue';
   import { playerStore, playQueueItem } from '$lib/app/services/player';
   import { bestThumbnail } from '$lib/core/models';
+  import { tick } from 'svelte';
+  import { virtualRows, rowIndexes } from '$lib/ui/actions/virtualRows';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
 
   /** Called after a row is chosen (the popup uses it to close itself). */
@@ -18,6 +20,14 @@
 
   $: items = $queueItems;
   $: upcoming = $upNextQueue;
+  const rowHeight = 50;
+  let listNode: HTMLDivElement;
+  let start = 0;
+  let end = 18;
+  function onRange(nextStart: number, nextEnd: number) {
+    if (start !== nextStart) start = nextStart;
+    if (end !== nextEnd) end = nextEnd;
+  }
 
   // Clicking a row plays it *and* drops everything before it (queue.ts).
   function pick(queueId: string) {
@@ -29,6 +39,7 @@
   let dragId: string | null = null;
   let dropIndex: number | null = null;
   $: dragIndex = dragId ? upcoming.findIndex((item) => item.queueId === dragId) : -1;
+  $: visibleRows = rowIndexes(upcoming.length, start, end, dragIndex).map(index => ({ item: upcoming[index], index }));
   // One line per gap: hide it when the target is the dragged row's own gap.
   $: showDropLine = dropIndex !== null && dropIndex !== dragIndex && dropIndex !== dragIndex + 1;
 
@@ -65,8 +76,17 @@
 
   // Rows are divs (so the artist names can be buttons); keys only play the row
   // when the row itself has focus.
-  function onRowKey(event: KeyboardEvent, queueId: string): void {
+  async function onRowKey(event: KeyboardEvent, queueId: string, index: number): Promise<void> {
     if (event.target !== event.currentTarget) return;
+    const target = ({ ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: upcoming.length - 1 } as Record<string, number>)[event.key];
+    if (target !== undefined) {
+      event.preventDefault();
+      const next = Math.max(0, Math.min(upcoming.length - 1, target));
+      onRange(Math.max(0, next - 6), Math.min(upcoming.length, next + 14));
+      await tick();
+      listNode.querySelector<HTMLElement>(`[data-queue-index="${next}"]`)?.focus();
+      return;
+    }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       pick(queueId);
@@ -110,10 +130,16 @@
 
   {#if upcoming.length > 0}
     <div class="mb-1 px-2 text-[11px] font-medium text-zinc-400">Next up</div>
-    <div class="flex flex-col gap-0.5">
-      {#each upcoming as qi, i (qi.queueId)}
+    <div bind:this={listNode} data-queue-list class="relative" style:height={`${upcoming.length * rowHeight - 2}px`}
+      use:virtualRows={{ count: upcoming.length, rowHeight, onRange }}>
+      {#each visibleRows as entry (entry.item.queueId)}
+        {@const qi = entry.item}
+        {@const i = entry.index}
         <div
-          class="group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06] {dragId ===
+          data-queue-row={qi.queueId}
+          data-queue-index={i}
+          style:top={`${i * rowHeight}px`}
+          class="group absolute inset-x-0 flex h-12 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06] {dragId ===
           qi.queueId
             ? 'opacity-40'
             : ''}"
@@ -124,7 +150,7 @@
           ondragover={(event) => onDragOver(event, i)}
           ondrop={onDrop}
           ondragend={onDragEnd}
-          onkeydown={(event) => onRowKey(event, qi.queueId)}
+          onkeydown={(event) => onRowKey(event, qi.queueId, i)}
           onclick={() => pick(qi.queueId)}
         >
           {#if showDropLine && dropIndex === i}

@@ -15,6 +15,7 @@ vi.mock('./lastfm', () => ({
   }),
 }));
 
+const { nowPlaying } = await import('./lastfm');
 const { playerStore } = await import('./player');
 const { __test, flushScrobbleQueue, resetScrobbleState } = await import('./scrobble');
 
@@ -40,6 +41,7 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  vi.mocked(nowPlaying).mockClear();
   sent.length = 0;
   accept = () => true;
   localStorage.clear();
@@ -145,5 +147,28 @@ describe('offline queue', () => {
     localStorage.setItem(QUEUE_KEY, JSON.stringify([{ fields: { artist: 'a', track: 't' }, timestamp: 1 }]));
     await Promise.all([flushScrobbleQueue(), flushScrobbleQueue()]);
     expect(sent).toHaveLength(1);
+  });
+});
+
+
+describe('pause and now-playing lifecycle', () => {
+  it('does not count paused time or scrobble a paused track', async () => {
+    __test.onState(state(0)); listen(25);
+    const paused = state(25, 'paused'); playerStore.set(paused); __test.onState(paused);
+    for (let i = 0; i < 120; i++) __test.tick();
+    await settle(); expect(sent).toHaveLength(0); expect(nowPlaying).toHaveBeenCalledTimes(1);
+    listen(24, 25); await settle(); expect(sent).toHaveLength(0);
+    listen(1, 49); await settle(); expect(sent).toHaveLength(1);
+  });
+  it('keeps one scrobble after pausing and resuming the rest of the track', async () => {
+    __test.onState(state(0)); listen(60); await settle();
+    const paused = state(60, 'paused'); playerStore.set(paused); __test.onState(paused);
+    for (let i = 0; i < 120; i++) __test.tick();
+    listen(35, 60); await settle(); expect(sent).toHaveLength(1);
+  });
+  it('announces a new track even if playback stayed in playing state', () => {
+    __test.onState(state(0));
+    __test.onState({ ...state(0), track: { ...song, videoId: 'next', title: 'Next' } });
+    expect(nowPlaying).toHaveBeenCalledTimes(2);
   });
 });

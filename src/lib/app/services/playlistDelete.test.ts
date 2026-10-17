@@ -3,7 +3,10 @@ import { get } from 'svelte/store';
 const playlist = { browseId: 'VLPL123', title: 'My playlist', thumbnails: [] };
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ deleteOwnedPlaylist: vi.fn(async () => {}), getActiveChannel: vi.fn(() => 'channel') }));
 vi.mock('./auth', async () => ({ authStore: (await import('svelte/store')).writable({ kind: 'cookie', cookie: 'session', savedAt: 0 }) }));
-vi.mock('./addablePlaylists', async () => ({ addablePlaylistsStore: (await import('svelte/store')).writable([]) }));
+vi.mock('./addablePlaylists', async () => {
+  const addablePlaylistsStore = (await import('svelte/store')).writable<import('$lib/core/models').Playlist[]>([]);
+  return { addablePlaylistsStore, removePlaylistLocally: (id: string) => addablePlaylistsStore.update(list => list.filter(p => p.browseId !== id)) };
+});
 vi.mock('./playlists', async () => ({ playlistStore: (await import('svelte/store')).writable([]), homeSectionsStore: (await import('svelte/store')).writable([]) }));
 vi.mock('./pins', async () => ({ pinnedStore: (await import('svelte/store')).writable([]) }));
 vi.mock('./playlistLibrary', () => ({ isPlaylistOwned: vi.fn(() => true) }));

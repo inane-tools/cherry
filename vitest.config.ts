@@ -6,7 +6,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Unit tests for the TypeScript layers (core, infra, services). Svelte
 // components are not compiled here: the services are written to run in a plain
-// DOM (see `platform.ts`), so jsdom is enough and Tauri is simply absent.
+// DOM (see `platform.ts`), so jsdom is enough and Electron is simply absent.
 export default defineConfig({
   resolve: { alias: { $lib: path.resolve(dirname, 'src/lib') } },
   test: {

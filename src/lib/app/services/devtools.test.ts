@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { DEFAULT_SETTINGS } from '$lib/infra/storage/settingsRepo';
 
-vi.mock('./platform', () => ({ isTauri: () => true, invokeSafe: vi.fn() }));
+vi.mock('./platform', () => ({ isDesktop: () => true, invokeSafe: vi.fn() }));
 vi.mock('./settings', async () => {
   const { get, writable } = await import('svelte/store');
   const { DEFAULT_SETTINGS } = await import('$lib/infra/storage/settingsRepo');

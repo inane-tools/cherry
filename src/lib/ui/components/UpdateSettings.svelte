@@ -13,8 +13,8 @@
       <p class="flex items-center gap-2 font-semibold text-white"><i class="bx bx-refresh text-base text-zinc-400" aria-hidden="true"></i>Updates</p>
       <p class="mt-1 text-xs text-zinc-400">
         {#if !$updateStore.initialized}Loading update support…
-        {:else if $updateStore.environment === 'flatpak'}Update your Flatpak using the latest bundle from GitHub.
-        {:else if !supported}Automatic updates are available for installed Windows and AppImage releases.
+        {:else if $updateStore.environment === 'flatpak'}Update through your software manager or Flatpak repository. GitHub bundles can be installed manually.
+        {:else if !supported}Updates are available in installed Windows and AppImage releases; development builds do not install updates.
         {:else if $updateStore.phase === 'checking'}Checking for updates…
         {:else if $updateStore.phase === 'current'}You’re up to date.
         {:else if $updateStore.phase === 'available'}Cherry {$updateStore.version} is available.
@@ -25,13 +25,14 @@
       </p>
     </div>
     {#if supported}
+      <div class="flex flex-wrap items-center gap-2">
       {#if $updateStore.phase === 'ready'}
         <button class="update-button" onclick={() => installUpdate()}>Install and restart</button>
       {:else if $updateStore.phase === 'available' || ($updateStore.phase === 'error' && $updateStore.version)}
         <button class="update-button" onclick={() => downloadUpdate()}>Download</button>
-      {:else}
-        <button class="update-button" disabled={busy} onclick={() => checkUpdates()}>{busy ? 'Please wait…' : 'Check for updates'}</button>
       {/if}
+      <button class="update-button" disabled={busy} onclick={() => checkUpdates()}>{busy ? 'Please wait…' : 'Check for updates'}</button>
+      </div>
     {/if}
   </div>
   {#if $updateStore.phase === 'downloading'}

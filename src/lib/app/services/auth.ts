@@ -2,7 +2,7 @@
 // Two ways in: (1) in-app YouTube Music sign-in — the window is watched via
 // the native cookie store (HttpOnly included) and the session is captured on
 // success; (2) paste a `Cookie` header manually. Either way the secret lands
-// in the OS keychain via Rust commands, never localStorage.
+// in the OS keychain via Electron IPC commands, never localStorage.
 
 import { writable } from 'svelte/store';
 import type { AuthSession } from '$lib/core/models';
@@ -10,15 +10,15 @@ import { clearStreamCache, getInnertube, resetInnertubeClient } from '$lib/infra
 import { cacheClear } from '$lib/infra/storage/cache';
 import { clearQueue } from './queue';
 import { clearStoredQueue } from './queuePersistence';
-import { invokeSafe, invokeStrict, isTauri } from './platform';
+import { invokeSafe, invokeStrict, isDesktop } from './platform';
 
 export const authStore = writable<AuthSession | null>(null);
 export type AuthStatus = 'checking' | 'signed-out' | 'signed-in' | 'error';
 export const authStatus = writable<AuthStatus>('checking');
 
 async function persist(session: AuthSession): Promise<void> {
-  if (isTauri()) {
-    await invokeStrict('auth_save', { session });
+  if (isDesktop()) {
+    session = await invokeStrict<AuthSession | null>('auth_save', { session }) ?? session;
   } else {
     // Browser dev fallback (not secure — dev only).
     try {
@@ -42,7 +42,7 @@ export async function initAuth(): Promise<AuthSession | null> {
 
 export async function restoreAuth(): Promise<AuthSession | null> {
   let saved: AuthSession | null = null;
-  if (isTauri()) {
+  if (isDesktop()) {
     // The OS keychain can fail transiently (a concurrent write, a locked
     // store). Retry before deciding there is no session — a single hiccup must
     // not look like being signed out.
@@ -105,7 +105,7 @@ export async function pollYtmStatus(): Promise<YtmLoginStatus> {
 
 /** Reads the session cookies from the login window, persists them, closes it. */
 export async function finishYtmLogin(accountLabel?: string): Promise<AuthSession> {
-  // Rust already captured and persisted the session; only write again when a
+  // Electron already captured and persisted the session; only write again when a
   // label needs to be added. Re-saving the (multi-KB) payload twice in quick
   // succession is what triggered the transient Windows credential failures.
   const session = await invokeStrict<AuthSession>('ytm_login_finish');
@@ -121,7 +121,7 @@ export async function finishYtmLogin(accountLabel?: string): Promise<AuthSession
 }
 
 export function cancelYtmLogin(): void {
-  if (isTauri()) void invokeSafe('close_ytm_login');
+  if (isDesktop()) void invokeSafe('close_ytm_login');
 }
 
 /** Manual fallback: raw `Cookie` header pasted from music.youtube.com. */
@@ -144,7 +144,7 @@ export async function signInWithCookie(rawCookie: string, accountLabel?: string)
 export async function signOut(): Promise<void> {
   // Do not report success or discard the live session if its persisted copy
   // could not be deleted: it would otherwise return on the next launch.
-  if (isTauri()) {
+  if (isDesktop()) {
     await invokeStrict('auth_clear');
   } else {
     sessionStorage.removeItem('cherry.auth.dev');

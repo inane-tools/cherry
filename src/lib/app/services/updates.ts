@@ -1,76 +1,46 @@
 import { get, writable } from 'svelte/store';
-import { check, type Update } from '@tauri-apps/plugin-updater';
-import { errorMessage, invokeStrict, invokeSafe, isTauri } from './platform';
+import { invokeStrict, isDesktop, errorMessage } from './platform';
 import { playerStore, toggle } from './player';
 import { flushQueue } from './queuePersistence';
 import { flushSettings } from '$lib/infra/storage/settingsRepo';
 
 type Environment = 'windows' | 'appimage' | 'flatpak' | 'manual' | 'development';
 type Phase = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'installing' | 'error';
-export const updateStore = writable({
-  environment: 'manual' as Environment, initialized: false, phase: 'idle' as Phase,
-  version: '', notes: '', received: 0, total: 0, error: '',
-});
-let pending: Update | null = null;
+export interface UpdateState {
+  environment: Environment; initialized: boolean; phase: Phase;
+  version: string; notes: string; received: number; total: number; error: string;
+}
+export const updateStore = writable<UpdateState>({ environment: 'development', initialized: false, phase: 'idle', version: '', notes: '', received: 0, total: 0, error: '' });
 let initializing: Promise<void> | undefined;
+let subscribed = false;
 export function initializeUpdates(): Promise<void> {
   return initializing ??= (async () => {
-    const environment = isTauri() ? await invokeStrict<Environment>('updater_environment') : 'development';
-    updateStore.update(s => ({ ...s, environment, initialized: true }));
-  })().catch(e => {
-    initializing = undefined;
-    throw e;
-  });
-}
-export async function checkUpdates(): Promise<void> {
-  if (['checking', 'downloading', 'ready', 'installing'].includes(get(updateStore).phase)) return;
-  // Claim the operation before awaiting initialization, including concurrent clicks.
-  updateStore.update(s => ({ ...s, phase: 'checking', error: '', version: '', notes: '' }));
-  try {
-    await initializeUpdates();
-    if (!['windows', 'appimage'].includes(get(updateStore).environment)) {
-      updateStore.update(s => ({ ...s, phase: 'idle' }));
-      return;
+    if (!isDesktop()) { updateStore.update(s => ({ ...s, initialized: true })); return; }
+    if (!subscribed) {
+      window.cherryDesktop!.subscribe('updater-state', payload => updateStore.set(payload as UpdateState));
+      subscribed = true;
     }
-    if (pending) await pending.close();
-    pending = null;
-    const update = await check({ timeout: 15000 });
-    pending = update;
-    updateStore.update(s => ({ ...s, phase: update ? 'available' : 'current',
-      version: update?.version ?? '', notes: update?.body ?? '', received: 0, total: 0 }));
-  } catch (e) {
-    updateStore.update(s => ({ ...s, phase: 'error', error: errorMessage(e, 'Could not check for updates.') }));
-  }
+    updateStore.set(await invokeStrict<UpdateState>('updater_state'));
+  })().catch(error => { initializing = undefined; throw error; });
 }
-export async function downloadUpdate(): Promise<void> {
-  if (!pending || !['available', 'error'].includes(get(updateStore).phase)) return;
-  updateStore.update(s => ({ ...s, phase: 'downloading', received: 0, total: 0, error: '' }));
-  try {
-    await pending.download(event => {
-      if (event.event === 'Started') updateStore.update(s => ({ ...s, total: event.data.contentLength ?? 0 }));
-      if (event.event === 'Progress') updateStore.update(s => ({ ...s, received: s.received + event.data.chunkLength }));
-    }, { timeout: 120000 });
-    updateStore.update(s => ({ ...s, phase: 'ready' }));
-  } catch (e) {
-    updateStore.update(s => ({ ...s, phase: 'error', error: errorMessage(e, 'Download failed. Please try again.') }));
-  }
+async function run(command: string): Promise<void> {
+  try { await initializeUpdates(); if (!isDesktop()) return; updateStore.set(await invokeStrict<UpdateState>(command)); }
+  catch (error) { updateStore.update(s => ({ ...s, phase: 'error', error: errorMessage(error) })); }
 }
+export async function checkUpdates(): Promise<void> { await run('updater_check'); }
+export async function downloadUpdate(): Promise<void> { await run('updater_download'); }
 export async function installUpdate(): Promise<void> {
-  if (!pending || get(updateStore).phase !== 'ready') return;
-  updateStore.update(s => ({ ...s, phase: 'installing', error: '' }));
+  if (get(updateStore).phase !== 'ready') return;
   try {
     if (get(playerStore).status === 'playing') await toggle();
     flushQueue();
     await flushSettings();
-    await invokeSafe('discord_clear_presence');
-    await pending.install();
-    const { relaunch } = await import('@tauri-apps/plugin-process');
-    await relaunch();
-  } catch (e) {
-    updateStore.update(s => ({ ...s, phase: 'ready', error: errorMessage(e, 'Installation failed. Please try again.') }));
-  }
+    await run('updater_install');
+  } catch (error) { updateStore.update(s => ({ ...s, error: errorMessage(error) })); }
 }
 export function startUpdateChecks(): () => void {
-  const timer = setTimeout(() => { void checkUpdates(); }, 5000);
-  return () => clearTimeout(timer);
+  const check = () => { void checkUpdates(); };
+  const timer = setTimeout(check, 5000);
+  const interval = setInterval(check, 4 * 60 * 60 * 1000);
+  return () => { clearTimeout(timer); clearInterval(interval); };
 }

@@ -1,11 +1,11 @@
 // Player service: owns the single <audio> element, stream resolution,
-// OS integration (media keys metadata via Rust, Discord presence).
+// OS integration (media keys metadata via Electron IPC, Discord presence).
 //
 // Flow: playTrack(s) → queue.setQueue → loadCurrent() → Innertube stream URL
 // → audio.src → play. Autoplay advances via queue.step().
 
 import { get, writable } from 'svelte/store';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '$lib/desktop/window';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
 import { toCherryError } from '$lib/core/errors';
@@ -13,11 +13,12 @@ import { getAudioStream, getInnertube, prefetchAudioStream, getMusicVideo } from
 import { authStore } from './auth';
 import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
 import type { RepeatMode } from '$lib/core/models';
-import { invokeSafe, isTauri } from './platform';
+import { invokeSafe, isDesktop } from './platform';
 import { announceSignInRequired } from './gate';
 import { settingsStore, updateSettings } from './settings';
 import { rememberPosition, restoreQueue, watchQueue } from './queuePersistence';
 import { applyArtworkTheme, resetArtworkTheme } from './theme';
+import { mediaProxyUrl } from '$lib/infra/ytmusic/mediaProxy';
 import { attachAdaptiveVideo } from './adaptiveVideo';
 import { videoQualities } from './videoQuality';
 
@@ -50,12 +51,12 @@ export async function setVideoMode(enabled: boolean, autoplay?: boolean): Promis
   void updateSettings({ videoPreferred: enabled });
   const state = get(playerStore);
   if (!state.track) return;
-  pendingResume = { videoId: get(currentItem)?.track.videoId ?? state.track.videoId, seconds: state.positionSeconds };
+  pendingResume = { queueId: get(currentItem)?.queueId ?? '', videoId: get(currentItem)?.track.videoId ?? state.track.videoId, seconds: state.positionSeconds };
   await loadCurrent(autoplay ?? (state.status === 'playing' || state.status === 'loading'));
 }
 
-function replaceMedia(video: boolean): HTMLMediaElement {
-  if (get(videoMode) === video && audio) return audio;
+function replaceMedia(video: boolean, fresh = false): HTMLMediaElement {
+  if (!fresh && get(videoMode) === video && audio) return audio;
   clearHls();
   const previous = audio;
   audio = null;
@@ -72,7 +73,8 @@ let queueUnsub: (() => void) | null = null;
  * track it belongs to (and cleared on any load) so it can never be applied to a
  * different song the user starts first.
  */
-let pendingResume: { videoId: string; seconds: number } | null = null;
+let mediaQueueId: string | null = null;
+let pendingResume: { queueId: string; videoId: string; seconds: number } | null = null;
 // Discord presence is coalesced (see queueDiscord): Discord drops SET_ACTIVITY
 // updates beyond 5 per 20 s, which used to leave presence stuck on a stale
 // track when skipping/scrubbing quickly.
@@ -136,12 +138,13 @@ function ensureAudio(): HTMLMediaElement {
       videoHost?.appendChild(audio);
     }
     const media = audio;
-    const listen = (name: string, handler: () => void) => media.addEventListener(name, () => { if (audio === media) handler(); });
+    const listen = (name: string, handler: () => void) => media.addEventListener(name, () => { if (audio === media && mediaQueueId === get(currentItem)?.queueId) handler(); });
     audio.preload = 'auto';
     const s = get(playerStore);
     audio.volume = s.volume;
     audio.muted = s.muted;
     listen('timeupdate', () => {
+      if (get(playerStore).status === 'loading') return;
       playerStore.update((p) => ({ ...p, positionSeconds: audio?.currentTime ?? 0 }));
       // Remember the position so a restart resumes where the user left off.
       rememberPosition(audio?.currentTime ?? 0);
@@ -168,18 +171,31 @@ function ensureAudio(): HTMLMediaElement {
       void pushOsState();
     });
     listen('pause', () => {
+      if (media.error || ['loading', 'error'].includes(get(playerStore).status)) return; // Ignore pauses caused by a source handoff.
       // Any pause counts, not just one that interrupted "playing" — otherwise a
       // pause during buffering left the presence looking like it was still on.
       playerStore.update((p) => (p.track ? { ...p, status: 'paused' } : p));
       schedulePauseClear();
       void pushOsState();
     });
-    listen('ended', () => void onEnded());
+    listen('ended', () => { if (get(playerStore).status !== 'loading') void onEnded(); });
     listen('error', () => {
-      // Releasing the element in stopPlayback() can emit an "empty src" error;
-      // ignore it so tearing down never resurrects a stale track.
-      if (!audio?.getAttribute('src')) return;
-      playerStore.update((p) => ({ ...p, status: 'error', error: 'Playback failed for this track.' }));
+      if (!media.getAttribute('src') || recoveryPending) return;
+      const state = get(playerStore);
+      if (state.status === 'loading' || media.error?.code === 1) return;
+      const current = get(currentItem);
+      const key = current ? current.queueId + ':' + get(videoPreferred) : '';
+      // Refresh a rejected/expired URL once, retaining the current position.
+      // A second failure is shown instead of restarting in an endless loop.
+      if (current && key && key !== recoveredMediaKey && get(authStore)) {
+        recoveredMediaKey = key;
+        recoveryPending = true;
+        pendingResume = { queueId: current.queueId, videoId: current.track.videoId, seconds: media.currentTime || state.positionSeconds };
+        void loadCurrent(state.status === 'playing', true).finally(() => { recoveryPending = false; });
+        return;
+      }
+      const reason = ({ 2: 'Network stream failed.', 3: 'The media could not be decoded.', 4: 'The stream format is unavailable.' } as Record<number, string>)[media.error?.code ?? 0] ?? 'Playback failed for this track.';
+      playerStore.update(p => ({ ...p, status: 'error', error: reason }));
       void pushOsState();
     });
   }
@@ -196,11 +212,11 @@ function ensureAudio(): HTMLMediaElement {
 function applyPendingResume(el: HTMLMediaElement, videoId: string): void {
   const resume = pendingResume;
   pendingResume = null;
-  if (!resume || resume.videoId !== videoId) return;
+  if (!resume || resume.videoId !== videoId || resume.queueId !== get(currentItem)?.queueId) return;
   const target = resume.seconds;
   const generation = loadGeneration;
   const seek = () => {
-    if (generation !== loadGeneration) return;
+    if (generation !== loadGeneration || audio !== el || resume.queueId !== get(currentItem)?.queueId) return;
     // Guard against a bogus remembered position (e.g. longer than the track).
     const max = Number.isFinite(el.duration) && el.duration > 0 ? Math.max(0, el.duration - 1) : target;
     el.currentTime = Math.min(target, max);
@@ -278,7 +294,7 @@ function initWindowTitle(): void {
       : 'Cherry';
     if (title === lastWindowTitle) return;
     lastWindowTitle = title;
-    if (!isTauri()) return;
+    if (!isDesktop()) return;
     void getCurrentWindow().setTitle(title).catch(() => undefined);
   });
 }
@@ -338,7 +354,13 @@ export async function playTracksShuffled(tracks: Track[]): Promise<void> {
 export async function toggle(): Promise<void> {
   const el = ensureAudio();
   const st = get(playerStore);
-  if (st.status === 'playing') {
+  if (st.status === 'loading') {
+    loadGeneration++; clearHls();
+    el.pause(); el.removeAttribute('src'); el.load();
+    playerStore.update(p => ({ ...p, status: 'paused' }));
+    schedulePauseClear();
+    await pushOsState();
+  } else if (st.status === 'playing') {
     el.pause();
   } else if (st.track) {
     // A restored track has metadata but **no source yet** — streams are
@@ -394,9 +416,10 @@ export function seekTo(seconds: number): void {
   const target = Math.max(0, seconds);
   // A restored track has no source yet: remember the seek so it is applied when
   // the stream loads, instead of being silently dropped.
-  if (!el.getAttribute('src')) {
+  if (!el.getAttribute('src') || get(playerStore).status === 'loading' || mediaQueueId !== get(currentItem)?.queueId) {
     const track = get(playerStore).track;
-    if (track) pendingResume = { videoId: track.videoId, seconds: target };
+    const item = get(currentItem);
+    if (track && item) pendingResume = { queueId: item.queueId, videoId: track.videoId, seconds: target };
     playerStore.update((p) => ({ ...p, positionSeconds: target }));
     rememberPosition(target);
     return;
@@ -458,7 +481,7 @@ export async function restorePlayback(): Promise<void> {
   }));
   // A paused UI needs a real source before it can seek; the stream is resolved
   // lazily by `toggle()`, so hold the position and apply it on load instead.
-  pendingResume = position > 0 ? { videoId: item.track.videoId, seconds: position } : null;
+  pendingResume = position > 0 ? { queueId: item.queueId, videoId: item.track.videoId, seconds: position } : null;
   schedulePauseClear();
   // Record it too: otherwise the next queue save would persist position 0 and
   // quitting without pressing play would lose where the user was.
@@ -620,19 +643,22 @@ async function prefetchNext(): Promise<void> {
  * source again — so A played while the UI showed B.
  */
 let loadGeneration = 0;
+let recoveredMediaKey = '';
+let recoveryPending = false;
 
 function isAbort(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError';
 }
 
-async function loadCurrent(autoplay: boolean): Promise<void> {
-  clearHls();
+async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<void> {
   cancelPauseClear();
   const generation = ++loadGeneration;
   const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
+  if (pendingResume?.queueId !== item?.queueId) pendingResume = null;
   let el = ensureAudio();
   if (!item) {
+    clearHls();
     el.pause();
     el.removeAttribute('src');
     playerStore.update((p) => ({ ...p, status: 'idle', track: null, positionSeconds: 0, durationSeconds: 0 }));
@@ -649,6 +675,9 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     durationSeconds: item.track.durationSeconds ?? 0,
     error: undefined,
   }));
+  // Keep the paused outgoing source attached until its replacement is ready.
+  // Dropping it here unregisters Chromium's media session between every song.
+  el.pause();
   // Theme the app from the new track's artwork (fire and forget).
   void applyArtworkTheme(bestThumbnail(item.track.thumbnails, 256));
   await pushOsState();
@@ -687,17 +716,20 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     }
   }
   if (stale()) return;
-  el = replaceMedia(playVideo);
   const start = async (refresh: boolean): Promise<void> => {
     videoReady.set(false);
     videoResolution.set(null);
     videoQualities.set([]);
-    const { track, stream } = await getAudioStream(videoId, session, { refresh, ...(get(videoMode) ? { video: true } : {}) });
+    const { track, stream } = await getAudioStream(videoId, session, { refresh, ...(playVideo ? { video: true } : {}) });
     if (stale()) return;
     playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
     clearHls();
+    // Never attach a new queue entry to the old track's media clock. A stale
+    // ended/metadata event or DASH fallback must not seek/skip the next song.
+    el = replaceMedia(playVideo, mediaQueueId !== item.queueId);
+    mediaQueueId = item.queueId;
     if (stream.dashManifest && get(videoMode)) {
-      const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, stream.url, stale);
+      const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, mediaProxyUrl(new URL(stream.url)).href, stale);
       if (stale()) { adaptive.destroy(); await adaptive.ready; return; }
       clearHls = () => { adaptive.destroy(); clearHls = () => {}; };
       await adaptive.ready;
@@ -723,7 +755,10 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
         hls.loadSource(stream.url);
       });
       if (stale()) return;
-    } else el.src = stream.url;
+    } else {
+      const source = new URL(stream.url);
+      el.src = source.hostname === 'googlevideo.com' || source.hostname.endsWith('.googlevideo.com') ? mediaProxyUrl(source).href : source.href;
+    }
     applyPendingResume(el, videoId);
     if (track.durationSeconds) {
       playerStore.update((p) => ({ ...p, durationSeconds: track.durationSeconds as number }));
@@ -745,7 +780,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
   };
 
   try {
-    await start(false);
+    await start(refreshStream);
   } catch (e) {
     // An overtaken load, or a play() interrupted by a newer source, is not a
     // failure of this track — there is nothing to retry or report.
@@ -759,6 +794,8 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     } catch (retryError) {
       if (stale() || isAbort(retryError)) return;
     }
+    // A failed replacement must not leave the previous song available to Play.
+    clearHls(); el.pause(); el.removeAttribute('src'); el.load();
     playerStore.update((p) => ({ ...p, status: 'error', error: err.message }));
     await pushOsState();
   }
@@ -789,6 +826,7 @@ async function pushMediaState(): Promise<void> {
       // from this, so it must be the live position.
       positionSecs: Math.round(st.positionSeconds),
       isPlaying: st.status === 'playing',
+      isLoading: st.status === 'loading',
     },
   });
 }
@@ -828,10 +866,10 @@ function flushDiscord(): Promise<void> {
 }
 
 async function sendDiscordState(): Promise<void> {
-  if (!isTauri()) return;
+  if (!isDesktop()) return;
   // Read state after importing IPC and after prior writes finish, so an old
   // snapshot cannot restore presence after Stop, disable, or a long pause.
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('$lib/desktop/core');
   discordDirty = false;
   discordLastPush = Date.now();
   const st = get(playerStore);
@@ -851,6 +889,7 @@ async function sendDiscordState(): Promise<void> {
         album: track.album?.name ?? '',
         artwork,
         isPlaying: st.status === 'playing',
+      isLoading: st.status === 'loading',
         // Loading is neither playing nor paused, so the paused marker doesn't
         // flash between tracks.
         isPaused: st.status === 'paused',
@@ -868,7 +907,7 @@ async function sendDiscordState(): Promise<void> {
 /** Configure the Discord application id (Settings → Integrations). */
 export async function setDiscordAppId(appId: string): Promise<{ configured: boolean }> {
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('$lib/desktop/core');
     return await invoke<{ configured: boolean }>('discord_set_app_id', { appId });
   } catch (e) {
     // eslint-disable-next-line no-console

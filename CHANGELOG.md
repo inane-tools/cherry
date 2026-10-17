@@ -4,6 +4,49 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] — Unreleased
+
+Furano. The Electron transition; installing from Tauri remains a manual switch.
+
+### Changed
+
+- Replaced the Tauri host with Electron/Chromium, retaining the Cherry frontend
+  and automatic release codenames. The original Cherry repository adopts Electron;
+  Tauri source and releases are preserved in cherry-tauri. macOS is deferred.
+- Windows caption buttons use the system Segoe Fluent/MDL2 glyphs, scale with
+  app zoom and use black or white ink for light and dark themes.
+- Added a minimal one-click NSIS installer: progress, then launch Cherry.
+  Setup uses the dedicated install-cherry artwork; the app icon stays unchanged.
+  Windows packaging produces only NSIS; Linux targets AppImage and Flatpak.
+- GitHub-based updates for Windows and AppImage use explicit download and
+  install actions, progress in the accent color and the existing topbar badge.
+  Flatpak stays managed by Flatpak. The Electron feed is separate from Tauri.
+
+### Fixed
+
+- Installed builds allow generated DASH manifests through the content security
+  policy, preventing HD video from silently falling back to the 360p file.
+- New queue entries get separate media clocks; late events and saved positions
+  from an outgoing song cannot seek into or skip the following song.
+- Queue opening mounts only visible rows, with overscan, keyboard navigation and
+  drag sources retained while scrolling. Large queues no longer build every row.
+- Media streams use Chromium's network backend to avoid an uncaught Node/Undici
+  parser assertion when connections end while playback has buffered the response.
+  Cancellation also handles a pending body read without touching a closed stream.
+- Brand-channel login/session capture, streaming recovery and video-quality
+  switching. Created playlists retain edit permissions and refresh after edits.
+- Windows Jump Lists open the selected playlist; preview playback controls and
+  media-card identity are wired to Electron.
+- Cache clearing preserves preferences and credentials, full reset prevents
+  stale settings writes, logout clears browser sign-in data, and Settings sizes
+  the full local profile rather than only the HTTP cache.
+- Ported Discord Rich Presence, Last.fm scrobbling and playlist-art uploads.
+
+## [1.7.1] — 2026-10-17
+
+Fukagawa. Withdrawn Electron preview retained as a draft for updater testing.
+The Electron changes are included in the 2.0.0 notes above.
+
 ## [1.7.0] — 2026-10-16
 
 Fukagawa.

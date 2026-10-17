@@ -1,118 +1,155 @@
 name: Desktop builds
 
 on:
-  workflow_dispatch:
-  pull_request:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '**/*.md'
+      - 'screenshots/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'screenshots/**'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this version after both builds pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   checks:
-    runs-on: ubuntu-24.04
+    name: Checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
 
-  installers:
+  windows:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: checks
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: windows-x64
-            args: --bundles nsis
-          - os: ubuntu-24.04
-            name: linux-x64
-            args: --bundles appimage
-    runs-on: ${{ matrix.os }}
+    name: Windows NSIS (x64)
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-          key: ${{ matrix.name }}-release
-          cache-on-failure: true
-      - name: Linux libraries
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev patchelf flatpak flatpak-builder gnome-keyring dbus-x11
       - run: npm ci
-      - name: Build frontend for Rust context
-        run: npm run build
-        env:
-          TAURI_ENV_PLATFORM: ${{ runner.os == 'Windows' && 'windows' || 'linux' }}
-      - name: Rust tests
-        if: runner.os != 'Linux'
-        run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml
-      - name: Rust tests with isolated Linux keyring
-        if: runner.os == 'Linux'
+      - name: Build NSIS installer
+        run: npm run dist:win
+      - name: Smoke test packaged application
+        shell: pwsh
         run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            export XDG_DATA_HOME="$(mktemp -d)"
-            printf "%s" "cherry-ci-test-password" | gnome-keyring-daemon --unlock --components=secrets
-            cargo test --release --locked --manifest-path src-tauri/Cargo.toml
-          '
-      - name: Build signed installers
-        if: github.event_name != 'pull_request'
-        run: npm run tauri -- build --config src-tauri/tauri.ci.conf.json ${{ matrix.args }}
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-      - name: Build unsigned PR validation installers
-        if: github.event_name == 'pull_request'
-        run: npm run tauri -- build --config src-tauri/tauri.ci.conf.json --config src-tauri/tauri.unsigned.conf.json ${{ matrix.args }}
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-      - name: Build self-distributed Flatpak
-        if: runner.os == 'Linux'
-        run: bash packaging/flatpak/build.sh
-      - uses: actions/upload-artifact@v4
+          $stdout = Join-Path $env:RUNNER_TEMP 'cherry-smoke.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'cherry-smoke.stderr.log'
+          $app = Start-Process -FilePath './release/win-unpacked/cherry.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (!$app.WaitForExit(60000)) {
+            Stop-Process -Id $app.Id -Force
+            throw 'Packaged smoke test timed out'
+          }
+          Get-Content $stdout
+          Get-Content $stderr
+          if ($app.ExitCode -ne 0) { throw "Packaged smoke test exited $($app.ExitCode)" }
+          if (!(Select-String -Path $stdout -Pattern 'ELECTRON_SMOKE_PASS' -Quiet)) { throw 'Missing smoke test success marker' }
+      - name: Upload failed Windows smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: cherry-${{ matrix.name }}
+          name: windows-smoke-diagnostics
+          path: |
+            dist/assets/*.css
+            ${{ runner.temp }}/cherry-smoke.*.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cherry-windows-x64
           if-no-files-found: error
-          # Installers are already compressed; ZIP compression adds CPU time.
           compression-level: 0
           path: |
-            src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            packaging/flatpak/out/*.flatpak
-            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
-            src-tauri/target/release/bundle/appimage/*.AppImage.sig
+            release/Cherry-Setup-*.exe
+            release/Cherry-Setup-*.exe.blockmap
+            release/latest.yml
 
-  updater-metadata:
-    if: github.event_name != 'pull_request'
-    needs: installers
+  linux:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: checks
+    name: Linux AppImage and Flatpak (x64)
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
-      - uses: actions/download-artifact@v4
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y flatpak flatpak-builder libfuse2t64
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+      - name: Cache Flatpak runtimes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          pattern: cherry-*
-          path: installers
-      - run: node scripts/updater-manifest.mjs installers latest.json
-      - uses: actions/upload-artifact@v4
+          path: ~/.local/share/flatpak
+          key: flatpak-x64-25.08-${{ runner.os }}-v1
+      - name: Install Flatpak runtimes
+        run: flatpak install --user --noninteractive -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.electronjs.Electron2.BaseApp//25.08
+      - name: Build AppImage and Flatpak
+        run: npm run dist:linux
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: cherry-updater
-          path: latest.json
+          name: cherry-linux-x64
           if-no-files-found: error
+          compression-level: 0
+          path: |
+            release/Cherry-*.AppImage
+            release/Cherry-*.AppImage.blockmap
+            release/Cherry-*.flatpak
+            release/latest-linux.yml
+
+  release:
+    name: Publish complete GitHub release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main')
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cherry-*-x64
+          path: release-assets
+          merge-multiple: true
+      - name: Validate assets and publish
+        run: node scripts/publish-release.mjs release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}

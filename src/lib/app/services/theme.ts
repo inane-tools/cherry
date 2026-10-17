@@ -5,12 +5,12 @@
 // pushed here by `services/appearance.ts`; the player only themes from artwork
 // while the source is 'song'.
 //
-// The artwork image is fetched through the Rust relay (`http_proxy_fetch_base64`)
+// The artwork image is fetched through the Electron relay (`http_proxy_fetch_base64`)
 // rather than assigned directly to an <img>, because drawing a cross-origin image
 // to a canvas taints it and makes `getImageData` throw. The colour maths lives in
 // `themeColor.ts`.
 
-import { isTauri } from './platform';
+import { isDesktop } from './platform';
 import { clampLuminance, dominantColour, fromHex, mix, toHex, vividify, washCompanion, type Rgb } from './themeColor';
 
 const DEFAULT_PAIR = {
@@ -177,7 +177,7 @@ export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
     if (colour) setAccent(colour, true);
     else resetArtworkTheme();
   }
-  if (!artworkUrl || !isTauri()) {
+  if (!artworkUrl || !isDesktop()) {
     await commit(null);
     return;
   }
@@ -188,7 +188,7 @@ export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('$lib/desktop/core');
     const base64 = await invoke<string>('http_proxy_fetch_base64', { url: artworkUrl });
     if (!base64) throw new Error('empty artwork');
 

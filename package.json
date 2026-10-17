@@ -1,43 +1,147 @@
 {
   "name": "cherry",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Lightweight YouTube Music desktop client",
+  "description": "Cherry — a desktop YouTube Music player",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:linux": "bash scripts/linux-session.sh npm run tauri -- dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
+    "start": "electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --publish never",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run && node --test scripts/updater-manifest.test.mjs",
-    "test:watch": "vitest"
+    "test": "vitest run && npm run test:ui && node --test electron/*.test.mjs scripts/*.test.mjs",
+    "test:smoke": "npm run build && electron . --smoke-test",
+    "test:watch": "vitest",
+    "dist:win": "npm run installer:icon && npm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage flatpak --x64 --publish never",
+    "dist:appimage": "npm run build && electron-builder --linux AppImage --x64 --publish never",
+    "dist:flatpak": "npm run build && electron-builder --linux flatpak --x64 --publish never",
+    "installer:icon": "node scripts/installer-icon.mjs",
+    "test:ui": "vitest run --config vitest.ui.config.ts"
   },
   "dependencies": {
-    "@fontsource-variable/gabarito": "^5.3.0",
-    "@tauri-apps/api": "~2.11.0",
-    "@tauri-apps/plugin-global-shortcut": "^2.2.1",
-    "@tauri-apps/plugin-opener": "^2.4.1",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-store": "^2.3.1",
-    "@tauri-apps/plugin-updater": "~2.11.0",
-    "boxicons": "^2.1.4",
-    "dashjs": "^5.2.1",
-    "hls.js": "^1.7.3",
-    "svelte": "^5.57.0",
-    "youtubei.js": "^18.0.0"
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
+    "@fontsource-variable/gabarito": "^5.3.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.1.12",
-    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^22.20.3",
+    "boxicons": "^2.1.4",
+    "dashjs": "^5.2.1",
+    "electron": "44.8.0",
+    "electron-builder": "26.15.3",
+    "hls.js": "^1.7.3",
     "jsdom": "^30.1.2",
+    "svelte": "^5.57.0",
     "svelte-check": "^4.3.1",
     "tailwindcss": "^4.1.12",
     "typescript": "^5.9.2",
     "vite": "^8.3.0",
-    "vitest": "^5.0.3"
-  }
+    "vitest": "^5.0.3",
+    "youtubei.js": "^18.0.0"
+  },
+  "productName": "Cherry",
+  "main": "electron/main.mjs",
+  "author": "inane.tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inane-tools/cherry.git"
+  },
+  "build": {
+    "appId": "tools.inane.cherry.electron",
+    "productName": "Cherry",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!electron/**/*.test.mjs",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "electron/assets/icon.ico",
+      "signExecutable": false,
+      "artifactName": "Cherry-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "build/install-cherry.ico",
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "perMachine": false,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Cherry",
+      "installerHeaderIcon": "build/install-cherry.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "flatpak"
+      ],
+      "icon": "electron/assets/icon.png",
+      "category": "AudioVideo",
+      "synopsis": "A desktop YouTube Music player",
+      "desktop": {
+        "entry": {
+          "Name": "Cherry",
+          "Comment": "Listen to YouTube Music",
+          "Categories": "AudioVideo;Audio;Player;",
+          "StartupWMClass": "cherry"
+        }
+      }
+    },
+    "executableName": "cherry",
+    "artifactName": "Cherry-${version}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "inane-tools",
+        "repo": "cherry",
+        "releaseType": "draft"
+      }
+    ],
+    "flatpak": {
+      "runtime": "org.freedesktop.Platform",
+      "runtimeVersion": "25.08",
+      "sdk": "org.freedesktop.Sdk",
+      "base": "org.electronjs.Electron2.BaseApp",
+      "baseVersion": "25.08",
+      "branch": "stable",
+      "finishArgs": [
+        "--share=ipc",
+        "--socket=wayland",
+        "--socket=fallback-x11",
+        "--socket=pulseaudio",
+        "--share=network",
+        "--device=dri",
+        "--talk-name=org.freedesktop.Notifications",
+        "--own-name=org.mpris.MediaPlayer2.cherry",
+        "--filesystem=xdg-run/discord-ipc-0",
+        "--filesystem=xdg-run/app/com.discordapp.Discord:ro",
+        "--talk-name=org.freedesktop.secrets",
+        "--talk-name=org.kde.kwalletd5",
+        "--talk-name=org.kde.kwalletd6",
+        "--talk-name=org.kde.StatusNotifierWatcher",
+        "--own-name=org.mpris.MediaPlayer2.cherry.*"
+      ],
+      "files": [
+        [
+          "build/tools.inane.cherry.electron.metainfo.xml",
+          "/share/metainfo/tools.inane.cherry.electron.metainfo.xml"
+        ]
+      ]
+    }
+  },
+  "homepage": "https://inane.tools"
 }
