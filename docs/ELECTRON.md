@@ -26,9 +26,10 @@ Local test checklist:
 - Compare packaged builds and resource usage, rather than Vite dev overhead.
 - Review all remaining ports before considering releases or automatic updates.
 
-CI was deliberately removed. Run typecheck, Vitest, Node policy tests and
-local packaging manually. Windows NSIS and Linux AppImage/Flatpak packaging are configured; macOS and CI
-are deferred. GitHub updates use electron-updater with opt-in download/install.
+GitHub Actions runs typecheck, Vitest and Node tests on Windows and Linux, builds
+NSIS/AppImage/Flatpak, and smoke-tests the packaged Windows app. Release jobs
+validate updater assets before publication. macOS is deferred. GitHub updates
+use electron-updater with opt-in download/install.
 See RELEASING.md and MIGRATION.md before publishing or changing the feed.
 Do not reuse the Tauri updater key or feed.
 

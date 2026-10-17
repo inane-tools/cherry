@@ -4,9 +4,9 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.7.1] — Unreleased
+## [1.7.1] — 2026-10-17
 
-Fukagawa. First release candidate using Electron on Windows and Linux.
+Fukagawa. First public Electron release for Windows and Linux.
 
 ### Changed
 

@@ -1,0 +1,129 @@
+name: Desktop builds
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '**/*.md'
+      - 'screenshots/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'screenshots/**'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this version after both builds pass
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  windows:
+    name: Windows NSIS (x64)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build NSIS installer
+        run: npm run dist:win -- --config.electronDist=node_modules/electron/dist
+      - name: Smoke test packaged application
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP 'cherry-smoke.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'cherry-smoke.stderr.log'
+          $app = Start-Process -FilePath './release/win-unpacked/cherry.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (!$app.WaitForExit(60000)) {
+            Stop-Process -Id $app.Id -Force
+            throw 'Packaged smoke test timed out'
+          }
+          Get-Content $stdout
+          Get-Content $stderr
+          if ($app.ExitCode -ne 0) { throw "Packaged smoke test exited $($app.ExitCode)" }
+          if (!(Select-String -Path $stdout -Pattern 'ELECTRON_SMOKE_PASS' -Quiet)) { throw 'Missing smoke test success marker' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cherry-windows-x64
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            release/Cherry-Setup-*.exe
+            release/Cherry-Setup-*.exe.blockmap
+            release/latest.yml
+
+  linux:
+    name: Linux AppImage and Flatpak (x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y flatpak flatpak-builder libfuse2t64
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+      - name: Cache Flatpak runtimes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-x64-25.08-${{ runner.os }}-v1
+      - name: Install Flatpak runtimes
+        run: flatpak install --user --noninteractive -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.electronjs.Electron2.BaseApp//25.08
+      - name: Build AppImage and Flatpak
+        run: npm run dist:linux
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cherry-linux-x64
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            release/Cherry-*.AppImage
+            release/Cherry-*.AppImage.blockmap
+            release/Cherry-*.flatpak
+            release/latest-linux.yml
+
+  release:
+    name: Publish complete GitHub release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main')
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cherry-*-x64
+          path: release-assets
+          merge-multiple: true
+      - name: Validate assets and publish
+        run: node scripts/publish-release.mjs release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}

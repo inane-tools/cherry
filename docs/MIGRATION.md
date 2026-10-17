@@ -10,7 +10,9 @@ GitHub repository is still `inane-tools/cherry-electron`.
 - GitHub Electron updater, existing Cherry update UI, manual install controls.
 - Existing Electron userData and app ID retained so testers keep their settings
   and secrets across this rebranding. They remain separate from Tauri data.
-- No CI or automatic publication; no repository rename or visibility change.
+- Public cherry-electron repository and CI for NSIS, AppImage and Flatpak.
+- Complete tagged/manual releases publish matching Electron updater metadata.
+- No repository rename; Tauri remains separate.
 
 ## When the repository switch is approved
 
@@ -43,5 +45,5 @@ new Cherry if avoiding duplicate Start-menu/desktop shortcut names. Neither
 installer should erase the other app's profile. Existing Electron testers keep
 using their current `cherry-electron` profile and app ID after rebranding.
 
-The first public release remains pending; this document does not authorize a
-repository rename, visibility change, archive or publication by itself.
+A repository rename remains pending explicit approval. Keep cherry-electron
+available as an updater redirect when the name eventually changes.

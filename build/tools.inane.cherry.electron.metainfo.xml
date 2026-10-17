@@ -10,5 +10,5 @@
   <url type="homepage">https://inane.tools</url>
   <url type="bugtracker">https://github.com/inane-tools/cherry-electron/issues</url>
   <content_rating type="oars-1.1" />
-  <releases><release version="1.7.1" date="2026-10-16" /></releases>
+  <releases><release version="1.7.1" date="2026-10-17" /></releases>
 </component>

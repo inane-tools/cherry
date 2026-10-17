@@ -85,4 +85,26 @@ never downloads automatically or installs on ordinary quit. A downloaded
 update is installed only after the user chooses Install and restart.
 
 The Tauri app will not automatically migrate to Electron. See MIGRATION.md.
-CI remains intentionally absent; no workflow has been added.
+## Automated builds and publication
+
+`.github/workflows/desktop-builds.yml` checks types and runs the full test suite
+on Windows and Linux, builds only NSIS/AppImage/Flatpak, and smoke-tests the
+packaged Windows application. Main-branch pushes, pull requests and manual runs
+produce downloadable artifacts. Documentation-only pushes skip builds.
+
+To publish a new version, update package.json/lockfile, the changelog and Flatpak
+metainfo, commit and push, then push the matching `vX.Y.Z` tag. Alternatively,
+run Desktop builds on main with **Publish this version** enabled. The release
+job checks versions, required files, sizes and updater SHA-512 hashes, uploads
+all assets to a draft, then publishes it as the latest release. It refuses to
+replace an already-public release. It never builds MSI, DEB, RPM or macOS.
+
+The workflow uses Node 24 and pinned official Actions. Only the release job has
+write access; no personal token or updater secret is required. A failed build
+leaves publication blocked. Linux integration still needs hardware testing;
+packaging success alone does not verify keyring, tray or Flatpak permissions.
+
+The same installed version will not offer itself as an update: test 1.7.1 with
+a subsequent higher version. On a future repository rename, change build.publish
+and links, publish a transition release, and keep the old repository name unused
+so GitHub's redirect remains valid.

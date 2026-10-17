@@ -1,14 +1,15 @@
 # Cherry
 
 Cherry is a desktop YouTube Music player with a custom Svelte interface and an
-Electron/Chromium host. **1.7.1 Fukagawa** prepares the move from Tauri to Electron
+Electron/Chromium host. **1.7.1 Fukagawa** moves from Tauri to Electron
 for Windows and Linux. Patch versions keep the same codename; minor versions
 advance automatically. macOS is deferred.
 
 The repository is still named `cherry-electron` while the migration is prepared.
 The existing Tauri app and repository remain available at
 [inane-tools/cherry](https://github.com/inane-tools/cherry). No repository has
-been renamed and no Electron stable release has been published yet.
+been renamed. Download the Electron version from
+[Releases](https://github.com/inane-tools/cherry-electron/releases/latest).
 
 ## Features
 
@@ -59,14 +60,16 @@ Linux Flatpak builds require `flatpak`, `flatpak-builder`, Freedesktop 25.08
 Platform/SDK and `org.electronjs.Electron2.BaseApp//25.08` from Flathub. See
 [packaging and release instructions](docs/RELEASING.md) for setup and testing.
 Windows produces NSIS only; there are no MSI, portable, DEB, RPM or macOS targets.
-CI remains disabled. The installer is unsigned until code signing is configured.
+GitHub Actions builds and tests Windows NSIS, Linux AppImage and Flatpak.
+Tagged releases publish all three packages with their updater metadata after
+both platform jobs pass. The installer is unsigned until code signing is configured.
 
 ## Updates and migration
 
 The Electron feed currently uses GitHub Releases in `inane-tools/cherry-electron`.
 Publish the installer/AppImage plus electron-builder's matching `latest*.yml`
-and blockmaps to enable updates. Public distribution needs a public release
-repository; no GitHub access token is bundled in the app. Development builds
+and blockmaps to enable updates. This repository is public; no GitHub access
+token is bundled in the app. Development builds
 and Flatpaks do not download or execute self-updates.
 
 The planned repository rename is documented in

@@ -22,7 +22,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal('Audio', function () { audio = document.createElement('audio'); return audio; });
   authStore.set({ kind: 'cookie', cookie: 'SID=synthetic', savedAt: 0 });
-  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function () { this.dispatchEvent(new Event('play')); return Promise.resolve(); });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('play')); return Promise.resolve(); });
   invoke.mockReset().mockResolvedValue(undefined);
   settingsStore.update((s) => ({ ...s, discordEnabled: true }));
   playerStore.update((s) => ({ ...s, track, status: 'playing' }));
