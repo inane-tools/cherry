@@ -26,7 +26,27 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  checks:
+    name: Checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   windows:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: checks
     name: Windows NSIS (x64)
     runs-on: windows-latest
     timeout-minutes: 30
@@ -37,8 +57,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
       - name: Build NSIS installer
         run: npm run dist:win
       - name: Smoke test packaged application
@@ -74,6 +92,8 @@ jobs:
             release/latest.yml
 
   linux:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: checks
     name: Linux AppImage and Flatpak (x64)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -84,8 +104,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
       - name: Install Flatpak build tools
         run: |
           sudo apt-get update

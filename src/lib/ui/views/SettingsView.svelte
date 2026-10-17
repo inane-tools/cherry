@@ -1179,7 +1179,7 @@
         <button
           class="flex h-8 shrink-0 items-center gap-1.5 self-center rounded-lg bg-white/[0.06] px-3 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
           title="Releases on GitHub"
-          onclick={() => openExternal('https://github.com/inane-tools/cherry-electron/releases')}
+          onclick={() => openExternal('https://github.com/inane-tools/cherry/releases')}
         >
           <i class="bx bxl-github text-base"></i>
           Releases
@@ -1206,7 +1206,7 @@
             class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
             title="GitHub repository"
             aria-label="GitHub repository"
-            onclick={() => openExternal('https://github.com/inane-tools/cherry-electron')}
+            onclick={() => openExternal('https://github.com/inane-tools/cherry')}
           >
             <i class="bx bxl-github text-lg"></i>
           </button>

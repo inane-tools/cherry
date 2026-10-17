@@ -7,6 +7,7 @@ import { basename, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { releaseCodename } from '../src/lib/app/services/release.ts';
+import { loadTauriCompatibility } from './copy-github-releases.mjs';
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 // Use the same YAML parser dependency as the updater whose feed is being verified.
@@ -26,6 +27,11 @@ const expected = [
   'latest-linux.yml',
   `Cherry-${pkg.version}-x86_64.flatpak`,
 ];
+// Existing Tauri clients still request latest.json from the canonical repository.
+// Keep them on their final signed Tauri release while Electron uses latest*.yml.
+const legacyManifest = await loadTauriCompatibility(new URL('../build/tauri-latest.json', import.meta.url));
+await writeFile(resolve(folder, 'latest.json'), legacyManifest);
+expected.push('latest.json');
 const files = await readdir(folder);
 for (const file of expected) {
   if (!files.includes(file) || (await stat(resolve(folder, file))).size === 0) throw new Error(`Missing/empty release asset: ${file}`);

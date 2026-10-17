@@ -3,7 +3,7 @@
 ## Windows
 
 Run `npm ci`, `npm run typecheck`, `npm test`, `npm run test:smoke`, then
-`npm run dist:win`. The output is `release/Cherry-Setup-1.7.1-x64.exe`.
+`npm run dist:win`. The output is `release/Cherry-Setup-2.0.0-x64.exe`.
 The one-click NSIS installer immediately shows a small progress window, installs
 for the current Windows account in its default location, then launches Cherry.
 There is no destination picker, wizard or completion page. NSIS handles
@@ -36,13 +36,13 @@ npm test
 npm run dist:linux
 ```
 
-Outputs: `release/Cherry-1.7.1-x86_64.AppImage` and
-`release/Cherry-1.7.1-x86_64.flatpak`.
+Outputs: `release/Cherry-2.0.0-x86_64.AppImage` and
+`release/Cherry-2.0.0-x86_64.flatpak`.
 
 ```sh
-chmod +x release/Cherry-1.7.1-x86_64.AppImage
-./release/Cherry-1.7.1-x86_64.AppImage
-flatpak install --user release/Cherry-1.7.1-x86_64.flatpak
+chmod +x release/Cherry-2.0.0-x86_64.AppImage
+./release/Cherry-2.0.0-x86_64.AppImage
+flatpak install --user release/Cherry-2.0.0-x86_64.flatpak
 flatpak run tools.inane.cherry.electron
 ```
 
@@ -60,13 +60,14 @@ updater never overwrites a Flatpak installation.
 ## GitHub updates
 
 The only feed configuration is `build.publish` in `package.json`, currently
-`inane-tools/cherry-electron`. This also generates the packaged `app-update.yml`.
-Do not point this at the Tauri repository while it is still serving Tauri builds.
+`inane-tools/cherry`. This also generates the packaged `app-update.yml`.
+The final Tauri updater manifest is pinned separately to the preserved Tauri
+release; never point a Tauri manifest at an Electron executable.
 Never embed a GitHub token in the runtime. A public release repository is needed
 for ordinary users; private repositories require user-side authentication and
 are not a public distribution solution.
 
-For release v1.7.1 upload these files to the same GitHub release:
+For release v2.0.0 upload these files to the same GitHub release:
 
 - Windows NSIS `.exe`, its `.exe.blockmap`, and `latest.yml`.
 - Linux `.AppImage`, its blockmap if generated, and `latest-linux.yml`.
@@ -75,10 +76,14 @@ For release v1.7.1 upload these files to the same GitHub release:
 Keep filenames unchanged: the YAML names the files and their SHA-512 checksums.
 Retain previous releases' assets for differential updates. Do not upload `.nsis.7z`,
 `win-unpacked`, build logs, builder debug configuration or Tauri `.sig` files.
+The publisher also uploads `latest.json`, copied from the checked-in
+`build/tauri-latest.json`. It deliberately stays at the final Tauri version 1.7.0,
+with signed binary URLs in cherry-tauri. Existing Tauri clients continue using
+that JSON; Electron clients use the YAML feeds.
 Artifacts are generated locally with `--publish never`; publication is explicit.
 Draft releases are invisible to the normal updater until published.
 
-Test 1.7.1 -> a higher test version from installed NSIS and real AppImage builds:
+Test 1.7.1 -> 2.0.0 from installed NSIS and real AppImage builds:
 check, download, disconnect/retry, restart/install, verify version and preserved
 settings/queue/login. The updater checks at startup and every four hours but
 never downloads automatically or installs on ordinary quit. A downloaded
@@ -90,9 +95,10 @@ Linux filenames use `x86_64`; Windows filenames use `x64`.
 ## Automated builds and publication
 
 `.github/workflows/desktop-builds.yml` checks types and runs the full test suite
-on Windows and Linux, builds only NSIS/AppImage/Flatpak, and smoke-tests the
-packaged Windows application. Main-branch pushes, pull requests and manual runs
-produce downloadable artifacts. Documentation-only pushes skip builds.
+on Windows and Linux. Development pushes and pull requests run checks only.
+Installer builds run only for an explicit manual run or a release tag, produce
+NSIS/AppImage/Flatpak, and smoke-test the packaged Windows application.
+Documentation-only pushes skip checks.
 
 To publish a new version, update package.json/lockfile, the changelog and Flatpak
 metainfo, commit and push, then push the matching `vX.Y.Z` tag. Alternatively,
@@ -110,3 +116,15 @@ The same installed version will not offer itself as an update: test 1.7.1 with
 a subsequent higher version. On a future repository rename, change build.publish
 and links, publish a transition release, and keep the old repository name unused
 so GitHub's redirect remains valid.
+
+
+## Preview update bridge
+
+Installed Electron 1.7.1 previews still read the cherry-electron feed. Its
+Update bridge workflow mirrors the newest public Electron release from cherry
+once an hour, or immediately when manually dispatched. It verifies asset sizes
+and checksums and copies files without building. The source release must contain
+both Electron YAML feeds; Tauri releases are skipped. No personal access token
+is shared between repositories. Keep cherry-electron public and keep its bridge
+workflow enabled while preview installations still need updates. The withdrawn
+1.7.1 release remains a draft there; do not republish it as the 2.0 release.

@@ -4,15 +4,15 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.7.1] — 2026-10-17
+## [2.0.0] — Unreleased
 
-Fukagawa. First public Electron release for Windows and Linux.
+Furano. The Electron transition; installing from Tauri remains a manual switch.
 
 ### Changed
 
-- Replaced the Tauri host with Electron/Chromium, retaining the Cherry frontend,
-  version sequence and minor-version codenames. Repository names stay unchanged
-  while the migration is prepared; macOS is deferred.
+- Replaced the Tauri host with Electron/Chromium, retaining the Cherry frontend
+  and automatic release codenames. The original Cherry repository adopts Electron;
+  Tauri source and releases are preserved in cherry-tauri. macOS is deferred.
 - Windows caption buttons use the system Segoe Fluent/MDL2 glyphs, scale with
   app zoom and use black or white ink for light and dark themes.
 - Added a minimal one-click NSIS installer: progress, then launch Cherry.
@@ -41,6 +41,11 @@ Fukagawa. First public Electron release for Windows and Linux.
   stale settings writes, logout clears browser sign-in data, and Settings sizes
   the full local profile rather than only the HTTP cache.
 - Ported Discord Rich Presence, Last.fm scrobbling and playlist-art uploads.
+
+## [1.7.1] — 2026-10-17
+
+Fukagawa. Withdrawn Electron preview retained as a draft for updater testing.
+The Electron changes are included in the 2.0.0 notes above.
 
 ## [1.7.0] — 2026-10-16
 

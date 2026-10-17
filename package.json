@@ -1,6 +1,6 @@
 {
   "name": "cherry",
-  "version": "1.7.1",
+  "version": "2.0.0",
   "private": true,
   "description": "Cherry — a desktop YouTube Music player",
   "type": "module",
@@ -12,7 +12,7 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --publish never",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run && npm run test:ui && node --test electron/*.test.mjs",
+    "test": "vitest run && npm run test:ui && node --test electron/*.test.mjs scripts/*.test.mjs",
     "test:smoke": "npm run build && electron . --smoke-test",
     "test:watch": "vitest",
     "dist:win": "npm run installer:icon && npm run build && electron-builder --win nsis --x64 --publish never",
@@ -49,7 +49,7 @@
   "author": "inane.tools",
   "repository": {
     "type": "git",
-    "url": "https://github.com/inane-tools/cherry-electron.git"
+    "url": "https://github.com/inane-tools/cherry.git"
   },
   "build": {
     "appId": "tools.inane.cherry.electron",
@@ -107,7 +107,7 @@
       {
         "provider": "github",
         "owner": "inane-tools",
-        "repo": "cherry-electron",
+        "repo": "cherry",
         "releaseType": "draft"
       }
     ],

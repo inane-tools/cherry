@@ -8,7 +8,7 @@
   <description><p>Listen to YouTube Music in a dedicated desktop app, with playlists, timed lyrics, music videos and desktop playback controls.</p></description>
   <launchable type="desktop-id">tools.inane.cherry.electron.desktop</launchable>
   <url type="homepage">https://inane.tools</url>
-  <url type="bugtracker">https://github.com/inane-tools/cherry-electron/issues</url>
+  <url type="bugtracker">https://github.com/inane-tools/cherry/issues</url>
   <content_rating type="oars-1.1" />
-  <releases><release version="1.7.1" date="2026-10-17" /></releases>
+  <releases><release version="2.0.0" date="2026-10-17" /></releases>
 </component>

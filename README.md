@@ -1,15 +1,15 @@
 # Cherry
 
 Cherry is a desktop YouTube Music player with a custom Svelte interface and an
-Electron/Chromium host. **1.7.1 Fukagawa** moves from Tauri to Electron
-for Windows and Linux. Patch versions keep the same codename; minor versions
-advance automatically. macOS is deferred.
+Electron/Chromium host for Windows and Linux. **2.0.0 Furano** is in development;
+no 2.0 installers have been released. Patch versions keep the same codename;
+minor and major versions advance it automatically. macOS is deferred.
 
-The repository is still named `cherry-electron` while the migration is prepared.
-The existing Tauri app and repository remain available at
-[inane-tools/cherry](https://github.com/inane-tools/cherry). No repository has
-been renamed. Download the Electron version from
-[Releases](https://github.com/inane-tools/cherry-electron/releases/latest).
+This is the original Cherry repository, now continuing development with Electron.
+The Tauri implementation and its releases are preserved in
+[inane-tools/cherry-tauri](https://github.com/inane-tools/cherry-tauri).
+The last stable Tauri release is 1.7.0. The Electron 1.7.1 preview has been
+withdrawn from public distribution and retained as a draft for updater testing.
 
 ## Features
 
@@ -60,19 +60,21 @@ Linux Flatpak builds require `flatpak`, `flatpak-builder`, Freedesktop 25.08
 Platform/SDK and `org.electronjs.Electron2.BaseApp//25.08` from Flathub. See
 [packaging and release instructions](docs/RELEASING.md) for setup and testing.
 Windows produces NSIS only; there are no MSI, portable, DEB, RPM or macOS targets.
-GitHub Actions builds and tests Windows NSIS, Linux AppImage and Flatpak.
-Tagged releases publish all three packages with their updater metadata after
-both platform jobs pass. The installer is unsigned until code signing is configured.
+GitHub Actions checks types and runs tests on development pushes and pull requests.
+Installer builds run only for an explicit manual run or a release tag. Tagged
+releases publish NSIS, AppImage and Flatpak after both platforms pass. The installer is unsigned until code signing is configured.
 
 ## Updates and migration
 
-The Electron feed currently uses GitHub Releases in `inane-tools/cherry-electron`.
+New Electron builds use GitHub Releases in `inane-tools/cherry`.
+The `cherry-electron` repository remains an update bridge for installed 1.7.1
+previews; it mirrors future public Electron releases without rebuilding them.
 Publish the installer/AppImage plus electron-builder's matching `latest*.yml`
 and blockmaps to enable updates. This repository is public; no GitHub access
 token is bundled in the app. Development builds
 and Flatpaks do not download or execute self-updates.
 
-The planned repository rename is documented in
+The repository transition is documented in
 [the migration checklist](docs/MIGRATION.md). Electron cannot consume the Tauri
 update feed or signing files. Moving existing Tauri users requires a manual
 installation; credentials are not imported from Tauri. Existing Electron test
