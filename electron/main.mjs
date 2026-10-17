@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme } from 'electron';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -20,6 +20,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const assets = join(here, 'assets');
 const devUrl = process.env.CHERRY_DEV_URL;
 const smoke = process.argv.includes('--smoke-test');
+// Exercise light -> dark captions even when the developer's desktop is dark.
+if (smoke) nativeTheme.themeSource = 'light';
 if (devUrl && !/^http:\/\/127\.0\.0\.1:1423\/?$/.test(devUrl)) throw new Error('Invalid development origin');
 app.setName('Cherry');
 const appId = smoke ? 'tools.inane.cherry.electron.smoke' : 'tools.inane.cherry.electron';
@@ -394,7 +396,7 @@ async function main() {
             if (actual === expected) return;
             await new Promise(resolve => setTimeout(resolve, 20));
           }
-          throw Error('Caption color mismatch: ' + JSON.stringify({ light, expected, actual, classes: root.className, forcedColors: matchMedia('(forced-colors: active)').matches }));
+          throw Error('Caption color mismatch: ' + JSON.stringify({ light, expected, actual, classes: root.className, captionClass: caption.className, connected: caption.isConnected, buttonMatches: button.matches('html:not(.light) .win-caption > button'), forcedColors: matchMedia('(forced-colors: active)').matches }));
         }
         try {
           await checkCaptionTheme(true, 'rgb(0, 0, 0)');

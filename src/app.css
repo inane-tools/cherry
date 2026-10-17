@@ -520,7 +520,7 @@ html.cherry-linux-window .cherry-range::-webkit-slider-thumb {
 
 /* OS ink colors stay independent of the tinted color ramp. CSS glyphs and
    hit targets scale together through Electron's app zoom. */
-.win-caption > button { color: #fff; }
+html:not(.light) .win-caption > button { color: #fff; }
 html.light .win-caption > button { color: #000; }
 .win-caption > button:last-child:hover,
 html.light .win-caption > button:last-child:hover { color: #fff; }
