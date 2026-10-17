@@ -22,15 +22,15 @@ const expected = [
   `Cherry-Setup-${pkg.version}-x64.exe`,
   `Cherry-Setup-${pkg.version}-x64.exe.blockmap`,
   'latest.yml',
-  `Cherry-${pkg.version}-x64.AppImage`,
+  `Cherry-${pkg.version}-x86_64.AppImage`,
   'latest-linux.yml',
-  `Cherry-${pkg.version}-x64.flatpak`,
+  `Cherry-${pkg.version}-x86_64.flatpak`,
 ];
 const files = await readdir(folder);
 for (const file of expected) {
   if (!files.includes(file) || (await stat(resolve(folder, file))).size === 0) throw new Error(`Missing/empty release asset: ${file}`);
 }
-const optional = `Cherry-${pkg.version}-x64.AppImage.blockmap`;
+const optional = `Cherry-${pkg.version}-x86_64.AppImage.blockmap`;
 if (files.includes(optional)) expected.push(optional);
 if (files.some((file) => !expected.includes(file))) throw new Error('Unexpected files in release assets');
 for (const [metadata, binary] of [['latest.yml', expected[0]], ['latest-linux.yml', expected[3]]]) {

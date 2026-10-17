@@ -36,13 +36,13 @@ npm test
 npm run dist:linux
 ```
 
-Outputs: `release/Cherry-1.7.1-x64.AppImage` and
-`release/Cherry-1.7.1-x64.flatpak`.
+Outputs: `release/Cherry-1.7.1-x86_64.AppImage` and
+`release/Cherry-1.7.1-x86_64.flatpak`.
 
 ```sh
-chmod +x release/Cherry-1.7.1-x64.AppImage
-./release/Cherry-1.7.1-x64.AppImage
-flatpak install --user release/Cherry-1.7.1-x64.flatpak
+chmod +x release/Cherry-1.7.1-x86_64.AppImage
+./release/Cherry-1.7.1-x86_64.AppImage
+flatpak install --user release/Cherry-1.7.1-x86_64.flatpak
 flatpak run tools.inane.cherry.electron
 ```
 
@@ -85,6 +85,8 @@ never downloads automatically or installs on ordinary quit. A downloaded
 update is installed only after the user chooses Install and restart.
 
 The Tauri app will not automatically migrate to Electron. See MIGRATION.md.
+Linux filenames use `x86_64`; Windows filenames use `x64`.
+
 ## Automated builds and publication
 
 `.github/workflows/desktop-builds.yml` checks types and runs the full test suite
