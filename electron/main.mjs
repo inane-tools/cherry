@@ -396,7 +396,15 @@ async function main() {
             if (actual === expected) return;
             await new Promise(resolve => setTimeout(resolve, 20));
           }
-          throw Error('Caption color mismatch: ' + JSON.stringify({ light, expected, actual, classes: root.className, captionClass: caption.className, connected: caption.isConnected, buttonMatches: button.matches('html:not(.light) .win-caption > button'), forcedColors: matchMedia('(forced-colors: active)').matches }));
+          const rules = [];
+          function scanRules(list) {
+            for (const rule of list) {
+              if (rule.selectorText?.includes('win-caption')) rules.push(rule.cssText);
+              if (rule.cssRules) scanRules(rule.cssRules);
+            }
+          }
+          for (const sheet of document.styleSheets) { try { scanRules(sheet.cssRules); } catch {} }
+          throw Error('Caption color mismatch: ' + JSON.stringify({ light, expected, actual, classes: root.className, captionClass: caption.className, connected: caption.isConnected, buttonMatches: button.matches('html:not(.light) .win-caption > button'), forcedColors: matchMedia('(forced-colors: active)').matches, rules, html: button.outerHTML, scheme: getComputedStyle(root).colorScheme }));
         }
         try {
           await checkCaptionTheme(true, 'rgb(0, 0, 0)');
