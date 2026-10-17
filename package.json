@@ -12,14 +12,15 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --publish never",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run && node --test electron/*.test.mjs",
+    "test": "vitest run && npm run test:ui && node --test electron/*.test.mjs",
     "test:smoke": "npm run build && electron . --smoke-test",
     "test:watch": "vitest",
     "dist:win": "npm run installer:icon && npm run build && electron-builder --win nsis --x64 --publish never",
     "dist:linux": "npm run build && electron-builder --linux AppImage flatpak --x64 --publish never",
     "dist:appimage": "npm run build && electron-builder --linux AppImage --x64 --publish never",
     "dist:flatpak": "npm run build && electron-builder --linux flatpak --x64 --publish never",
-    "installer:icon": "node scripts/installer-icon.mjs"
+    "installer:icon": "node scripts/installer-icon.mjs",
+    "test:ui": "vitest run --config vitest.ui.config.ts"
   },
   "dependencies": {
     "electron-updater": "6.8.9"

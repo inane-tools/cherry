@@ -279,7 +279,7 @@ async function main() {
       if (url.host !== 'app' || request.method !== 'GET') return new Response('Not found', { status: 404 });
       const response = await net.fetch(pathToFileURL(assetPath(join(here, '../dist'), url.pathname === '/' ? '/index.html' : url.pathname)).href);
       const headers = new Headers(response.headers);
-      headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; media-src 'self' https: blob: cherry-media:; connect-src 'self' https: cherry-media:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'");
+      headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; media-src 'self' https: blob: cherry-media:; connect-src 'self' https: blob: cherry-media:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'");
       return new Response(response.body, { status: response.status, headers });
     } catch { return new Response('Not found', { status: 404 }); }
   });
@@ -361,6 +361,16 @@ async function main() {
       await bridge.invoke('smoke:dispatch', { action: 'shuffle' });
       for (let i = 0; i < 250 && !(await bridge.invoke('settings:get', { key: 'settings' })).shuffle; i++) await new Promise(resolve => setTimeout(resolve, 20));
       if (!(await bridge.invoke('settings:get', { key: 'settings' })).shuffle) throw Error('Native action did not reach the app action router');
+      // DASH initializes from a generated Blob manifest in installed builds.
+      const manifestProbe = URL.createObjectURL(new Blob(['<MPD/>'], { type: 'application/dash+xml' }));
+      try {
+        const manifestText = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest(); xhr.open('GET', manifestProbe);
+          xhr.onload = () => resolve(xhr.responseText); xhr.onerror = () => reject(Error('Packaged CSP blocked the DASH manifest'));
+          xhr.send();
+        });
+        if (manifestText !== '<MPD/>') throw Error('Packaged manifest load failed');
+      } finally { URL.revokeObjectURL(manifestProbe); }
       const platform = await bridge.invoke('desktop_platform');
       const updateState = await bridge.invoke('updater_state');
       if (updateState.environment !== 'development' || (await bridge.invoke('updater_check')).phase !== 'idle') throw Error('Smoke profile attempted real updates');
@@ -439,7 +449,7 @@ async function main() {
       await bridge.invoke('secret_save', { name: 'lastfm', value: 'stale-secret' });
       if (Object.keys(await bridge.invoke('settings:get', { key: 'settings' })).length) throw Error('Stale renderer settings survived reset');
       if (localStorage.getItem('smoke-preserved')) throw Error('Full reset retained localStorage');
-      return { platform, mediaTransport: true, updater: true, windowsCaptions: platform === 'windows', maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
+      return { platform, dashManifest: true, mediaTransport: true, updater: true, windowsCaptions: platform === 'windows', maintenance: true, logout: true, mounted: true, isolated: true, settings: true, encryptedSecrets: true, loginCapture: true, networkPolicy: true, discordConfiguration: true, shortcutArtwork: true, integrationSettings: true, nativeActionIPC: true, warmPlaylistLaunch: true, nativeToolbar: true };
     })()`);
     for (const name of ['settings.json', 'lastfm.encrypted', 'auth.encrypted']) {
       try { await readFile(data(name)); throw new Error('Reset retained ' + name); } catch (error) { if (error.code !== 'ENOENT') throw error; }

@@ -127,3 +127,20 @@ Media network backend:
   cancel/abort, truncated responses and subsequent successful playback requests.
 - Do not suppress the error using a blanket uncaughtException handler. Streaming
   failures must reach the player as ordinary failed requests so recovery can run.
+
+
+Installed video and queue follow-up:
+
+- DASH's generated Blob manifests require `blob:` in `connect-src`. The packaged
+  smoke test loads one through XMLHttpRequest under the production CSP; a dev
+  server alone cannot catch this installed-only failure.
+- Each queue entry gets a fresh media element once its stream resolves. The
+  outgoing source remains attached while resolving, but its events cannot mutate
+  the next entry. Resume targets are scoped by queue ID and video ID, including
+  duplicate songs and audio/video counterparts.
+- QueueList windows fixed-height rows in all three queue surfaces. Native scrolling
+  still spans the full queue. An active drag row stays mounted outside the window;
+  reordering uses full queue indexes. Arrow/Home/End keys materialize and focus
+  distant rows. UI tests mount 10,000 tracks and exercise scrolling/reordering.
+- `npm test` includes the Svelte UI suite in `tests/ui`; `npm run test:ui` runs it
+  separately. The normal service tests retain their existing isolated config.

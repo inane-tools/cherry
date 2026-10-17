@@ -6,20 +6,23 @@ vi.mock('$lib/desktop/core', () => ({ invoke }));
 vi.mock('./platform', () => ({ isDesktop: () => true, invokeSafe: (cmd: string, args?: unknown) => invoke(cmd, args) }));
 vi.mock('./settings', async () => ({ settingsStore: (await import('svelte/store')).writable({ discordEnabled: true, discordStatusDisplay: 'details' }), updateSettings: vi.fn() }));
 vi.mock('./auth', async () => ({ authStore: (await import('svelte/store')).writable(null) }));
-vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ getAudioStream: vi.fn(), getInnertube: vi.fn(), prefetchAudioStream: vi.fn() }));
+vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ getAudioStream: vi.fn(async () => ({ track: {}, stream: { url: 'https://media.test/song', mimeType: 'audio/mp4' } })), getInnertube: vi.fn(async () => ({})), prefetchAudioStream: vi.fn() }));
 vi.mock('./queuePersistence', () => ({ rememberPosition: vi.fn(), restoreQueue: vi.fn(), watchQueue: vi.fn() }));
 vi.mock('./theme', () => ({ applyArtworkTheme: vi.fn(), resetArtworkTheme: vi.fn() }));
-import { playerStore, refreshDiscord, stopPlayback, startPresenceKeepAlive, restorePlayback } from './player';
+import { playerStore, refreshDiscord, stopPlayback, startPresenceKeepAlive, restorePlayback, playTracks, toggle } from './player';
 import { restoreQueue } from './queuePersistence';
 import { setQueue } from './queue';
 import { settingsStore } from './settings';
+import { authStore } from './auth';
 
 const track = { videoId: 'song-id', title: 'Song', artists: [{ name: 'Artist' }], thumbnails: [] };
-const audio = document.createElement('audio');
+let audio: HTMLAudioElement;
 async function flush() { for (let i = 0; i < 15; i++) await Promise.resolve(); }
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal('Audio', function () { return audio; });
+  vi.stubGlobal('Audio', function () { audio = document.createElement('audio'); return audio; });
+  authStore.set({ kind: 'cookie', cookie: 'SID=synthetic', savedAt: 0 });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function () { this.dispatchEvent(new Event('play')); return Promise.resolve(); });
   invoke.mockReset().mockResolvedValue(undefined);
   settingsStore.update((s) => ({ ...s, discordEnabled: true }));
   playerStore.update((s) => ({ ...s, track, status: 'playing' }));
@@ -56,9 +59,8 @@ it('clears disabled and failed playback instead of advertising it', async () => 
 });
 
 it('clears a long pause and keep-alive never restores it', async () => {
-  // stopPlayback creates the shared element and its real pause listener.
   await stopPlayback();
-  playerStore.update((s) => ({ ...s, track, status: 'playing' }));
+  await playTracks([track]);
   audio.dispatchEvent(new Event('pause'));
   await flush();
   startPresenceKeepAlive();
@@ -78,7 +80,7 @@ it('keeps restored startup metadata off Discord until the audio actually plays',
   expect(get(playerStore).status).toBe('paused');
   expect(invoke.mock.calls.some(([cmd]) => cmd === 'discord_set_presence')).toBe(false);
   expect(invoke.mock.calls.some(([cmd]) => cmd === 'discord_clear_presence')).toBe(true);
-  audio.dispatchEvent(new Event('play'));
+  await toggle();
   await flush();
   await vi.advanceTimersByTimeAsync(4101);
   expect(invoke).toHaveBeenCalledWith('discord_set_presence', expect.objectContaining({ payload: expect.objectContaining({ videoId: track.videoId, isPlaying: true }) }));

@@ -51,12 +51,12 @@ export async function setVideoMode(enabled: boolean, autoplay?: boolean): Promis
   void updateSettings({ videoPreferred: enabled });
   const state = get(playerStore);
   if (!state.track) return;
-  pendingResume = { videoId: get(currentItem)?.track.videoId ?? state.track.videoId, seconds: state.positionSeconds };
+  pendingResume = { queueId: get(currentItem)?.queueId ?? '', videoId: get(currentItem)?.track.videoId ?? state.track.videoId, seconds: state.positionSeconds };
   await loadCurrent(autoplay ?? (state.status === 'playing' || state.status === 'loading'));
 }
 
-function replaceMedia(video: boolean): HTMLMediaElement {
-  if (get(videoMode) === video && audio) return audio;
+function replaceMedia(video: boolean, fresh = false): HTMLMediaElement {
+  if (!fresh && get(videoMode) === video && audio) return audio;
   clearHls();
   const previous = audio;
   audio = null;
@@ -73,7 +73,8 @@ let queueUnsub: (() => void) | null = null;
  * track it belongs to (and cleared on any load) so it can never be applied to a
  * different song the user starts first.
  */
-let pendingResume: { videoId: string; seconds: number } | null = null;
+let mediaQueueId: string | null = null;
+let pendingResume: { queueId: string; videoId: string; seconds: number } | null = null;
 // Discord presence is coalesced (see queueDiscord): Discord drops SET_ACTIVITY
 // updates beyond 5 per 20 s, which used to leave presence stuck on a stale
 // track when skipping/scrubbing quickly.
@@ -137,7 +138,7 @@ function ensureAudio(): HTMLMediaElement {
       videoHost?.appendChild(audio);
     }
     const media = audio;
-    const listen = (name: string, handler: () => void) => media.addEventListener(name, () => { if (audio === media) handler(); });
+    const listen = (name: string, handler: () => void) => media.addEventListener(name, () => { if (audio === media && mediaQueueId === get(currentItem)?.queueId) handler(); });
     audio.preload = 'auto';
     const s = get(playerStore);
     audio.volume = s.volume;
@@ -177,7 +178,7 @@ function ensureAudio(): HTMLMediaElement {
       schedulePauseClear();
       void pushOsState();
     });
-    listen('ended', () => void onEnded());
+    listen('ended', () => { if (get(playerStore).status !== 'loading') void onEnded(); });
     listen('error', () => {
       if (!media.getAttribute('src') || recoveryPending) return;
       const state = get(playerStore);
@@ -189,7 +190,7 @@ function ensureAudio(): HTMLMediaElement {
       if (current && key && key !== recoveredMediaKey && get(authStore)) {
         recoveredMediaKey = key;
         recoveryPending = true;
-        pendingResume = { videoId: current.track.videoId, seconds: media.currentTime || state.positionSeconds };
+        pendingResume = { queueId: current.queueId, videoId: current.track.videoId, seconds: media.currentTime || state.positionSeconds };
         void loadCurrent(state.status === 'playing', true).finally(() => { recoveryPending = false; });
         return;
       }
@@ -211,11 +212,11 @@ function ensureAudio(): HTMLMediaElement {
 function applyPendingResume(el: HTMLMediaElement, videoId: string): void {
   const resume = pendingResume;
   pendingResume = null;
-  if (!resume || resume.videoId !== videoId) return;
+  if (!resume || resume.videoId !== videoId || resume.queueId !== get(currentItem)?.queueId) return;
   const target = resume.seconds;
   const generation = loadGeneration;
   const seek = () => {
-    if (generation !== loadGeneration) return;
+    if (generation !== loadGeneration || audio !== el || resume.queueId !== get(currentItem)?.queueId) return;
     // Guard against a bogus remembered position (e.g. longer than the track).
     const max = Number.isFinite(el.duration) && el.duration > 0 ? Math.max(0, el.duration - 1) : target;
     el.currentTime = Math.min(target, max);
@@ -415,9 +416,10 @@ export function seekTo(seconds: number): void {
   const target = Math.max(0, seconds);
   // A restored track has no source yet: remember the seek so it is applied when
   // the stream loads, instead of being silently dropped.
-  if (!el.getAttribute('src')) {
+  if (!el.getAttribute('src') || get(playerStore).status === 'loading' || mediaQueueId !== get(currentItem)?.queueId) {
     const track = get(playerStore).track;
-    if (track) pendingResume = { videoId: track.videoId, seconds: target };
+    const item = get(currentItem);
+    if (track && item) pendingResume = { queueId: item.queueId, videoId: track.videoId, seconds: target };
     playerStore.update((p) => ({ ...p, positionSeconds: target }));
     rememberPosition(target);
     return;
@@ -479,7 +481,7 @@ export async function restorePlayback(): Promise<void> {
   }));
   // A paused UI needs a real source before it can seek; the stream is resolved
   // lazily by `toggle()`, so hold the position and apply it on load instead.
-  pendingResume = position > 0 ? { videoId: item.track.videoId, seconds: position } : null;
+  pendingResume = position > 0 ? { queueId: item.queueId, videoId: item.track.videoId, seconds: position } : null;
   schedulePauseClear();
   // Record it too: otherwise the next queue save would persist position 0 and
   // quitting without pressing play would lose where the user was.
@@ -653,6 +655,7 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
   const generation = ++loadGeneration;
   const stale = () => generation !== loadGeneration;
   const item = get(currentItem);
+  if (pendingResume?.queueId !== item?.queueId) pendingResume = null;
   let el = ensureAudio();
   if (!item) {
     clearHls();
@@ -721,7 +724,10 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     if (stale()) return;
     playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
     clearHls();
-    el = replaceMedia(playVideo);
+    // Never attach a new queue entry to the old track's media clock. A stale
+    // ended/metadata event or DASH fallback must not seek/skip the next song.
+    el = replaceMedia(playVideo, mediaQueueId !== item.queueId);
+    mediaQueueId = item.queueId;
     if (stream.dashManifest && get(videoMode)) {
       const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, mediaProxyUrl(new URL(stream.url)).href, stale);
       if (stale()) { adaptive.destroy(); await adaptive.ready; return; }

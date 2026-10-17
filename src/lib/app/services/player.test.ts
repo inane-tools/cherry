@@ -338,6 +338,8 @@ describe('end of track', () => {
     await done;
     // The player owns a single <audio>; find it through a spy on play().
     const el = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement;
+    // Mock play() does not emit the real browser's play event.
+    el.dispatchEvent(new Event('play'));
     return el;
   }
 
@@ -400,4 +402,51 @@ it('drops the outgoing source if its replacement fails, so retry cannot play the
   expect(get(player.playerStore).status).toBe('error');
   expect(remove.mock.calls.some(([attribute]) => attribute === 'src')).toBe(true);
   remove.mockRestore();
+});
+
+
+describe('track handoff isolation', () => {
+  it('ignores late end/error/metadata events from the outgoing track while the next song loads', async () => {
+    const first = player.playTracks([track('handoff-a'), track('handoff-b'), track('handoff-c')]);
+    await flush(); pending[0].resolve('https://media/a'); await first;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    old.currentTime = 95;
+    const next = player.next(); await flush();
+    old.dispatchEvent(new Event('ended'));
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('loadedmetadata')); await flush();
+    expect(pending.map(p => p.videoId)).toEqual(['handoff-a', 'handoff-b']);
+    expect(get(player.playerStore)).toMatchObject({ status: 'loading', positionSeconds: 0, track: { videoId: 'handoff-b' } });
+    pending[1].resolve('https://media/b'); await next;
+    const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    expect(current).not.toBe(old); expect(current.currentTime).toBe(0);
+    old.dispatchEvent(new Event('ended')); await flush();
+    expect(get(player.playerStore).track?.videoId).toBe('handoff-b');
+  });
+  it('does not apply a restored seek to a different queue entry containing the same song', async () => {
+    localStorage.setItem('cherry.queue.v1', JSON.stringify({
+      items: [{ queueId: 'old-copy', track: track('same-song') }], index: 0,
+      order: [0], shuffle: false, repeat: 'off', position: 93,
+    }));
+    await player.restorePlayback();
+    const fresh = player.playTracks([track('same-song')]); await flush();
+    pending[0].resolve('https://media/fresh'); await fresh;
+    const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    media.dispatchEvent(new Event('loadedmetadata'));
+    expect(media.currentTime).toBe(0);
+  });
+});
+
+it('starts the next video with a fresh zero-based clock instead of the previous video position', async () => {
+  await player.setVideoMode(true);
+  const first = player.playTracks([{ ...track('video-a'), isMusicVideo: true }, { ...track('video-b'), isMusicVideo: true }]);
+  await flush(); pending[0].resolve('https://media/video-a'); await first;
+  const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLVideoElement;
+  expect(old).toBeInstanceOf(HTMLVideoElement); old.currentTime = 120;
+  old.dispatchEvent(new Event('play'));
+  const next = player.next(); await vi.waitFor(() => expect(pending).toHaveLength(2)); pending[1].resolve('https://media/video-b'); await next;
+  const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLVideoElement;
+  expect(current).toBeInstanceOf(HTMLVideoElement); expect(current).not.toBe(old); expect(current.currentTime).toBe(0);
+  old.dispatchEvent(new Event('ended')); await flush();
+  expect(get(player.playerStore).track?.videoId).toBe('video-b');
 });

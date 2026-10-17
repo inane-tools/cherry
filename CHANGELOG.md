@@ -24,6 +24,12 @@ Fukagawa. First release candidate using Electron on Windows and Linux.
 
 ### Fixed
 
+- Installed builds allow generated DASH manifests through the content security
+  policy, preventing HD video from silently falling back to the 360p file.
+- New queue entries get separate media clocks; late events and saved positions
+  from an outgoing song cannot seek into or skip the following song.
+- Queue opening mounts only visible rows, with overscan, keyboard navigation and
+  drag sources retained while scrolling. Large queues no longer build every row.
 - Media streams use Chromium's network backend to avoid an uncaught Node/Undici
   parser assertion when connections end while playback has buffered the response.
   Cancellation also handles a pending body read without touching a closed stream.
