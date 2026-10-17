@@ -379,12 +379,30 @@ async function main() {
         if (!caption || caption.querySelectorAll('.win-glyph').length !== 3) throw Error('Windows Segoe captions missing');
         const glyph = caption.querySelector('.win-glyph');
         if (glyph.textContent !== '\uE921' || !getComputedStyle(glyph).fontFamily.includes('Segoe')) throw Error('Incorrect native caption glyph');
-        const wasLight = document.documentElement.classList.contains('light');
-        document.documentElement.classList.add('light');
-        if (getComputedStyle(caption.querySelector('button')).color !== 'rgb(0, 0, 0)') throw Error('Light captions must be black');
-        document.documentElement.classList.remove('light');
-        if (getComputedStyle(caption.querySelector('button')).color !== 'rgb(255, 255, 255)') throw Error('Dark captions must be white');
-        document.documentElement.classList.toggle('light', wasLight);
+        const root = document.documentElement;
+        const wasLight = root.classList.contains('light');
+        const wasDark = root.classList.contains('dark');
+        // Exercise the same class pair as appearance.ts, allowing the renderer
+        // to finish recalculating native colors on a fresh/headless Windows VM.
+        async function checkCaptionTheme(light, expected) {
+          root.classList.toggle('light', light);
+          root.classList.toggle('dark', !light);
+          const button = caption.querySelector('button');
+          let actual;
+          for (let i = 0; i < 25; i++) {
+            actual = getComputedStyle(button).color;
+            if (actual === expected) return;
+            await new Promise(resolve => setTimeout(resolve, 20));
+          }
+          throw Error('Caption color mismatch: ' + JSON.stringify({ light, expected, actual, classes: root.className, forcedColors: matchMedia('(forced-colors: active)').matches }));
+        }
+        try {
+          await checkCaptionTheme(true, 'rgb(0, 0, 0)');
+          await checkCaptionTheme(false, 'rgb(255, 255, 255)');
+        } finally {
+          root.classList.toggle('light', wasLight);
+          root.classList.toggle('dark', wasDark);
+        }
         await bridge.invoke('set_window_zoom', { scale: 1.65 });
         if (Math.abs(await bridge.invoke('smoke:zoom') - 1.65) > .001) throw Error('Caption/app zoom mismatch');
         await bridge.invoke('set_window_zoom', { scale: 1.1 });
