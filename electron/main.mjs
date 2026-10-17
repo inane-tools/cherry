@@ -302,7 +302,7 @@ async function main() {
   });
   window = new BrowserWindow({ title: 'Cherry', width: 1280, height: 850, minWidth: 460, minHeight: 540,
     frame: false, show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
-    webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
+    webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !smoke } });
   if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
   ipcMain.handle('desktop:invoke', async (event, command, args = {}) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !trustedRenderer(event.senderFrame.url, devUrl)) throw new Error('Untrusted IPC sender');
@@ -329,6 +329,9 @@ async function main() {
   // Some Windows launch configurations suppress the first native ShowWindow.
   // Reveal again after navigation instead of relying only on ready-to-show.
   if (!smoke) { window.show(); window.focus(); }
+  // CI owns an isolated desktop. Let Chromium paint the test window there;
+  // hidden/throttled server windows can retain stale native computed colors.
+  else if (process.env.CI === 'true') window.showInactive();
   if (devUrl) console.log('[desktop] App loaded' + (smoke ? ' (hidden smoke test)' : ''));
   if (smoke) {
     await loginSession().cookies.set({ url: 'https://music.youtube.com/', name: 'SID', value: 'smoke-session-identity' });
