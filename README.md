@@ -16,13 +16,9 @@ with **Electron + Chromium**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 ## Platform status
 
 **Cherry 2.0.0 (Furano) is in development.** The desktop host is moving from
-Tauri to Electron on both Windows and Linux, keeping Cherry's custom frontend.
-No 2.0 installers have been built or released yet. macOS remains deferred.
+Tauri to Electron on both Windows and Linux. This means that you will have to manually install 2.0 when it releases.
 
-The Electron version uses Chromium on both platforms. Steam Deck testing has
-eliminated the observed WebKit rendering glitches and felt much smoother;
-the Fedora VM remains more sluggish. Desktop integrations, account handling,
-playback and video support have been ported, with further testing ongoing.
+The reason for this switch is to have more parity across Windows and Linux releases of the app.
 
 **The stable downloads below are still Tauri 1.7.0.** Windows is its most polished
 version. Linux uses WebKitGTK and can still show animation flicker, rendering
@@ -117,16 +113,6 @@ songs and app restarts; restored video loads paused. Collapsing keeps playback
 running. Lyrics are suspended during video playback. Optional letterboxing adds
 black bars without resizing the player.
 
-**v1.6.2 (Shibetsu)** adds signed GitHub updates for Tauri Windows and AppImage installs.
-
-**v1.6.1 (Shibetsu)** fixes Discord presence clearing and adds links to the
-current song on album artwork and to inane.tools on the Cherry badge.
-
-**v1.6.0 (Shibetsu)** refreshes Home with more YouTube Music layouts, filters
-and pagination, separates Explore into its own page, and adds an optional queue
-sidebar. It also adds confirmed playlist deletion, expanded tray controls and
-Windows playlist shortcuts, with improved artwork recovery and accent gradients.
-Windows NSIS and Linux Flatpak/AppImage are supported; macOS builds are deferred.
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Download
@@ -148,13 +134,8 @@ cover Tauri-specific requirements and limitations.
 
 Future Electron releases will be published in
 [this repository's releases](https://github.com/inane-tools/cherry/releases),
-with **NSIS for Windows** and **Flatpak / AppImage for Linux**. The Electron
-1.7.1 preview is no longer a public download. Switching from Tauri will require
+with **NSIS for Windows** and **Flatpak / AppImage for Linux**. Switching from 1.7 to 2.0 will require
 a manual installation; see [migration](docs/MIGRATION.md).
-
-**Tauri users on 1.6.1 or earlier need to install 1.7.0 manually once to add its updater.**
-The `.sig` files and `latest.json` on Tauri releases are updater assets; manual
-installation only needs the installer for your platform.
 
 ## Requirements
 
@@ -269,7 +250,7 @@ See [`docs/TESTING.md`](docs/TESTING.md) and
 
 ## Credits
 
-Cherry is developed with LLM assistance, from the ideas and feedback of
+Cherry is developed with LLMs, guided by 
 [inane.tools](https://inane.tools). DeepSeek v4.1 Flash generated much of the
 original code through 1.4. Codex with GPT-6.1 Sol has contributed since 1.4.2,
 with additional work by Claude through the jannuary fork.
