@@ -1,6 +1,29 @@
 /** Image fallbacks and bounded recovery after a connection failure or resume. */
 export type ArtworkOptions = { urls: string[]; onfailure?: () => void };
 
+// Only failed images need resume notifications. Share one set of listeners
+// rather than keeping three global listeners alive for every visible image.
+const pendingResume = new Set<() => void>();
+function resumeArtwork() {
+  if (document.visibilityState !== 'hidden') {
+    for (const resume of [...pendingResume]) resume();
+  }
+}
+function watchResume(resume: () => void, enabled: boolean) {
+  const previous = pendingResume.size;
+  if (enabled) pendingResume.add(resume);
+  else pendingResume.delete(resume);
+  if (!previous && pendingResume.size) {
+    window.addEventListener('online', resumeArtwork);
+    window.addEventListener('focus', resumeArtwork);
+    document.addEventListener('visibilitychange', resumeArtwork);
+  } else if (previous && !pendingResume.size) {
+    window.removeEventListener('online', resumeArtwork);
+    window.removeEventListener('focus', resumeArtwork);
+    document.removeEventListener('visibilitychange', resumeArtwork);
+  }
+}
+
 function isMissingYouTubeArtwork(node: HTMLImageElement): boolean {
   try {
     const url = new URL(node.currentSrc || node.src);
@@ -27,6 +50,7 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
 
   function start() {
     clearRetry();
+    watchResume(resume, false);
     index = 0;
     failed = false;
     node.style.visibility = originalVisibility;
@@ -41,6 +65,7 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
       return;
     }
     failed = true;
+    watchResume(resume, true);
     node.style.visibility = 'hidden';
     if (!retried && urls.length) {
       retried = true;
@@ -60,6 +85,7 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
       return;
     }
     failed = false;
+    watchResume(resume, false);
     clearRetry();
     node.style.visibility = originalVisibility;
   }
@@ -85,9 +111,6 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
   node.addEventListener('error', error);
   // Capture runs before component load handlers, regardless of mount order.
   node.addEventListener('load', loaded, true);
-  window.addEventListener('online', resume);
-  window.addEventListener('focus', resume);
-  document.addEventListener('visibilitychange', resume);
   update(initial);
 
   return {
@@ -96,9 +119,7 @@ export function artwork(node: HTMLImageElement, initial: ArtworkOptions) {
       clearRetry();
       node.removeEventListener('error', error);
       node.removeEventListener('load', loaded, true);
-      window.removeEventListener('online', resume);
-      window.removeEventListener('focus', resume);
-      document.removeEventListener('visibilitychange', resume);
+      watchResume(resume, false);
       node.style.visibility = originalVisibility;
     },
   };

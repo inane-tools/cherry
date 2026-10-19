@@ -17,6 +17,14 @@ afterEach(() => vi.unstubAllGlobals());
 
 const progressiveInfo = () => ({ playability_status: { status: 'OK' }, streaming_data: { formats: [format(18, 360, 1000000)], adaptive_formats: [] } });
 
+it('preserves explicit geographic restrictions from returned or thrown player status', async () => {
+  getInfo.mockResolvedValueOnce({ playability_status: { status: 'UNPLAYABLE', reason: 'This video is not available in your country.' } });
+  await expect(getAudioStream('region-returned')).rejects.toMatchObject({ code: 'region-restricted' });
+  getInfo.mockRejectedValueOnce(Object.assign(new Error('Video unavailable'), { info: { status: 'ERROR', reason: 'The uploader has not made this video available in your country.' } }));
+  await expect(getAudioStream('region-thrown')).rejects.toMatchObject({ code: 'region-restricted' });
+  expect(getInfo).toHaveBeenCalledTimes(2);
+});
+
 it('shares a pending stream lookup between prefetch and playback', async () => {
   let resolve!: (info: ReturnType<typeof progressiveInfo>) => void;
   getInfo.mockReturnValue(new Promise(done => { resolve = done; }));

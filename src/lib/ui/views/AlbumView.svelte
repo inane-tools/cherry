@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { artwork } from '$lib/ui/actions/artwork';
-  import { thumbnailSources } from '$lib/core/models';
-  import { bestThumbnail } from '$lib/core/models';
+  import { fade } from '$lib/ui/transitions';
+  import EntityHeader from '$lib/ui/components/EntityHeader.svelte';
   import {
     albumError,
     albumLoading,
@@ -12,17 +11,16 @@
   import { pageStore } from '$lib/app/services/navigation';
   import { playTracks, playTracksShuffled } from '$lib/app/services/player';
   import { shuffleMode } from '$lib/app/services/queue';
-  import TrackRow from '$lib/ui/components/TrackRow.svelte';
+  import TrackList from '$lib/ui/components/TrackList.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
+  import { openContextMenu } from '$lib/app/services/contextMenu';
+  import { albumMenu } from '$lib/app/services/menus';
 
   $: page = $pageStore;
   $: album = page.view === 'album' ? page.entity : null;
   $: data = $albumPageStore;
   $: title = data?.title || album?.title || '';
-  $: cover = bestThumbnail(
-    data?.thumbnails?.length ? data.thumbnails : (album?.thumbnails ?? []),
-    512,
-  );
+  $: thumbnails = data?.thumbnails?.length ? data.thumbnails : (album?.thumbnails ?? []);
 
   // Artist/year come from the detail header (the raw subtitle is just
   // "Single • 2026", which would otherwise be mistaken for the artist).
@@ -61,22 +59,14 @@
   {#if !album}
     <p class="text-[13px] text-zinc-500">No album selected.</p>
   {:else}
-    <header class="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start">
-      <div class="h-44 w-44 shrink-0 overflow-hidden rounded-lg bg-white/5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
-        {#if cover}
-          <img use:artwork={{ urls: thumbnailSources(data?.thumbnails?.length ? data.thumbnails : (album?.thumbnails ?? []), 512) }} alt="" class="h-full w-full object-cover" />
-        {:else}
-          <div class="flex h-full w-full items-center justify-center text-zinc-600">
-            <i class="bx bx-album text-5xl"></i>
-          </div>
-        {/if}
-      </div>
+    <EntityHeader {thumbnails} condensed loading={$albumLoading} fallbackIcon="ph-duotone ph-vinyl-record"
+      onContextMenu={(event) => openContextMenu(event, albumMenu(album))}>
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
           <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-semibold text-zinc-300">Album</span>
           <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-medium text-zinc-400">
             {#if $albumLoading && tracks.length === 0}
-              <span class="inline-block h-2.5 w-9 animate-pulse rounded bg-white/10 align-middle"></span>
+              <span class="inline-block h-2.5 w-9 motion-safe:animate-pulse rounded bg-white/10 align-middle"></span>
             {:else}
               {tracks.length} songs
             {/if}
@@ -102,27 +92,27 @@
         {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            class="cherry-nav-button flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold text-white transition-colors disabled:cursor-default disabled:opacity-40"
             disabled={tracks.length === 0}
             onclick={() => playTracks(tracks, 0)}
           >
-            <i class="bx bx-play text-xl leading-none"></i>
+            <i class="ph-fill ph-play text-xl leading-none" aria-hidden="true"></i>
             Play
           </button>
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
+            class="cherry-nav-button flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-xl transition-colors disabled:cursor-default disabled:opacity-40 {$shuffleMode
               ? 'text-[var(--color-accent2)]'
-              : 'text-zinc-200'} hover:bg-white/10 disabled:opacity-40"
+              : 'text-zinc-200'}"
             disabled={tracks.length === 0}
             title="Shuffle play"
+            aria-label="Shuffle play"
             onclick={() => playTracksShuffled(tracks)}
           >
-            <i class="bx bx-shuffle text-xl leading-none"></i>
-            Shuffle
+            <i class="ph ph-shuffle leading-none" aria-hidden="true"></i>
           </button>
         </div>
       </div>
-    </header>
+    </EntityHeader>
 
     {#if $albumLoading && tracks.length === 0}
       <TrackListSkeleton rows={8} />
@@ -131,15 +121,13 @@
     {:else if tracks.length === 0}
       <p class="text-[12px] text-zinc-500">Nothing playable in this album.</p>
     {:else}
+      <div in:fade={{ duration: 160 }}>
       <div class="flex items-center gap-3 border-b border-white/5 px-2 pb-2 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
         <span class="w-6 text-center">#</span>
         <span class="flex-1">Title</span>
         <span>Duration</span>
       </div>
-      <div class="mt-1 flex flex-col gap-0.5">
-        {#each tracks as track, index (track.videoId + index)}
-          <TrackRow track={track} index={index} list={tracks} onPlay={(_t, i) => playTracks(tracks, i)} />
-        {/each}
+      <TrackList {tracks} onPlay={(_t, i) => playTracks(tracks, i)} />
       </div>
     {/if}
   {/if}

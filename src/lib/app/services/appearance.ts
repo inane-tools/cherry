@@ -80,7 +80,7 @@ function apply(settings: CherrySettings): void {
     // built-in accent until one plays.
     const track = get(playerStore).track;
     if (track) void applyArtworkTheme(bestThumbnail(track.thumbnails, 256));
-    else resetArtworkTheme();
+    else if (lastSource !== null) resetArtworkTheme();
   }
   lastSource = 'song';
 }

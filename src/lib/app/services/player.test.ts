@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { AuthSession, Track } from '$lib/core/models';
+import { CherryError } from '$lib/core/errors';
 
 // Stream resolution is controlled per test: each call returns a deferred the
 // test resolves when it wants, so overlapping loads can be ordered exactly.
@@ -64,6 +65,83 @@ beforeEach(() => {
   player.videoPreferred.set(false);
   setShuffle(false);
   authStore.set({ kind: 'cookie', cookie: 'SID=x', savedAt: 0 } satisfies AuthSession);
+});
+
+describe('region restrictions', () => {
+  it('skips a restricted song even with repeat-one enabled', async () => {
+    setRepeat('one');
+    try {
+      const started = player.playTracks([track('blocked'), track('available')]);
+      await flush();
+      pending[0].reject(new CherryError('region-restricted', 'Unavailable in your country'));
+      await flush();
+      expect(pending[1]).toMatchObject({ videoId: 'available', refresh: false });
+      pending[1].resolve('https://media/available');
+      await started;
+      (vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement).dispatchEvent(new Event('play'));
+      expect(get(player.playerStore)).toMatchObject({ status: 'playing', track: { videoId: 'available' } });
+    } finally { setRepeat('off'); await player.stopPlayback(); }
+  });
+
+  it('stops an entirely restricted repeating queue without retrying duplicates forever', async () => {
+    setRepeat('all');
+    try {
+      const started = player.playTracks([track('blocked-a'), track('blocked-a'), track('blocked-b')]);
+      await flush();
+      pending[0].reject(new CherryError('region-restricted', 'Unavailable in your country'));
+      await flush();
+      expect(pending[1].videoId).toBe('blocked-b');
+      pending[1].reject(new CherryError('region-restricted', 'Unavailable in your country'));
+      await started;
+      expect(pending).toHaveLength(2);
+      expect(get(player.playerStore).status).toBe('idle');
+    } finally { setRepeat('off'); await player.stopPlayback(); }
+  });
+
+  it('retries network errors without skipping the song', async () => {
+    const started = player.playTracks([track('network'), track('next')]);
+    await flush();
+    pending[0].reject(new Error('Network fetch failed'));
+    await flush();
+    expect(pending[1]).toMatchObject({ videoId: 'network', refresh: true });
+    pending[1].reject(new Error('Network fetch failed'));
+    await started;
+    expect(pending).toHaveLength(2);
+    expect(get(player.playerStore)).toMatchObject({ status: 'error', track: { videoId: 'network' } });
+    await player.stopPlayback();
+  });
+
+  it('uses original audio when only the music video counterpart is restricted', async () => {
+    player.videoPreferred.set(true);
+    const started = player.playTracks([track('original')]);
+    await flush();
+    expect(pending[0].videoId).toBe('official');
+    pending[0].reject(new CherryError('region-restricted', 'Unavailable in your country'));
+    await flush();
+    expect(pending[1].videoId).toBe('original');
+    pending[1].resolve('https://media/original');
+    await started;
+    (vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement).dispatchEvent(new Event('play'));
+    expect(get(player.videoMode)).toBe(false);
+    expect(get(player.videoPreferred)).toBe(true);
+    expect(get(player.playerStore).status).toBe('playing');
+    await player.stopPlayback();
+  });
+
+  it('ignores a late restriction after the user has skipped to another song', async () => {
+    const started = player.playTracks([track('old'), track('current'), track('next')]);
+    await flush();
+    const advanced = player.next();
+    await flush();
+    pending[0].reject(new CherryError('region-restricted', 'Unavailable in your country'));
+    await started;
+    expect(pending).toHaveLength(2);
+    expect(pending[1].videoId).toBe('current');
+    pending[1].resolve('https://media/current');
+    await advanced;
+    expect(get(player.playerStore).track?.videoId).toBe('current');
+    await player.stopPlayback();
+  });
 });
 
 describe('music video playback', () => {
@@ -306,12 +384,15 @@ describe('runtime media failures', () => {
     media.dispatchEvent(new Event('error')); await flush();
     expect(pending[1]).toMatchObject({ videoId: 'runtime', refresh: true });
     pending[1].resolve('https://media/refreshed'); await flush();
-    await vi.waitFor(() => expect(media.src).toBe('https://media/refreshed'));
-    media.dispatchEvent(new Event('play'));
+    await vi.waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2));
+    const refreshed = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    expect(refreshed.src).toBe('https://media/refreshed');
+    expect(refreshed).not.toBe(media);
+    refreshed.dispatchEvent(new Event('play'));
     await flush();
-    media.dispatchEvent(new Event('loadedmetadata'));
-    expect(media.currentTime).toBe(37);
-    media.dispatchEvent(new Event('error')); await flush();
+    refreshed.dispatchEvent(new Event('loadedmetadata'));
+    expect(refreshed.currentTime).toBe(37);
+    refreshed.dispatchEvent(new Event('error')); await flush();
     expect(pending).toHaveLength(2);
     expect(get(player.playerStore).status).toBe('error');
     await player.stopPlayback();
@@ -449,4 +530,158 @@ it('starts the next video with a fresh zero-based clock instead of the previous 
   expect(current).toBeInstanceOf(HTMLVideoElement); expect(current).not.toBe(old); expect(current.currentTime).toBe(0);
   old.dispatchEvent(new Event('ended')); await flush();
   expect(get(player.playerStore).track?.videoId).toBe('video-b');
+});
+
+
+describe('stalled playback recovery', () => {
+  it('retries a stream request that never resolves and ignores its late result', async () => {
+    vi.useFakeTimers();
+    try {
+      const done = player.playTracks([track('hung-request')]); await flush();
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(pending[1]).toMatchObject({ videoId: 'hung-request', refresh: true });
+      pending[1].resolve('https://media/retry'); await done;
+      pending[0].resolve('https://media/late'); await flush();
+      const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      expect(media.src).toBe('https://media/retry');
+    } finally { await player.stopPlayback(); vi.useRealTimers(); }
+  });
+
+  it('retries an unresolved play request with a fresh media element', async () => {
+    vi.useFakeTimers();
+    try {
+      playImpl = () => new Promise(() => {});
+      const done = player.playTracks([track('hung-play')]); await flush();
+      pending[0].resolve('https://media/hung'); await flush();
+      const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(pending[1].refresh).toBe(true);
+      expect(old.getAttribute('src')).toBeNull();
+      playImpl = () => Promise.resolve();
+      pending[1].resolve('https://media/retry'); await done;
+      expect(vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1)).not.toBe(old);
+    } finally { await player.stopPlayback(); vi.useRealTimers(); }
+  });
+
+  it.each([false, true])('recovers stalled playback without skipping or losing position (video=%s)', async (video) => {
+    vi.useFakeTimers();
+    try {
+      player.videoPreferred.set(video);
+      const done = player.playTracks([{ ...track('buffer-stall'), isMusicVideo: video }]); await flush();
+      pending[0].resolve('https://media/first'); await done;
+      const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      media.currentTime = 43;
+      media.dispatchEvent(new Event('play'));
+      media.dispatchEvent(new Event('waiting'));
+      expect(get(player.playbackBuffering)).toBe(true);
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(pending[1].refresh).toBe(true);
+      pending[1].resolve('https://media/recovered'); await flush();
+      const replacement = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      replacement.dispatchEvent(new Event('loadedmetadata'));
+      expect(replacement.currentTime).toBe(43);
+      expect(get(player.playerStore).track?.videoId).toBe('buffer-stall');
+      expect(get(player.playbackBuffering)).toBe(false);
+      await flush();
+      replacement.dispatchEvent(new Event('play'));
+      replacement.dispatchEvent(new Event('waiting'));
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(pending).toHaveLength(2);
+      expect(get(player.playerStore).status).toBe('error');
+    } finally { await player.stopPlayback(); vi.useRealTimers(); }
+  });
+
+  it('cancels the buffering watchdog on playing, pause and stop', async () => {
+    vi.useFakeTimers();
+    try {
+      const done = player.playTracks([track('brief-buffer')]); await flush();
+      pending[0].resolve('https://media/first'); await done;
+      const media = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      media.dispatchEvent(new Event('play'));
+      media.dispatchEvent(new Event('waiting'));
+      media.dispatchEvent(new Event('playing'));
+      expect(get(player.playbackBuffering)).toBe(false);
+      await vi.advanceTimersByTimeAsync(20000);
+      media.dispatchEvent(new Event('waiting'));
+      media.dispatchEvent(new Event('pause'));
+      expect(get(player.playbackBuffering)).toBe(false);
+      await vi.advanceTimersByTimeAsync(20000);
+      media.dispatchEvent(new Event('play'));
+      media.dispatchEvent(new Event('waiting'));
+      await player.stopPlayback();
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(pending).toHaveLength(1);
+    } finally { await player.stopPlayback(); vi.useRealTimers(); }
+  });
+});
+
+
+it('reports an error after both stream attempts time out instead of staying loading', async () => {
+  vi.useFakeTimers();
+  try {
+    const done = player.playTracks([track('offline')]); await flush();
+    await vi.advanceTimersByTimeAsync(60000); await done;
+    expect(pending).toHaveLength(2);
+    expect(get(player.playerStore)).toMatchObject({ status: 'error', error: 'The stream request took too long.' });
+  } finally { await player.stopPlayback(); vi.useRealTimers(); }
+});
+
+it('does not let an outgoing buffering watchdog reload or skip the next song', async () => {
+  vi.useFakeTimers();
+  try {
+    const done = player.playTracks([track('outgoing'), track('incoming')]); await flush();
+    pending[0].resolve('https://media/outgoing'); await done;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('waiting'));
+    const advance = player.next(); await flush();
+    pending[1].resolve('https://media/incoming'); await advance;
+    old.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(pending).toHaveLength(2);
+    expect(get(player.playerStore).track?.videoId).toBe('incoming');
+    expect(get(player.playbackBuffering)).toBe(false);
+  } finally { await player.stopPlayback(); vi.useRealTimers(); }
+});
+
+
+it('allows the new track to recover even if an outgoing recovery request is still pending', async () => {
+  const done = player.playTracks([track('old-recovery'), track('new-recovery')]); await flush();
+  pending[0].resolve('https://media/old'); await done;
+  const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+  old.dispatchEvent(new Event('play'));
+  old.dispatchEvent(new Event('error')); await flush();
+  expect(pending[1].refresh).toBe(true);
+  const advance = player.next(); await flush();
+  pending[2].resolve('https://media/new'); await advance;
+  const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+  current.dispatchEvent(new Event('play'));
+  current.dispatchEvent(new Event('error')); await flush();
+  expect(pending[3]).toMatchObject({ videoId: 'new-recovery', refresh: true });
+  pending[3].resolve('https://media/new-fresh'); await flush();
+  pending[1].resolve('https://media/old-late'); await flush();
+  expect(get(player.playerStore).track?.videoId).toBe('new-recovery');
+  await player.stopPlayback();
+});
+
+
+it('queues additions without interrupting the current song or resolving another stream', async () => {
+  const started = player.playTracks([track('current')]); await flush();
+  pending[0].resolve('https://media/current'); await started;
+  player.playerStore.update(s => ({ ...s, status: 'playing', positionSeconds: 73 }));
+  const before = get(player.playerStore);
+  const plays = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+  expect(player.addToQueue([track('added-a'), track('added-b')])).toBe(2);
+  expect(get(player.playerStore)).toEqual(before);
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(plays);
+  expect(pending).toHaveLength(1);
+  expect(get(queueStore.items).map(item => item.track.videoId)).toEqual(['current', 'added-a', 'added-b']);
+  await player.stopPlayback();
+});
+
+it('cues an empty queue without autoplaying or resolving streams', () => {
+  expect(player.addToQueue([track('first')])).toBe(1);
+  expect(get(player.playerStore)).toMatchObject({ status: 'paused', track: { videoId: 'first' }, positionSeconds: 0 });
+  expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+  expect(pending).toHaveLength(0);
 });

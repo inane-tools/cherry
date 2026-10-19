@@ -16,6 +16,6 @@
     aria-label={`Close ${title.toLowerCase()}`}
     onclick={onClose}
   >
-    <i class="bx bx-x text-xl"></i>
+    <i class="ph ph-x text-xl"></i>
   </button>
 </header>

@@ -14,7 +14,7 @@ vi.mock('./player', () => ({ playTracks: vi.fn(), playTracksShuffled: vi.fn() })
 vi.mock('$lib/infra/storage/cache', () => ({ cacheClear: vi.fn() }));
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
   getActiveChannel: vi.fn(() => 'channel'),
-  getLibraryPlaylists: vi.fn(), getHomeSections: vi.fn(), getHomePage: vi.fn(),
+  getLibraryPlaylists: vi.fn(), getHomeSections: vi.fn(), getHomePage: vi.fn(), getBrowsePage: vi.fn(),
   getPlaylistMeta: vi.fn(async () => null), streamCollectionTracks: vi.fn(),
 }));
 
@@ -49,6 +49,32 @@ beforeEach(() => {
   vi.mocked(api.getLibraryPlaylists).mockResolvedValue([playlist('new')]);
   vi.mocked(api.getHomeSections).mockResolvedValue([section('new')]);
   vi.mocked(api.getHomePage).mockImplementation(async () => ({ sections: await api.getHomeSections(), continuation: null }));
+  vi.mocked(api.getBrowsePage).mockReset().mockResolvedValue({ sections: [], continuation: null });
+});
+
+describe('Home profile and native ordering', () => {
+  const recent = { ...section('Listen again'), songs: [{ videoId: 'recent', title: 'Recent', thumbnails: [] }] };
+  it('keeps YouTube order and does not fetch history, even without Listen again', async () => {
+    vi.mocked(api.getHomePage).mockResolvedValueOnce({ sections: [section('Recommendations'), recent], continuation: null });
+    await service.loadHome();
+    expect(get(service.homeSectionsStore)).toEqual([section('Recommendations'), recent]);
+    vi.mocked(api.getHomePage).mockResolvedValueOnce({ sections: [section('Other')], continuation: null });
+    await service.loadHome();
+    expect(get(service.homeSectionsStore)).toEqual([section('Other')]);
+    expect(api.getBrowsePage).not.toHaveBeenCalled();
+  });
+  it('uses the account avatar on the first section and a later shelf only for its profile endpoint', async () => {
+    vi.mocked(initChannel).mockResolvedValueOnce({ name: 'Owner', pageId: 'UCowner', avatarUrl: 'https://image.test/account' });
+    const first = { ...section('Recommendations'), songs: recent.songs };
+    const later = { ...recent, header: { thumbnails: [{ url: 'https://image.test/ignore' }], profile: { browseId: 'UCowner', params: 'private' } } };
+    vi.mocked(api.getHomePage).mockResolvedValueOnce({ sections: [first], continuation: 'more' }).mockResolvedValueOnce({ sections: [later], continuation: null });
+    await service.loadHome(); await service.loadMoreHome();
+    const shelves = get(service.homeSectionsStore);
+    expect(shelves.map(s => s.title)).toEqual(['Recommendations', 'Listen again']);
+    expect(shelves[0].header).toMatchObject({ thumbnails: [{ url: 'https://image.test/account' }], profile: { browseId: 'UCowner', params: 'private' } });
+    expect(shelves[1].header?.thumbnails).toEqual([]);
+    expect(api.getBrowsePage).not.toHaveBeenCalled();
+  });
 });
 
 describe('account and channel loads', () => {
@@ -169,6 +195,73 @@ it('does not infer ownership from a regular playlist header', async () => {
   await service.loadOpenPlaylist(playlist('VLSAVED'));
   const { addPlaylistLocally } = await import('./addablePlaylists');
   await settle(); expect(addPlaylistLocally).not.toHaveBeenCalled();
+});
+
+it('fills in the creator for a Home card in both the open playlist and navigation header', async () => {
+  const target = playlist('VLHOME');
+  service.openPlaylist(target);
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce({ title: 'Curated playlist', author: 'The curator' });
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([]);
+  await service.loadOpenPlaylist(target);
+  const { pageStore } = await import('./navigation');
+  expect(get(service.openPlaylistStore)).toMatchObject({ author: 'The curator' });
+  expect(get(pageStore)).toMatchObject({ view: 'playlist', entity: { title: 'Curated playlist', author: 'The curator' } });
+});
+
+it('keeps header details loading until creator metadata is ready, independently of streamed tracks', async () => {
+  const header = deferred<Awaited<ReturnType<typeof api.getPlaylistMeta>>>();
+  vi.mocked(api.getPlaylistMeta).mockReturnValueOnce(header.promise);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([]);
+  await service.loadOpenPlaylist(playlist('HEADER'));
+  expect(get(service.openPlaylistHeaderLoading)).toBe(true);
+  expect(get(service.openPlaylistLoading)).toBe(false);
+  header.resolve({ author: 'The curator', description: 'Description' });
+  await settle();
+  expect(get(service.openPlaylistHeaderLoading)).toBe(false);
+  expect(get(service.openPlaylistStore)?.author).toBe('The curator');
+  expect(get(service.openPlaylistDescription)).toBe('Description');
+});
+
+it('removes only the confirmed playlist occurrence and updates counts without changing the queue', () => {
+  const first = { videoId: 'same', title: 'Same', artists: [], thumbnails: [], playlistEntryId: 'first' };
+  const second = { ...first, playlistEntryId: 'second' };
+  const target = { ...playlist('REMOVE'), trackCount: 2 };
+  service.openPlaylistStore.set(target); service.openPlaylistTracks.set([first, second]); service.playlistStore.set([target]);
+  const before = get(queueItems);
+  service.recordPlaylistRemoval(target, second);
+  expect(get(service.openPlaylistTracks)).toEqual([first]);
+  expect(get(service.openPlaylistStore)?.trackCount).toBe(1);
+  expect(get(service.playlistStore)[0].trackCount).toBe(1);
+  expect(get(queueItems)).toBe(before);
+});
+
+it('does not resurrect a removed entry while later playlist pages are still streaming', async () => {
+  const song = (playlistEntryId: string): Track => ({ videoId: 'same', title: 'Song', artists: [], thumbnails: [], playlistEntryId });
+  const first = song('first'), second = song('second'), third = song('third');
+  const response = deferred<Track[]>();
+  let page!: (tracks: Track[], done: boolean) => void;
+  vi.mocked(api.streamCollectionTracks).mockImplementationOnce((_id, _session, onPage) => { page = onPage; return response.promise; });
+  const target = playlist('STREAM');
+  const loading = service.loadOpenPlaylist(target);
+  await settle();
+  page([first, second], false);
+  service.recordPlaylistRemoval(target, second);
+  page([first, second, third], false);
+  expect(get(service.openPlaylistTracks)).toEqual([first, third]);
+  response.resolve([first, second, third]); await loading;
+  expect(get(service.openPlaylistTracks)).toEqual([first, third]);
+  expect(get(service.openPlaylistStore)?.trackCount).toBe(2);
+});
+
+it('ignores creator metadata from a playlist that has been replaced', async () => {
+  const old = deferred<Awaited<ReturnType<typeof api.getPlaylistMeta>>>();
+  vi.mocked(api.getPlaylistMeta).mockReturnValueOnce(old.promise).mockResolvedValueOnce({ author: 'New curator' });
+  vi.mocked(api.streamCollectionTracks).mockResolvedValue([]);
+  await service.loadOpenPlaylist(playlist('OLD'));
+  await service.loadOpenPlaylist(playlist('NEW'));
+  old.resolve({ author: 'Old curator' });
+  await settle();
+  expect(get(service.openPlaylistStore)).toMatchObject({ browseId: 'NEW', author: 'New curator' });
 });
 
 

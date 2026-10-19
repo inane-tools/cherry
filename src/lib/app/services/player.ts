@@ -8,10 +8,10 @@ import { get, writable } from 'svelte/store';
 import { getCurrentWindow } from '$lib/desktop/window';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
-import { toCherryError } from '$lib/core/errors';
+import { isRegionRestricted, toCherryError } from '$lib/core/errors';
 import { getAudioStream, getInnertube, prefetchAudioStream, getMusicVideo } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
-import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext } from './queue';
+import { currentItem, queueStore, setQueue, step, setRepeat, setShuffle, cutQueueTo, upNext, enqueue } from './queue';
 import type { RepeatMode } from '$lib/core/models';
 import { invokeSafe, isDesktop } from './platform';
 import { announceSignInRequired } from './gate';
@@ -37,6 +37,22 @@ export const videoMode = writable(false);
 /** User preference survives tracks that temporarily have no music video. */
 export const videoPreferred = writable(false);
 export const videoReady = writable(false);
+/** Waiting for media bytes, independently of whether playback was requested. */
+export const playbackBuffering = writable(false);
+let bufferingTimer: ReturnType<typeof setTimeout> | undefined;
+function clearBuffering() {
+  clearTimeout(bufferingTimer);
+  bufferingTimer = undefined;
+  playbackBuffering.set(false);
+}
+async function playbackDeadline<T>(request: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([request, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 export const videoResolution = writable<number | null>(null);
 let videoHost: HTMLElement | null = null;
 /** Reparent the same media element; expanding/collapsing never creates a second clock. */
@@ -57,6 +73,7 @@ export async function setVideoMode(enabled: boolean, autoplay?: boolean): Promis
 
 function replaceMedia(video: boolean, fresh = false): HTMLMediaElement {
   if (!fresh && get(videoMode) === video && audio) return audio;
+  clearBuffering();
   clearHls();
   const previous = audio;
   audio = null;
@@ -163,6 +180,19 @@ function ensureAudio(): HTMLMediaElement {
       }
     });
     listen('emptied', () => videoReady.set(false));
+    listen('playing', clearBuffering);
+    const waiting = () => {
+      if (get(playerStore).status !== 'playing' || bufferingTimer) return;
+      playbackBuffering.set(true);
+      bufferingTimer = setTimeout(() => {
+        bufferingTimer = undefined;
+        if (audio === media && mediaQueueId === get(currentItem)?.queueId && get(playerStore).status === 'playing') {
+          recoverMedia(media, 'Playback stalled while buffering.');
+        }
+      }, 20000);
+    };
+    listen('waiting', waiting);
+    listen('stalled', () => { if (media.readyState < 3) waiting(); });
     listen('play', () => {
       discordAwaitingPlayback = false;
       playerStore.update((p) => ({ ...p, status: 'playing', error: undefined }));
@@ -171,6 +201,7 @@ function ensureAudio(): HTMLMediaElement {
       void pushOsState();
     });
     listen('pause', () => {
+      clearBuffering();
       if (media.error || ['loading', 'error'].includes(get(playerStore).status)) return; // Ignore pauses caused by a source handoff.
       // Any pause counts, not just one that interrupted "playing" — otherwise a
       // pause during buffering left the presence looking like it was still on.
@@ -178,28 +209,37 @@ function ensureAudio(): HTMLMediaElement {
       schedulePauseClear();
       void pushOsState();
     });
-    listen('ended', () => { if (get(playerStore).status !== 'loading') void onEnded(); });
+    listen('ended', () => { clearBuffering(); if (get(playerStore).status !== 'loading') void onEnded(); });
     listen('error', () => {
-      if (!media.getAttribute('src') || recoveryPending) return;
+      if (!media.getAttribute('src') || recoveryGeneration === loadGeneration) return;
       const state = get(playerStore);
       if (state.status === 'loading' || media.error?.code === 1) return;
-      const current = get(currentItem);
-      const key = current ? current.queueId + ':' + get(videoPreferred) : '';
-      // Refresh a rejected/expired URL once, retaining the current position.
-      // A second failure is shown instead of restarting in an endless loop.
-      if (current && key && key !== recoveredMediaKey && get(authStore)) {
-        recoveredMediaKey = key;
-        recoveryPending = true;
-        pendingResume = { queueId: current.queueId, videoId: current.track.videoId, seconds: media.currentTime || state.positionSeconds };
-        void loadCurrent(state.status === 'playing', true).finally(() => { recoveryPending = false; });
-        return;
-      }
       const reason = ({ 2: 'Network stream failed.', 3: 'The media could not be decoded.', 4: 'The stream format is unavailable.' } as Record<number, string>)[media.error?.code ?? 0] ?? 'Playback failed for this track.';
-      playerStore.update(p => ({ ...p, status: 'error', error: reason }));
-      void pushOsState();
+      recoverMedia(media, reason);
     });
   }
   return audio;
+}
+
+/** One fresh URL per queue entry, preserving position instead of skipping songs. */
+function recoverMedia(media: HTMLMediaElement, reason: string) {
+  clearBuffering();
+  if (recoveryGeneration === loadGeneration) return;
+  const state = get(playerStore);
+  const current = get(currentItem);
+  const key = current ? current.queueId + ':' + get(videoPreferred) : '';
+  if (current && key && key !== recoveredMediaKey && get(authStore)) {
+    recoveredMediaKey = key;
+    pendingResume = { queueId: current.queueId, videoId: current.track.videoId, seconds: media.currentTime || state.positionSeconds };
+    const recovery = loadCurrent(state.status === 'playing', true);
+    const generation = loadGeneration;
+    recoveryGeneration = generation;
+    void recovery.finally(() => { if (recoveryGeneration === generation) recoveryGeneration = null; });
+    return;
+  }
+  media.pause();
+  playerStore.update(p => ({ ...p, status: 'error', error: reason }));
+  void pushOsState();
 }
 
 /**
@@ -334,6 +374,19 @@ export async function playTracks(tracks: Track[], startAt = 0): Promise<void> {
   await loadCurrent(true);
 }
 
+/** Append without interrupting playback or reshuffling the existing queue. */
+export function addToQueue(tracks: Track[]): number {
+  if (!get(authStore)) { announceSignInRequired(); return 0; }
+  const playable = tracks.filter(track => !!track.videoId);
+  const empty = get(queueStore.items).length === 0;
+  enqueue(playable, false, { appendInOrder: true });
+  if (empty && playable.length) {
+    discordAwaitingPlayback = true;
+    cueCurrent();
+  }
+  return playable.length;
+}
+
 /**
  * Play a list with shuffle on, starting from a random track.
  *
@@ -436,6 +489,7 @@ export function seekTo(seconds: number): void {
 // Stops playback entirely and clears the OS media session and Discord presence.
 // Used when the queue is exhausted or emptied so nothing lingers.
 export async function stopPlayback(): Promise<void> {
+  clearBuffering();
   clearHls();
   // A stream resolving after Stop must not reattach its source and autoplay.
   loadGeneration++;
@@ -644,13 +698,14 @@ async function prefetchNext(): Promise<void> {
  */
 let loadGeneration = 0;
 let recoveredMediaKey = '';
-let recoveryPending = false;
+let recoveryGeneration: number | null = null;
 
 function isAbort(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError';
 }
 
-async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<void> {
+async function loadCurrent(autoplay: boolean, refreshStream = false, restricted = new Set<string>()): Promise<void> {
+  clearBuffering();
   cancelPauseClear();
   const generation = ++loadGeneration;
   const stale = () => generation !== loadGeneration;
@@ -680,7 +735,7 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
   el.pause();
   // Theme the app from the new track's artwork (fire and forget).
   void applyArtworkTheme(bestThumbnail(item.track.thumbnails, 256));
-  await pushOsState();
+  void pushOsState();
   if (stale()) return;
 
   // Gate again here: autoplay can advance into this after a sign-out.
@@ -700,7 +755,7 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     void getInnertube(session, { retrievePlayer: true }).catch(() => {});
     void import('dashjs').catch(() => {});
     try {
-      const counterpart = item.track.isMusicVideo ? item.track : await getMusicVideo(videoId, session);
+      const counterpart = item.track.isMusicVideo ? item.track : await playbackDeadline(getMusicVideo(videoId, session), 10000, 'Music video lookup timed out.');
       if (stale()) return;
       if (counterpart) {
         playVideo = true;
@@ -717,27 +772,33 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
   }
   if (stale()) return;
   const start = async (refresh: boolean): Promise<void> => {
+    playerStore.update(p => ({ ...p, status: 'loading' }));
+    if (refresh) {
+      // Cancel an unresolved play() before fetching its replacement. Its late
+      // completion must not restart the failed source during the retry.
+      clearHls(); el.pause(); el.removeAttribute('src'); el.load();
+    }
     videoReady.set(false);
     videoResolution.set(null);
     videoQualities.set([]);
-    const { track, stream } = await getAudioStream(videoId, session, { refresh, ...(playVideo ? { video: true } : {}) });
+    const { track, stream } = await playbackDeadline(getAudioStream(videoId, session, { refresh, ...(playVideo ? { video: true } : {}) }), 30000, 'The stream request took too long.');
     if (stale()) return;
     playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
     clearHls();
     // Never attach a new queue entry to the old track's media clock. A stale
     // ended/metadata event or DASH fallback must not seek/skip the next song.
-    el = replaceMedia(playVideo, mediaQueueId !== item.queueId);
+    el = replaceMedia(playVideo, refresh || mediaQueueId !== item.queueId);
     mediaQueueId = item.queueId;
     if (stream.dashManifest && get(videoMode)) {
       const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, mediaProxyUrl(new URL(stream.url)).href, stale);
       if (stale()) { adaptive.destroy(); await adaptive.ready; return; }
       clearHls = () => { adaptive.destroy(); clearHls = () => {}; };
-      await adaptive.ready;
+      await playbackDeadline(adaptive.ready, 45000, 'The video stream took too long to load.');
       if (stale()) return;
     } else if (/mpegurl/i.test(stream.mimeType) && !el.canPlayType(stream.mimeType)) {
       const { default: Hls } = await import('hls.js');
       if (stale()) return;
-      if (!Hls.isSupported()) throw new Error('Live playback is not supported by this webview.');
+      if (!Hls.isSupported()) throw new Error('Live playback is not supported by this browser engine.');
       const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('The live station took too long to load.')), 20000);
@@ -765,7 +826,7 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     }
     if (autoplay) {
       try {
-        await el.play();
+        await playbackDeadline(el.play(), 20000, 'Playback took too long to start.');
       } catch (e) {
         // Blocked by an autoplay policy: the source is fine, so leave the track
         // loaded and paused instead of re-resolving it as if the URL had failed.
@@ -779,20 +840,54 @@ async function loadCurrent(autoplay: boolean, refreshStream = false): Promise<vo
     void prefetchNext();
   };
 
+  const startWithVideoFallback = async (refresh: boolean) => {
+    try { await start(refresh); }
+    catch (error) {
+      if (stale() || !isRegionRestricted(error) || !playVideo || videoId === item.track.videoId) throw error;
+      // A restricted video counterpart does not mean its audio song is blocked.
+      playVideo = false; videoId = item.track.videoId;
+      if (pendingResume?.queueId === item.queueId) pendingResume.videoId = videoId;
+      playerStore.update(state => ({ ...state, track: item.track }));
+      await start(false);
+    }
+  };
+  const skipRestricted = async (error: unknown): Promise<boolean> => {
+    if (!autoplay || !isRegionRestricted(error)) return false;
+    restricted.add(item.track.videoId);
+    clearHls(); el.pause(); el.removeAttribute('src'); el.load();
+    // Follow the actual shuffle order, ignoring repeat-one. Do not wrap forever
+    // when repeat-all encounters a queue made entirely of blocked songs.
+    let remaining = get(queueStore.items).length;
+    while (remaining-- > 0 && step(1, true)) {
+      const candidate = get(currentItem);
+      if (candidate && !restricted.has(candidate.track.videoId)) {
+        await loadCurrent(true, false, restricted);
+        return true;
+      }
+    }
+    await stopPlayback();
+    return true;
+  };
+
   try {
-    await start(refreshStream);
+    await startWithVideoFallback(refreshStream);
   } catch (e) {
     // An overtaken load, or a play() interrupted by a newer source, is not a
     // failure of this track — there is nothing to retry or report.
     if (stale() || isAbort(e)) return;
-    const err = toCherryError(e);
+    if (await skipRestricted(e)) return;
+    if (stale()) return;
+    let err = toCherryError(e);
     // The cached stream URL may have expired: retry once per load, bypassing
     // the cache.
     try {
-      await start(true);
+      await startWithVideoFallback(true);
       return;
     } catch (retryError) {
       if (stale() || isAbort(retryError)) return;
+      if (await skipRestricted(retryError)) return;
+      if (stale()) return;
+      err = toCherryError(retryError);
     }
     // A failed replacement must not leave the previous song available to Play.
     clearHls(); el.pause(); el.removeAttribute('src'); el.load();

@@ -41,7 +41,7 @@ export function musicUrlForPlaylist(p: Playlist): string {
 
 /**
  * Copy text to the clipboard, falling back to a hidden textarea when the async
- * Clipboard API is unavailable (it can be in a webview without focus).
+ * Clipboard API is unavailable (it can be when the app window lacks focus).
  */
 export async function copyText(text: string): Promise<boolean> {
   try {

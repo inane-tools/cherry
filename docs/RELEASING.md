@@ -10,6 +10,12 @@ There is no destination picker, wizard or completion page. NSIS handles
 replacement, shortcuts and uninstall; updates use the same engine silently.
 Uninstall keeps app data.
 
+The 2.0 shortcut is **inane → Cherry** in the Start menu (`menuCategory: inane`).
+Desktop shortcut creation is disabled to avoid overwriting the legacy Tauri
+shortcut. Keep the Electron app ID and profile name unchanged so 1.7.1 preview
+updates still find their installation and credentials. Test both coexistence
+with Tauri and an upgrade from Electron 1.7.1 before releasing 2.0.
+
 `install-cherry.png` is the installer artwork. `npm run dist:win` converts it to
 `build/install-cherry.ico` for the setup executable and progress window; the
 installed app keeps its existing icon. Regenerate just the ICO with
@@ -38,6 +44,12 @@ npm run dist:linux
 
 Outputs: `release/Cherry-2.0.0-x86_64.AppImage` and
 `release/Cherry-2.0.0-x86_64.flatpak`.
+
+The Flatpak builds libsecret 0.21.7 with its `secret-tool` executable retained
+under `/app/bin`. Electron2.BaseApp includes the library but removes that tool;
+the migrator needs it to read Tauri's Secret Service entries within the sandbox.
+The module uses the same pinned source and checksum as the 25.08 base, and ships
+its license. AppImage uses the system `/usr/bin/secret-tool` instead.
 
 ```sh
 chmod +x release/Cherry-2.0.0-x86_64.AppImage

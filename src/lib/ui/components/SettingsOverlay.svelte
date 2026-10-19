@@ -43,7 +43,7 @@
         aria-label="Close settings"
         onclick={closeSettings}
       >
-        <i class="bx bx-x text-xl"></i>
+        <i class="ph ph-x text-xl"></i>
       </button>
       <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1 p-6">
         <SettingsView />

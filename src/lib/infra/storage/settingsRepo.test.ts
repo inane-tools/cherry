@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// A fake tauri-plugin-store file and keychain, observable by the tests.
+// A fake desktop settings file and encrypted credential store, observable by the tests.
 const file = new Map<string, unknown>();
 const keychain = new Map<string, string>();
 let keychainBroken = false;

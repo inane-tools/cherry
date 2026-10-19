@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 const saved: Record<string, unknown>[] = [];
+vi.mock('./pins', () => ({ isPinned: () => false }));
 vi.mock('./settings', async () => {
   const { writable } = await import('svelte/store');
   return {

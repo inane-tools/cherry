@@ -4,6 +4,7 @@ import { searchQuery, searchRequest } from './searchSession';
 export { searchQuery, searchRequest, searchResultsStore } from './searchSession';
 import { openSearch, openSettings } from './overlays';
 import { playerExpanded } from './layout';
+import { pageVisitStore } from './pageVisit';
 
 /**
  * A navigable page. Entity pages (playlist/artist/album) carry the entity that
@@ -18,15 +19,16 @@ export type Page =
   | { view: 'playlist'; entity: Playlist }
   | { view: 'artist'; entity: ArtistRef }
   | { view: 'album'; entity: Album }
-  | { view: 'browse'; entity: { browseId: string; title: string; params?: string } };
+  | { view: 'browse'; entity: { browseId: string; title: string; params?: string; kind?: 'profile'; thumbnails?: import('$lib/core/models').Thumbnail[] } };
 
 export const pageStore = writable<Page>({ view: 'home' });
 export const canGoBack = writable(false);
 export const canGoForward = writable(false);
 
 const MAX_HISTORY = 64;
-let history: Page[] = [];
-let future: Page[] = [];
+type HistoryEntry = { page: Page; visit: object };
+let history: HistoryEntry[] = [];
+let future: HistoryEntry[] = [];
 
 function syncHistoryFlags(): void {
   canGoBack.set(history.length > 0);
@@ -34,7 +36,7 @@ function syncHistoryFlags(): void {
 }
 
 /** Stable identity for a page, used to avoid pushing duplicates. */
-function pageKey(page: Page): string {
+export function pageKey(page: Page): string {
   switch (page.view) {
     case 'playlist':
       return page.entity.browseId;
@@ -65,9 +67,10 @@ export function openPage(page: Page): void {
     syncHistoryFlags();
     return;
   }
-  history = [...history, current].slice(-MAX_HISTORY);
+  history = [...history, { page: current, visit: get(pageVisitStore).token }].slice(-MAX_HISTORY);
   // A fresh navigation invalidates the forward stack.
   future = [];
+  pageVisitStore.set({ token: {}, restore: false });
   pageStore.set(page);
   syncHistoryFlags();
 }
@@ -85,8 +88,9 @@ export function back(): void {
   const previous = history.pop();
   if (!previous) return;
   playerExpanded.set(false);
-  future = [get(pageStore), ...future].slice(0, MAX_HISTORY);
-  pageStore.set(previous);
+  future = [{ page: get(pageStore), visit: get(pageVisitStore).token }, ...future].slice(0, MAX_HISTORY);
+  pageVisitStore.set({ token: previous.visit, restore: true });
+  pageStore.set(previous.page);
   syncHistoryFlags();
 }
 
@@ -95,18 +99,20 @@ export function forward(): void {
   const next = future.shift();
   if (!next) return;
   playerExpanded.set(false);
-  history = [...history, get(pageStore)].slice(-MAX_HISTORY);
-  pageStore.set(next);
+  history = [...history, { page: get(pageStore), visit: get(pageVisitStore).token }].slice(-MAX_HISTORY);
+  pageVisitStore.set({ token: next.visit, restore: true });
+  pageStore.set(next.page);
   syncHistoryFlags();
 }
 
 /** A deleted playlist must not reappear through Back/Forward. */
 export function forgetPlaylistPage(browseId: string): void {
   const keep = (page: Page) => page.view !== 'playlist' || page.entity.browseId !== browseId;
-  history = history.filter(keep);
-  future = future.filter(keep);
+  history = history.filter(entry => keep(entry.page));
+  future = future.filter(entry => keep(entry.page));
   if (!keep(get(pageStore))) {
     playerExpanded.set(false);
+    pageVisitStore.set({ token: {}, restore: false });
     pageStore.set({ view: 'home' });
   }
   syncHistoryFlags();

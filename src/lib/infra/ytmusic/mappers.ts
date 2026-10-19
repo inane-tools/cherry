@@ -195,6 +195,20 @@ function creditsBrowseIdOf(node: AnyNode): string | undefined {
   return findMptc(node?.menu);
 }
 
+function playlistEntryIdOf(node: AnyNode): string | undefined {
+  const id = node.set_video_id ?? node.playlist_set_video_id ?? node.playlistItemData?.playlistSetVideoId;
+  if (typeof id === 'string' && id) return id;
+  function find(value: AnyNode, depth = 0): string | undefined {
+    if (!value || typeof value !== 'object' || depth > 12) return;
+    if (value.action === 'ACTION_REMOVE_VIDEO' && typeof value.setVideoId === 'string') return value.setVideoId;
+    for (const child of Object.values(value)) {
+      const found = find(child, depth + 1);
+      if (found) return found;
+    }
+  }
+  return find(node.menu);
+}
+
 export function mapTrack(node: AnyNode): Track | null {
   if (!node || typeof node !== 'object') return null;
   if (node.type === 'MusicCardShelf') return mapCardShelf(node);
@@ -207,8 +221,10 @@ export function mapTrack(node: AnyNode): Track | null {
   if (!videoId || !title) return null;
 
   const albumNode = node.album;
+  const playlistEntryId = playlistEntryIdOf(node);
   return {
     videoId: String(videoId),
+    ...(playlistEntryId ? { playlistEntryId } : {}),
     ...(node.item_type === 'video' ? { isMusicVideo: true } : {}),
     title: String(title),
     artists: artistsOf(node),

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { overlayScrollbar, scrollbarOwner } from '$lib/ui/actions/overlayScrollbar';
   import { fade, fly } from '$lib/ui/transitions';
 
   /** A flat, borderless select. Values are strings; callers parse as needed. */
@@ -24,14 +25,14 @@
   function onWindowClick(event: MouseEvent): void {
     if (!open) return;
     const target = event.target as Node;
-    if (root && !root.contains(target) && !menu?.contains(target)) open = false;
+    if (root && !root.contains(target) && !menu?.contains(target) && scrollbarOwner(target) !== menu) open = false;
   }
 
   // Render outside the section's animated clipping container and the overlay's
-  // scroll viewport. Coordinates use CSS pixels, including native webview zoom.
+  // scroll viewport. Coordinates use CSS pixels, including renderer zoom.
   function floatingMenu(node: HTMLDivElement) {
     menu = node;
-    document.body.appendChild(node);
+    (document.fullscreenElement ?? document.body).appendChild(node);
 
     function position(): void {
       if (!root) return;
@@ -87,7 +88,7 @@
 <div bind:this={root} class="relative inline-block max-w-full">
   <button
     type="button"
-    class="inline-flex max-w-full items-center gap-1.5 text-[11px] text-zinc-200 outline-none transition-colors {variant === 'player' ? 'h-9 rounded-full pl-3 pr-2 bg-[var(--player-header-background)] text-xs backdrop-blur hover:bg-[var(--color-surface)]' : 'h-8 rounded-lg pl-2.5 pr-1.5 bg-white/[0.04] hover:bg-white/[0.07]'} {open && variant === 'default'
+    class="inline-flex max-w-full items-center gap-1.5 text-[11px] text-zinc-200 outline-none transition-colors {variant === 'player' ? 'cherry-nav-button h-9 rounded-full pl-3 pr-2 text-xs backdrop-blur' : 'h-8 rounded-lg pl-2.5 pr-1.5 bg-white/[0.04] hover:bg-white/[0.07]'} {open && variant === 'default'
       ? 'bg-white/[0.07]'
       : ''} {buttonClass}"
     aria-haspopup="listbox"
@@ -97,7 +98,7 @@
   >
     <span class="truncate">{current}</span>
     <i
-      class="bx bx-chevron-down shrink-0 text-base text-zinc-500 transition-transform {open
+      class="ph ph-caret-down shrink-0 text-base text-zinc-500 transition-transform {open
         ? 'rotate-180'
         : ''}"
       aria-hidden="true"
@@ -107,7 +108,8 @@
   {#if open}
     <div
       use:floatingMenu
-      class="fixed z-[60] overflow-y-auto rounded-xl bg-[var(--color-elevated)] p-1 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+      use:overlayScrollbar
+      class="cherry-overlay-scroll fixed z-[60] rounded-xl bg-[var(--color-elevated)] p-1 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
       role="listbox"
       in:fly={{ y: -4, duration: 160 }}
       out:fade={{ duration: 110 }}
@@ -125,7 +127,7 @@
         >
           <span class="truncate">{option.label}</span>
           {#if option.value === value}
-            <i class="bx bx-check shrink-0 text-base text-[var(--color-accent2)]"></i>
+            <i class="ph ph-check shrink-0 text-base text-[var(--color-accent2)]"></i>
           {/if}
         </button>
       {/each}

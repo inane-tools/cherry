@@ -31,6 +31,25 @@ it('retains real maximum-resolution artwork and does not downgrade Google album 
 
 afterEach(() => vi.useRealTimers());
 
+it('shares global resume listeners only while failed images need them', () => {
+  vi.useFakeTimers();
+  const add = vi.spyOn(window, 'addEventListener');
+  const remove = vi.spyOn(window, 'removeEventListener');
+  const images = Array.from({ length: 100 }, () => document.createElement('img'));
+  const actions = images.map(image => artwork(image, { urls: ['https://example.org/art'] }));
+  try {
+    const onlineAdds = () => add.mock.calls.filter(([event]) => event === 'online').length;
+    expect(onlineAdds()).toBe(0);
+    images[0].dispatchEvent(new Event('error'));
+    images[1].dispatchEvent(new Event('error'));
+    expect(onlineAdds()).toBe(1);
+    actions[0].destroy();
+    expect(remove.mock.calls.filter(([event]) => event === 'online')).toHaveLength(0);
+    images[1].dispatchEvent(new Event('load'));
+    expect(remove.mock.calls.filter(([event]) => event === 'online')).toHaveLength(1);
+  } finally { actions.forEach(action => action.destroy()); }
+});
+
 it('tries alternate sizes, retries once, then waits for resume without looping', () => {
   vi.useFakeTimers();
   const image = document.createElement('img');

@@ -26,6 +26,7 @@ import { playPlaylist } from './playlists';
 import { setRepeat } from './queue';
 import { openPage } from './navigation';
 import { closeSettings, closeSearch } from './overlays';
+import { pinnedStore } from './pins';
 
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
@@ -36,7 +37,9 @@ it('updates song info and shortcuts without rebuilding for playback position tic
   expect(invokeSafe).toHaveBeenCalledWith('update_tray', { state: expect.objectContaining({ title: 'Song', artist: 'Artist', playing: true, pinned: [{ browseId: 'VLPIN', title: 'Pinned', thumbnail: '' }] }) });
   expect(invokeSafe).toHaveBeenCalledWith('update_jump_list', { pinned: [{ browseId: 'VLPIN', title: 'Pinned', thumbnail: '' }], recent: [{ browseId: 'VLRECENT', title: 'Recent', thumbnail: '' }] });
   const calls = vi.mocked(invokeSafe).mock.calls.length;
+  const timers = vi.getTimerCount();
   playerStore.set({ ...get(playerStore), positionSeconds: 21 });
+  expect(vi.getTimerCount()).toBe(timers);
   await vi.advanceTimersByTimeAsync(100);
   expect(vi.mocked(invokeSafe).mock.calls).toHaveLength(calls);
   stop();
@@ -75,4 +78,20 @@ it('opens a cold-start playlist launch after registering native action handlers'
   expect(openPage).toHaveBeenCalledWith({ view: 'playlist', entity: { browseId: 'VLCOLD', title: 'Playlist', thumbnails: [] } });
   expect(playPlaylist).not.toHaveBeenCalled(); stop();
   vi.mocked(invokeSafe).mockImplementation(async () => null);
+});
+
+it('keeps album, artist and song sidebar pins out of playlist-only native shortcuts', async () => {
+  vi.useFakeTimers();
+  const previous = get(pinnedStore);
+  pinnedStore.set([
+    ...previous,
+    { kind: 'album', browseId: 'MPRalbum', title: 'Album', album: { browseId: 'MPRalbum', title: 'Album', artists: [], thumbnails: [] } },
+    { kind: 'artist', browseId: 'UCartist', title: 'Artist', artist: { browseId: 'UCartist', name: 'Artist' } },
+    { kind: 'song', browseId: 'song:video', title: 'Song', track: { videoId: 'video', title: 'Song', artists: [], thumbnails: [] } },
+  ]);
+  const stop = await startTray();
+  try {
+    await vi.advanceTimersByTimeAsync(100);
+    expect(invokeSafe).toHaveBeenCalledWith('update_jump_list', { pinned: [{ browseId: 'VLPIN', title: 'Pinned', thumbnail: '' }], recent: [{ browseId: 'VLRECENT', title: 'Recent', thumbnail: '' }] });
+  } finally { stop(); pinnedStore.set(previous); }
 });

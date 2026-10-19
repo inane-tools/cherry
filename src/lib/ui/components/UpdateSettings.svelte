@@ -7,10 +7,10 @@
   $: percent = $updateStore.total ? Math.min(100, Math.round($updateStore.received / $updateStore.total * 100)) : null;
 </script>
 
-<div id="cherry-updates" class="mt-4 border-t border-white/[0.06] pt-4">
+<div id="cherry-updates" class="mt-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div class="min-w-0 text-sm" aria-live="polite">
-      <p class="flex items-center gap-2 font-semibold text-white"><i class="bx bx-refresh text-base text-zinc-400" aria-hidden="true"></i>Updates</p>
+      <p class="flex items-center gap-2 font-semibold text-white"><i class="ph ph-arrow-clockwise text-base text-zinc-400" aria-hidden="true"></i>Updates</p>
       <p class="mt-1 text-xs text-zinc-400">
         {#if !$updateStore.initialized}Loading update support…
         {:else if $updateStore.environment === 'flatpak'}Update through your software manager or Flatpak repository. GitHub bundles can be installed manually.

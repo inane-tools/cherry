@@ -21,7 +21,7 @@ export async function toggleDeveloperOptions(): Promise<void> {
   } finally { toggling = false; }
 }
 
-/** Opens the WebView DevTools. Returns false in a non-desktop (browser) build. */
+/** Opens the renderer DevTools. Returns false in a non-desktop (browser) build. */
 export async function openDevTools(): Promise<boolean> {
   const settings = get(settingsStore);
   if (!isDesktop() || !settings.developerUnlocked || !settings.devToolsEnabled) return false;

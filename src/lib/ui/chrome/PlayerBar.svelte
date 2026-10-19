@@ -5,16 +5,18 @@
   import { preloadArtwork } from '$lib/ui/actions/preloadArtwork';
   import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted, toggleShuffle } from '$lib/app/services/player';
   import { shuffleMode, upNext } from '$lib/app/services/queue';
-  import { bestThumbnail, hiResThumbnail, thumbnailSources, expandedArtworkSources, trackDisplayArtists } from '$lib/core/models';
+  import { bestThumbnail, hiResThumbnail, thumbnailSources, expandedArtworkSources, trackDisplayArtists, type Track } from '$lib/core/models';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
   import { playerExpanded, expandedPlayerPanel } from '$lib/app/services/layout';
+  import { searchOpen, settingsOpen } from '$lib/app/services/overlays';
   import { queueSidebarVisible } from '$lib/app/services/queueSidebar';
   import { settingsStore } from '$lib/app/services/settings';
   import { fly, fade } from '$lib/ui/transitions';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import { frameOpacity } from '$lib/ui/actions/frameOpacity';
+  import { videoControls } from '$lib/ui/actions/videoControls';
   import UpNextPanel from './UpNextPanel.svelte';
   import QueueList from './QueueList.svelte';
   import QueueHeader from './QueueHeader.svelte';
@@ -23,11 +25,40 @@
   import LyricsView from '$lib/ui/components/LyricsView.svelte';
   import PlaybackExtras from '$lib/ui/components/PlaybackExtras.svelte';
   import VideoControls from '$lib/ui/components/VideoControls.svelte';
-  import { videoMode, videoSurface, videoReady } from '$lib/app/services/player';
+  import { videoMode, videoSurface, videoReady, playbackBuffering } from '$lib/app/services/player';
+  import PlaybackIcon from '$lib/ui/components/PlaybackIcon.svelte';
   import SleepTimerButton from '$lib/ui/components/SleepTimerButton.svelte';
 
   let upNextOpen = false;
   let volOpen = false;
+  let compactPlayerHeight = 88;
+  const COMPACT_PLAYER_INSET = 16;
+  function measureCompactPlayer(node: HTMLElement) {
+    const measure = () => { compactPlayerHeight = node.offsetHeight; };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    measure();
+    return { destroy() { observer.disconnect(); } };
+  }
+  let presentationHost: HTMLDivElement;
+  let playerFullscreen = false;
+  let fullscreenError = '';
+  async function togglePlayerFullscreen() {
+    fullscreenError = '';
+    try {
+      if (document.fullscreenElement === presentationHost) await document.exitFullscreen();
+      else await presentationHost.requestFullscreen();
+    } catch { fullscreenError = 'Could not change fullscreen. Try again.'; }
+  }
+  function exitPlayerFullscreen() {
+    if (document.fullscreenElement === presentationHost) void document.exitFullscreen().catch(() => {});
+  }
+  onMount(() => {
+    const changed = () => { playerFullscreen = document.fullscreenElement === presentationHost; };
+    document.addEventListener('fullscreenchange', changed);
+    return () => { document.removeEventListener('fullscreenchange', changed); exitPlayerFullscreen(); };
+  });
+  $: if (playerFullscreen && (!$playerExpanded || $searchOpen || $settingsOpen)) exitPlayerFullscreen();
   $: showQueueButton = !$queueSidebarVisible && ($settingsStore.playerShowQueue || $settingsStore.queueSidebar);
   $: if ($queueSidebarVisible) upNextOpen = false;
   $: if ($queueSidebarVisible && $expandedPlayerPanel === 'queue') expandedPlayerPanel.set('art');
@@ -35,17 +66,21 @@
 
   $: st = $playerStore;
   $: pct = st.durationSeconds > 0 ? (st.positionSeconds / st.durationSeconds) * 100 : 0;
-  $: cover = st.track ? bestThumbnail(st.track.thumbnails, 512) : '';
+  // Position/volume ticks reuse the same metadata. Do not rebuild thumbnail
+  // candidates or preload requests unless the actual track object changes.
+  let artworkTrack: Track | null = null;
+  $: if (artworkTrack !== st.track) artworkTrack = st.track;
+  $: cover = artworkTrack ? bestThumbnail(artworkTrack.thumbnails, 512) : '';
   // A larger source for the full-screen background (falls back to `cover`).
   $: bgCover = cover ? hiResThumbnail(cover, 1080) : '';
   // The square art is shown large enough that the mid-res cover looks soft, so
   // upscale to a hi-res source, with the supplied sizes as fallbacks.
   $: squareCover = cover ? hiResThumbnail(cover, 720) : '';
-  $: coverSources = thumbnailSources(st.track?.thumbnails ?? [], 512);
+  $: coverSources = thumbnailSources(artworkTrack?.thumbnails ?? [], 512);
   let preloadKey = '';
   let clearPreload = () => {};
   $: {
-    const groups = [1080, 720].map(size => expandedArtworkSources(st.track?.thumbnails ?? [], size));
+    const groups = [1080, 720].map(size => expandedArtworkSources(artworkTrack?.thumbnails ?? [], size));
     const key = JSON.stringify(groups);
     if (key !== preloadKey) {
       preloadKey = key;
@@ -238,12 +273,13 @@
   }
 
   function compactFly(node: Element) {
-    return fly(node, { y: node.getBoundingClientRect().height + 8, opacity: 1, duration: 280 });
+    return fly(node, { y: node.getBoundingClientRect().height + COMPACT_PLAYER_INSET + 8, opacity: 1, duration: 280 });
   }
 </script>
 
 <!-- Keep the media node connected when the expanded presentation is removed. -->
-<div bind:this={videoFrame} style:opacity="0" class="pointer-events-none absolute inset-x-3 bottom-0 top-14 z-[25] overflow-hidden rounded-t-3xl">
+<div bind:this={presentationHost} class="player-presentation">
+<div bind:this={videoFrame} style:opacity="0" class="video-frame pointer-events-none absolute inset-x-3 bottom-0 top-14 z-[25] overflow-hidden rounded-t-3xl">
   <div class="absolute inset-0 bg-black {$videoMode ? '' : 'invisible'}">
     <div use:videoSurface use:frameOpacity={{ visible: $videoMode && $videoReady, duration: 220 }}
       class:letterboxed={$settingsStore.videoLetterboxing}
@@ -262,6 +298,7 @@
   ></div>
   <div
     style:background={$videoMode ? ($videoReady ? 'transparent' : '#000') : undefined}
+    use:videoControls={{ enabled: $videoMode && $videoReady && st.status === 'playing' && $expandedPlayerPanel === 'art' && !$playbackBuffering && !fullscreenError }}
     class="expanded-player cherry-playerbar absolute inset-x-3 bottom-0 top-14 z-30 flex flex-col overflow-hidden rounded-t-3xl shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
     oncontextmenu={onTrackContext}
     role="presentation"
@@ -271,7 +308,7 @@
     <!-- Album art as a full-bleed, dimmed background. Two layers so the
          previous cover stays visible until the next one has loaded. -->
     {#if $videoMode}
-      <div class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-black via-black/60 to-black/20"></div>
+      <div class="video-control-chrome pointer-events-none absolute inset-x-0 bottom-0 top-[15%] -z-10 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
     {:else if cover}
       {#if baseArt}
         <img
@@ -293,15 +330,15 @@
         {/key}
       {/if}
       <div
-        class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-[var(--color-surface)] via-[var(--color-surface)]/75 to-[var(--color-surface)]/25"
+        class="pointer-events-none absolute inset-x-0 bottom-0 top-[15%] -z-10 bg-gradient-to-t from-[var(--color-surface)] via-[var(--color-surface)]/75 to-transparent"
       ></div>
     {/if}
 
     <div use:frameOpacity={{ visible: $expandedPlayerPanel !== 'art', duration: 240 }}
-      class="pointer-events-none absolute inset-0 -z-10 bg-[#000]/55 transition-opacity duration-[240ms] motion-reduce:transition-none {$expandedPlayerPanel !== 'art' ? 'opacity-100' : 'opacity-0'}"></div>
+      class="pointer-events-none absolute inset-0 -z-10 bg-black/55 transition-opacity duration-[240ms] motion-reduce:transition-none {$expandedPlayerPanel !== 'art' ? 'opacity-100' : 'opacity-0'}"></div>
 
-    <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 p-3">
-      <div class="min-w-0">
+    <div data-video-controls class="expanded-header video-control-chrome video-control-top grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 p-3">
+      <div class="expanded-header-next min-w-0">
       {#if nextItem && !upNextOpen}
         <div
           class="flex h-9 w-fit min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-full bg-[var(--player-header-background)] pr-3 backdrop-blur"
@@ -312,7 +349,7 @@
               <img use:artwork={{ urls: thumbnailSources(nextItem?.track.thumbnails ?? [], 96) }} alt="" class="h-full w-full object-cover" />
             {:else}
               <span class="flex h-full w-full items-center justify-center text-zinc-600">
-                <i class="bx bx-music"></i>
+                <i class="ph-duotone ph-music-notes"></i>
               </span>
             {/if}
           </span>
@@ -323,7 +360,7 @@
         </div>
       {/if}
       </div>
-      <div class="flex justify-center">
+      <div class="expanded-header-tabs flex justify-center">
           <div class="player-view-switch flex h-9 items-center gap-1 rounded-full p-1 backdrop-blur" role="group" aria-label="Expanded player view">
             <button class="h-7 rounded-full px-3 text-xs font-semibold transition-colors {$expandedPlayerPanel === 'art' ? 'bg-[var(--color-accent)] text-[#fff]' : 'text-zinc-300 hover:text-white'}"
               aria-pressed={$expandedPlayerPanel === 'art'} onclick={() => expandedPlayerPanel.set('art')}>{$videoMode ? 'Video' : 'Art'}</button>
@@ -337,15 +374,15 @@
             {/if}
           </div>
       </div>
-      <div class="flex shrink-0 items-center justify-self-end gap-2">
+      <div class="expanded-header-actions flex shrink-0 items-center justify-self-end gap-2">
       <VideoControls />
       <button
-        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--player-header-background)] text-white backdrop-blur transition-colors hover:bg-[var(--color-surface)]"
+        class="cherry-nav-button flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white backdrop-blur transition-colors"
         title="Collapse player"
         aria-label="Collapse player"
         onclick={() => playerExpanded.set(false)}
       >
-        <i class="bx bx-chevron-down text-2xl"></i>
+        <i class="ph ph-caret-down text-2xl"></i>
       </button>
       </div>
     </div>
@@ -372,7 +409,7 @@
                     {/if}
                   </div>
                 {:else}
-                  <i class="bx bx-music text-7xl text-zinc-500" aria-label="No album art"></i>
+                  <i class="ph-duotone ph-music-notes text-7xl text-zinc-500" aria-label="No album art"></i>
                 {/if}
               </div>
             {:else if $expandedPlayerPanel === 'queue'}
@@ -388,88 +425,270 @@
       <div class="min-h-0 flex-1"></div>
     {/if}
 
-    <div class="mx-auto w-full max-w-2xl shrink-0 px-8 pb-8">
-      <div class="text-center" oncontextmenu={onTrackContext} role="presentation">
-        {#if st.track}
-          <div class="truncate text-2xl font-bold text-white" title={st.track.title}>{st.track.title}</div>
-          <div class="mt-1.5 truncate text-sm text-zinc-400" title={trackDisplayArtists(st.track)}>
-            <ArtistsLine artists={st.track.artists} />{#if st.track.album?.name}<span class="text-zinc-600">{' · '}{st.track.album.name}</span>{/if}
-          </div>
-        {/if}
-      </div>
+    <div data-video-controls class="video-control-chrome video-control-bottom relative w-full shrink-0 px-12 pb-3 sm:px-8">
+      <div class="mx-auto max-w-2xl">
+        <div class="text-center" oncontextmenu={onTrackContext} role="presentation">
+          {#if st.track}
+            <div class="truncate text-2xl font-bold text-white" title={st.track.title}>{st.track.title}</div>
+            <div class="mt-1.5 truncate text-sm text-zinc-400" title={trackDisplayArtists(st.track)}>
+              <ArtistsLine artists={st.track.artists} />{#if st.track.album?.name}<span class="text-zinc-600">{' · '}{st.track.album.name}</span>{/if}
+            </div>
+          {/if}
+        </div>
 
-      <div class="mt-5 flex items-center gap-3">
-        <span class="w-10 shrink-0 text-left text-[11px] tabular-nums text-zinc-300"
-          >{st.isLive ? 'LIVE' : fmt(st.positionSeconds)}</span
-        >
-        <input
-          type="range"
-          min="0"
-          max={Math.max(1, st.durationSeconds, st.positionSeconds)}
-          step="0.5"
-          value={st.positionSeconds}
-          disabled={st.isLive}
-          oninput={onSeek}
-          class="cherry-range min-w-0 flex-1"
-          style="--fill: {pct}%"
-          title={`Full length ${st.isLive ? 'LIVE' : fmt(st.durationSeconds)}`}
-          aria-label="Seek"
-        />
-        <span class="w-10 shrink-0 text-right text-[11px] tabular-nums text-zinc-300"
-          >{st.isLive ? 'LIVE' : fmt(st.durationSeconds)}</span
-        >
-      </div>
-
-      <!-- Main controls -->
-      <div class="mt-5 flex items-center justify-center gap-6">
-        {#if $settingsStore.playerShowPrev}
-          <button
-            class="flex h-12 w-12 items-center justify-center rounded-full text-4xl text-zinc-200 hover:text-white"
-            onclick={prev}
-            title="Previous"
-            aria-label="Previous"
+        <div class="mt-5 flex items-center gap-3">
+          <span class="w-10 shrink-0 text-left text-[11px] tabular-nums text-zinc-300"
+            >{st.isLive ? 'LIVE' : fmt(st.positionSeconds)}</span
           >
-            <i class="bx bx-skip-previous"></i>
+          <input
+            type="range"
+            min="0"
+            max={Math.max(1, st.durationSeconds, st.positionSeconds)}
+            step="0.5"
+            value={st.positionSeconds}
+            disabled={st.isLive}
+            oninput={onSeek}
+            class="cherry-range min-w-0 flex-1"
+            style="--fill: {pct}%"
+            title={`Full length ${st.isLive ? 'LIVE' : fmt(st.durationSeconds)}`}
+            aria-label="Seek"
+          />
+          <span class="w-10 shrink-0 text-right text-[11px] tabular-nums text-zinc-300"
+            >{st.isLive ? 'LIVE' : fmt(st.durationSeconds)}</span
+          >
+        </div>
+
+        <!-- Main playback controls. -->
+        <div class="mt-5 flex items-center justify-center gap-1 sm:gap-6">
+          {#if $settingsStore.playerShowPrev}
+            <button
+              class="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-full text-xl text-zinc-200 hover:text-white"
+              onclick={prev}
+              title="Previous"
+              aria-label="Previous"
+            >
+              <i class="ph-fill ph-skip-back"></i>
+            </button>
+          {/if}
+          <button
+            class="player-accent-gradient cherry-btn-scrim flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent)] text-xl text-white transition-colors duration-300"
+            onclick={toggle}
+            title={st.status === 'playing' ? 'Pause' : 'Play'}
+            aria-label={st.status === 'loading' ? 'Cancel loading' : st.status === 'playing' ? 'Pause' : 'Play'}
+            aria-busy={st.status === 'loading' || $playbackBuffering}
+          >
+            <PlaybackIcon loading={st.status === 'loading' || $playbackBuffering} playing={st.status === 'playing'} />
           </button>
+          <button
+            class="flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-full text-xl text-zinc-200 hover:text-white"
+            onclick={() => next()}
+            title="Next"
+            aria-label="Next"
+          >
+            <i class="ph-fill ph-skip-forward"></i>
+          </button>
+        </div>
+
+        <!-- Secondary controls stay below the transport. -->
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-3 sm:gap-5">
+          {#if $settingsStore.playerShowShuffle}
+            <button
+              class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode
+                ? 'text-[var(--color-accent2)]'
+                : 'text-zinc-400 hover:text-white'}"
+              onclick={toggleShuffle}
+              title="Shuffle"
+              aria-label="Shuffle"
+              aria-pressed={$shuffleMode}
+            >
+              <i class="{$shuffleMode ? 'ph-fill' : 'ph'} ph-shuffle"></i>
+            </button>
+          {/if}
+          {#if $settingsStore.playerShowRepeat}<RepeatButton size="lg" />{/if}
+          {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton size="lg" />{/if}
+        </div>
+
+        {#if st.error || fullscreenError}
+          <p class="mt-3 text-center text-[11px] text-red-400" title={st.error || fullscreenError}>{st.error || fullscreenError}</p>
         {/if}
+      </div>
+      <button
+        class="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full text-xl text-zinc-400 hover:text-white transition-colors"
+        title={playerFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+        aria-label={playerFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        aria-pressed={playerFullscreen}
+        onclick={togglePlayerFullscreen}
+      >
+        <i class="ph {playerFullscreen ? 'ph-corners-in' : 'ph-corners-out'}" aria-hidden="true"></i>
+      </button>
+      <!-- svelte-ignore a11y_no_static_element_interactions : hover wrapper for the volume popup -->
+      <div
+        class="absolute bottom-3 left-3 flex items-center"
+        onmouseenter={() => (volOpen = true)}
+        onmouseleave={() => (volOpen = false)}
+      >
         <button
-          class="cherry-btn-scrim flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent)] text-4xl text-white transition-colors duration-300"
-          onclick={toggle}
-          title={st.status === 'playing' ? 'Pause' : 'Play'}
-          aria-label={st.status === 'playing' ? 'Pause' : 'Play'}
+          class="flex h-9 w-9 items-center justify-center rounded-full text-xl text-zinc-400 hover:text-white transition-colors"
+          onclick={() => setMuted(!st.muted)}
+          title="Mute"
+          aria-label="Mute"
         >
-          {#if st.status === 'playing'}
-            <i class="bx bx-pause"></i>
+          {#if st.muted || st.volume === 0}
+            <i class="ph-fill ph-speaker-slash"></i>
+          {:else if st.volume < 0.5}
+            <i class="ph ph-speaker-low"></i>
           {:else}
-            <i class="bx bx-play"></i>
+            <i class="ph ph-speaker-high"></i>
           {/if}
         </button>
-        <button
-          class="flex h-12 w-12 items-center justify-center rounded-full text-4xl text-zinc-200 hover:text-white"
-          onclick={() => next()}
-          title="Next"
-          aria-label="Next"
+        <div
+          use:frameOpacity={{ visible: volOpen, duration: 150 }}
+          class="absolute bottom-full left-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
+            ? 'pointer-events-auto opacity-100'
+            : 'pointer-events-none opacity-0'}"
         >
-          <i class="bx bx-skip-next"></i>
-        </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={st.muted ? 0 : st.volume}
+            oninput={onVol}
+            class="cherry-range-v"
+            style="--fill: {(st.muted ? 0 : st.volume) * 100}%"
+            aria-label="Volume"
+          />
+        </div>
       </div>
 
-      <!-- Secondary controls -->
-      <div class="mt-4 flex flex-wrap items-center justify-center gap-3 sm:gap-5">
-        {#if $settingsStore.playerShowShuffle}
-          <button
-            class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode
-              ? 'text-[var(--color-accent2)]'
-              : 'text-zinc-400 hover:text-white'}"
-            onclick={toggleShuffle}
-            title="Shuffle"
-            aria-label="Shuffle"
+    </div>
+  </div>
+{:else}
+  <!-- Fade behind the floating bar so content trails off at the bottom. Uses
+       the (tinted) surface colour rather than pure black, and stays subtle. -->
+  <div
+    class="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-28 bg-gradient-to-t from-[var(--color-surface)] via-[var(--color-surface)]/60 to-transparent"
+  ></div>
+
+  <footer
+    transition:compactFly
+    use:measureCompactPlayer
+    class="compact-player-shell cherry-playerbar pointer-events-auto absolute inset-x-3 z-30 rounded-3xl"
+    style:bottom={`${COMPACT_PLAYER_INSET}px`}
+  >
+    {#if !$videoMode && $settingsStore.lyricsEnabled && st.track && $lyricsStore.status === 'ready' && $lyricsStore.data}
+      <div transition:fly={{ y: 8, duration: 180 }} class="absolute bottom-full left-1/2 mb-2 w-max max-w-[min(36rem,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-[var(--color-popover)] shadow-lg"><LyricsView /></div>
+    {/if}
+    <div class="compact-player-content">
+      <div
+        class="compact-player-info relative flex min-w-0 items-center gap-3 rounded-xl bg-[var(--chrome-control-background)] px-2"
+        style:background={$settingsStore.tintedBackground ? 'color-mix(in srgb, var(--color-surface) 92%, var(--color-white) 8%)' : undefined}
+      >
+        <div class="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
+          <div class="player-accent-gradient absolute inset-0 origin-left opacity-20" style:transform={`scaleX(${pct / 100})`}></div>
+        </div>
+        <input
+          type="range" min="0" max={Math.max(1, st.durationSeconds, st.positionSeconds)} step="0.5"
+          value={st.positionSeconds} disabled={st.isLive} oninput={onSeek} oncontextmenu={onTrackContext}
+          class="compact-info-seek absolute inset-0 z-10 m-0 h-full w-full cursor-ew-resize opacity-0 disabled:cursor-default"
+          title={`Full length ${st.isLive ? 'LIVE' : fmt(st.durationSeconds)}`} aria-label="Seek"
+        />
+        <button
+          class="group relative z-20 h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-white/5"
+          title="Expand player"
+          aria-label="Expand player"
+          onclick={expand}
+          oncontextmenu={onTrackContext}
+        >
+          {#if cover}
+            <img use:artwork={{ urls: coverSources }} alt="" class="h-full w-full object-cover" />
+          {:else}
+            <div class="flex h-full w-full items-center justify-center text-zinc-600">
+              <i class="ph-duotone ph-music-notes text-2xl"></i>
+            </div>
+          {/if}
+          <span
+            class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
           >
-            <i class="bx bx-shuffle"></i>
+            <i class="ph ph-caret-up text-2xl text-white"></i>
+          </span>
+        </button>
+        <div class="pointer-events-none relative z-20 min-w-0 flex-1 text-left" oncontextmenu={onTrackContext} role="presentation">
+          {#if st.track}
+            <div class="min-w-0">
+              <div class="truncate text-[13px] font-semibold leading-tight text-zinc-100" title={st.track.title}>
+                {st.track.title}
+              </div>
+              <div class="mt-0.5 truncate text-[11px] leading-tight text-zinc-400" title={trackDisplayArtists(st.track)}>
+                <ArtistsLine artists={st.track.artists} textClass="pointer-events-auto" />{#if st.track.album?.name}<span class="text-zinc-600">{' · '}{st.track.album.name}</span>{/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+        <span class="pointer-events-none relative z-20 shrink-0 pr-2 text-[10px] leading-none tabular-nums text-zinc-400">
+          {#if st.isLive}LIVE{:else}{fmt(st.positionSeconds)} / {fmt(st.durationSeconds)}{/if}
+        </span>
+      </div>
+
+      <div class="compact-player-transport">
+        <div class="compact-player-controls compact-player-buttons flex items-center justify-start">
+          {#if $settingsStore.playerShowShuffle}
+            <button
+              class="flex h-9 w-9 items-center justify-center rounded-full text-xl {$shuffleMode ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
+              onclick={toggleShuffle}
+              title="Shuffle"
+              aria-label="Shuffle"
+              aria-pressed={$shuffleMode}
+            >
+              <i class="{$shuffleMode ? 'ph-fill' : 'ph'} ph-shuffle"></i>
+            </button>
+          {/if}
+          {#if $settingsStore.playerShowPrev}
+            <button
+              class="flex h-9 w-9 items-center justify-center rounded-full text-lg text-zinc-200 hover:text-white"
+              onclick={prev}
+              title="Previous"
+              aria-label="Previous"
+            >
+              <i class="ph-fill ph-skip-back"></i>
+            </button>
+          {/if}
+          <button
+            class="player-accent-gradient cherry-btn-scrim flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-accent)] text-xl text-white"
+            onclick={toggle}
+            title={st.status === 'playing' ? 'Pause' : 'Play'}
+            aria-label={st.status === 'loading' ? 'Cancel loading' : st.status === 'playing' ? 'Pause' : 'Play'}
+            aria-busy={st.status === 'loading' || $playbackBuffering}
+          >
+            <PlaybackIcon loading={st.status === 'loading' || $playbackBuffering} playing={st.status === 'playing'} />
+          </button>
+          <button
+            class="flex h-9 w-9 items-center justify-center rounded-full text-lg text-zinc-200 hover:text-white"
+            onclick={() => next()}
+            title="Next"
+            aria-label="Next"
+          >
+            <i class="ph-fill ph-skip-forward"></i>
+          </button>
+          {#if $settingsStore.playerShowRepeat}<RepeatButton size="lg" />{/if}
+        </div>
+      </div>
+
+      <div class="compact-player-extras compact-player-buttons flex items-center justify-end">
+        {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton size="lg" compact />{/if}
+        <PlaybackExtras />
+        {#if showQueueButton}
+          <button
+            data-upnext-toggle
+            class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
+            title="Queue"
+            aria-label="Queue"
+            aria-pressed={upNextOpen}
+            onclick={() => (upNextOpen = !upNextOpen)}
+          >
+            <i class="ph ph-queue"></i>
           </button>
         {/if}
-        {#if $settingsStore.playerShowRepeat}<RepeatButton size="lg" />{/if}
-        {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton size="lg" />{/if}
 
         <!-- svelte-ignore a11y_no_static_element_interactions : hover wrapper for the volume popup -->
         <div
@@ -484,13 +703,14 @@
             aria-label="Mute"
           >
             {#if st.muted || st.volume === 0}
-              <i class="bx bx-volume-mute"></i>
+              <i class="ph-fill ph-speaker-slash"></i>
             {:else if st.volume < 0.5}
-              <i class="bx bx-volume-low"></i>
+              <i class="ph ph-speaker-low"></i>
             {:else}
-              <i class="bx bx-volume-full"></i>
+              <i class="ph ph-speaker-high"></i>
             {/if}
           </button>
+
           <div
             use:frameOpacity={{ visible: volOpen, duration: 150 }}
             class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
@@ -511,211 +731,80 @@
           </div>
         </div>
       </div>
-
       {#if st.error}
-        <p class="mt-3 text-center text-[11px] text-red-400" title={st.error}>{st.error}</p>
+        <p class="compact-player-error truncate text-center text-[10px] text-red-400" title={st.error}>{st.error}</p>
       {/if}
-    </div>
-  </div>
-{:else}
-  <!-- Fade behind the floating bar so content trails off at the bottom. Uses
-       the (tinted) surface colour rather than pure black, and stays subtle. -->
-  <div
-    class="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-28 bg-gradient-to-t from-[var(--color-surface)] via-[var(--color-surface)]/60 to-transparent"
-  ></div>
-
-  <footer
-    transition:compactFly
-    class="cherry-playerbar pointer-events-auto absolute inset-x-3 bottom-0 z-30 rounded-t-xl shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
-  >
-    {#if !$videoMode && $settingsStore.lyricsEnabled && st.track && $lyricsStore.status === 'ready' && $lyricsStore.data}
-      <div transition:fly={{ y: 8, duration: 180 }} class="absolute bottom-full left-1/2 mb-2 w-max max-w-[min(36rem,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-[var(--color-popover)] shadow-lg"><LyricsView /></div>
-    {/if}
-    <div class="flex w-full flex-wrap items-center gap-2 p-3 sm:gap-4">
-      <!-- Album art doubles as the "expand player" button; the chevron shows on
-           hover. Right-click still opens the track menu. -->
-      <button
-        class="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-white/5 sm:h-16 sm:w-16"
-        title="Expand player"
-        aria-label="Expand player"
-        onclick={expand}
-        oncontextmenu={onTrackContext}
-      >
-        {#if cover}
-          <img use:artwork={{ urls: coverSources }} alt="" class="h-full w-full object-cover" />
-        {:else}
-          <div class="flex h-full w-full items-center justify-center text-zinc-600">
-            <i class="bx bx-music text-2xl"></i>
-          </div>
-        {/if}
-        <span
-          class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-        >
-          <i class="bx bx-chevron-up text-2xl text-white"></i>
-        </span>
-      </button>
-
-      <!-- Track info + scrub, sitting right of the art. -->
-      <div
-        class="flex min-w-0 flex-1 flex-col justify-center gap-1.5 self-stretch"
-        oncontextmenu={onTrackContext}
-        role="presentation"
-      >
-        {#if st.track}
-          <div class="min-w-0">
-            <div class="truncate text-[14px] font-semibold leading-tight text-zinc-100" title={st.track.title}>
-              {st.track.title}
-            </div>
-            <div class="mt-0.5 truncate text-[11px] leading-tight text-zinc-400" title={trackDisplayArtists(st.track)}>
-              <ArtistsLine artists={st.track.artists} />{#if st.track.album?.name}<span class="text-zinc-600">{' · '}{st.track.album.name}</span>{/if}
-            </div>
-          </div>
-        {/if}
-
-        <div class="flex items-center gap-2">
-          <input
-            type="range"
-            min="0"
-            max={Math.max(1, st.durationSeconds, st.positionSeconds)}
-            step="0.5"
-            value={st.positionSeconds}
-          disabled={st.isLive}
-            oninput={onSeek}
-            class="cherry-range min-w-0 flex-1"
-            style="--fill: {pct}%"
-            title={`Full length ${st.isLive ? 'LIVE' : fmt(st.durationSeconds)}`}
-            aria-label="Seek"
-          />
-          <span class="shrink-0 text-[10px] tabular-nums text-zinc-500">{st.isLive ? 'LIVE' : fmt(st.positionSeconds)}</span>
-        </div>
-      </div>
-
-      <!-- Controls. On small widths the transport is left-aligned and every
-           other button (shuffle, repeat, sleep timer, queue, volume) sits on the
-           right. On wider widths it sits inline, right-aligned as
-           [transport][shuffle][queue][volume]. -->
-      <div class="flex w-full items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end sm:gap-1">
-        <!-- Second (wide): shuffle -->
-        <div class="order-2 flex items-center gap-3 sm:order-2 sm:gap-1">
-          {#if st.error}
-            <span class="max-w-40 truncate text-[10px] leading-tight text-red-400" title={st.error}>{st.error}</span>
-          {/if}
-          {#if $settingsStore.playerShowShuffle}
-            <button
-              class="flex h-9 w-9 items-center justify-center rounded-full text-lg {$shuffleMode ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
-              onclick={toggleShuffle}
-              title="Shuffle"
-              aria-label="Shuffle"
-            >
-              <i class="bx bx-shuffle"></i>
-            </button>
-          {/if}
-          {#if $settingsStore.playerShowRepeat}<RepeatButton />{/if}
-          {#if $settingsStore.playerShowSleepTimer}<SleepTimerButton />{/if}
-        </div>
-
-        <!-- Left (small) / first (wide): transport. The negative margin on small
-             screens offsets the button's own inset so the first icon lines up
-             with the album art. -->
-        <div class="order-1 -ml-1.5 mr-auto flex items-center gap-1 sm:order-1 sm:mr-0 sm:-ml-2">
-          {#if $settingsStore.playerShowPrev}
-            <button
-              class="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-zinc-200 hover:text-white"
-              onclick={prev}
-              title="Previous"
-              aria-label="Previous"
-            >
-              <i class="bx bx-skip-previous"></i>
-            </button>
-          {/if}
-          <button
-            class="cherry-btn-scrim flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent)] text-2xl text-white"
-            onclick={toggle}
-            title={st.status === 'playing' ? 'Pause' : 'Play'}
-            aria-label={st.status === 'playing' ? 'Pause' : 'Play'}
-          >
-            {#if st.status === 'playing'}
-              <i class="bx bx-pause"></i>
-            {:else}
-              <i class="bx bx-play"></i>
-            {/if}
-          </button>
-          <button
-            class="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-zinc-200 hover:text-white"
-            onclick={() => next()}
-            title="Next"
-            aria-label="Next"
-          >
-            <i class="bx bx-skip-next"></i>
-          </button>
-        </div>
-
-        <!-- Right (small) / third (wide): queue + volume -->
-        <div class="order-3 -mr-2 flex items-center gap-1 sm:order-3">
-          <PlaybackExtras />
-          {#if showQueueButton}
-            <button
-              data-upnext-toggle
-              class="flex h-9 w-9 items-center justify-center rounded-full text-xl {upNextOpen ? 'text-[var(--color-accent2)]' : 'text-zinc-400 hover:text-white'}"
-              title="Queue"
-              aria-label="Queue"
-              onclick={() => (upNextOpen = !upNextOpen)}
-            >
-              <i class="bx bx-list-ul"></i>
-            </button>
-          {/if}
-
-          <!-- svelte-ignore a11y_no_static_element_interactions : hover wrapper for the volume popup -->
-          <div
-            class="relative flex items-center"
-            onmouseenter={() => (volOpen = true)}
-            onmouseleave={() => (volOpen = false)}
-          >
-            <button
-              class="flex h-9 w-9 items-center justify-center rounded-full text-xl text-zinc-400 hover:text-white"
-              onclick={() => setMuted(!st.muted)}
-              title="Mute"
-              aria-label="Mute"
-            >
-              {#if st.muted || st.volume === 0}
-                <i class="bx bx-volume-mute"></i>
-              {:else if st.volume < 0.5}
-                <i class="bx bx-volume-low"></i>
-              {:else}
-                <i class="bx bx-volume-full"></i>
-              {/if}
-            </button>
-
-            <div
-              use:frameOpacity={{ visible: volOpen, duration: 150 }}
-              class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
-                ? 'pointer-events-auto opacity-100'
-                : 'pointer-events-none opacity-0'}"
-            >
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={st.muted ? 0 : st.volume}
-                oninput={onVol}
-                class="cherry-range-v"
-                style="--fill: {(st.muted ? 0 : st.volume) * 100}%"
-                aria-label="Volume"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </footer>
 {/if}
 
 <!-- Queue panel, shared by the bar and the full-screen card. -->
-<UpNextPanel open={upNextOpen && !$playerExpanded} onClose={() => (upNextOpen = false)} />
+<UpNextPanel open={upNextOpen && !$playerExpanded} bottom={compactPlayerHeight + COMPACT_PLAYER_INSET + 8} onClose={() => (upNextOpen = false)} />
+</div>
 
 <style>
-  .expanded-player { --player-header-background: color-mix(in srgb, var(--color-surface) 85%, transparent); }
+  .compact-player-shell { container-type: inline-size; --compact-player-button-gap: 4px; }
+  .compact-player-buttons { gap: var(--compact-player-button-gap); }
+  .compact-player-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'info info' 'transport extras';
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .compact-player-info { grid-area: info; height: 52px; }
+  .player-accent-gradient { background-image: linear-gradient(180deg, var(--color-accent), var(--color-accent2)); }
+  .compact-player-info:has(.compact-info-seek:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .compact-info-seek { appearance: none; -webkit-appearance: none; background: transparent; }
+  .compact-info-seek::-webkit-slider-runnable-track { height: 100%; }
+  .compact-info-seek::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 0; height: 100%; }
+  .compact-player-transport { display: contents; }
+  .compact-player-controls { grid-area: transport; justify-self: start; }
+  .compact-player-extras {
+    grid-area: extras;
+    align-self: center;
+    justify-self: end;
+    min-height: 36px;
+    /* Match the visible volume glyph to the artwork edge, while retaining
+       the full 36px target and the same gaps between adjacent buttons. */
+    margin-inline-end: -8px;
+  }
+  .compact-player-error { grid-column: 1 / -1; }
+  @container (min-width: 720px) {
+    .compact-player-content {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: 'transport info extras';
+      grid-template-rows: 52px;
+    }
+  }
+  .player-presentation { display: contents; }
+  .player-presentation:fullscreen { display: block; position: fixed; inset: 0; width: 100%; height: 100%; background: black; }
+  .player-presentation:fullscreen .video-frame, .player-presentation:fullscreen .expanded-player { inset: 0; border-radius: 0; }
+  .video-control-chrome { transition: opacity 240ms cubic-bezier(0.37, 0, 0.63, 1); }
+  .video-control-top, .video-control-bottom { transform: translateY(0); transition: opacity 240ms cubic-bezier(0.37, 0, 0.63, 1), transform 320ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .expanded-player { container-type: inline-size; }
+  :global(html:not(.light)) .expanded-header {
+    --chrome-control-background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+    --chrome-control-hover-background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    --player-header-background: var(--chrome-control-background);
+  }
+  :global(html.light) .expanded-header {
+    --chrome-control-background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+    --chrome-control-hover-background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+    --player-header-background: var(--chrome-control-background);
+  }
+  @container (max-width: 680px) {
+    .expanded-header { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'next actions' 'tabs tabs'; gap: 8px 12px; }
+    .expanded-header-next { grid-area: next; }
+    .expanded-header-tabs { grid-area: tabs; }
+    .expanded-header-actions { grid-area: actions; }
+  }
+  .expanded-player:global([data-video-idle]) { cursor: none; }
+  .expanded-player:global([data-video-idle]) .video-control-chrome { opacity: 0; pointer-events: none; }
+  .expanded-player:global([data-video-idle]) .video-control-top { transform: translateY(calc(-100% - 12px)); }
+  .expanded-player:global([data-video-idle]) .video-control-bottom { transform: translateY(calc(100% + 12px)); }
+  @media (prefers-reduced-motion: reduce) { .video-control-chrome { transition: none; } }
   .expanded-player :global(.transition-colors) { transition-duration: 300ms; }
   .expanded-player :global(.text-zinc-400), .expanded-player :global(.text-zinc-500) { color: var(--color-zinc-200); }
   .expanded-player :global(.text-zinc-600) { color: var(--color-zinc-400); }

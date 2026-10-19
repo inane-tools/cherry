@@ -10,7 +10,7 @@
 
 import { Store } from '$lib/desktop/store';
 import { isDesktop } from '$lib/app/services/platform';
-import type { PinnedPlaylist, PlaylistFolder } from '$lib/core/models';
+import type { PinnedPlaylist, PlaylistFolder, SidebarPin } from '$lib/core/models';
 
 export interface CherrySettings {
   volume: number;
@@ -24,8 +24,10 @@ export interface CherrySettings {
   discordStatusDisplay: 'details' | 'state' | 'name';
   /** Brand-channel page id whose YouTube Music library to use. */
   channelPageId: string;
-  /** Playlists pinned to the top bar. */
-  pinnedPlaylists: PinnedPlaylist[];
+  /** Sidebar pins; retain the original storage key for existing installs. */
+  pinnedPlaylists: SidebarPin[];
+  /** Pins and their order belong to the selected YouTube channel. */
+  pinnedPlaylistsByChannel: Record<string, SidebarPin[]>;
   /** Recently opened or played playlists for Windows taskbar shortcuts. */
   recentPlaylists: PinnedPlaylist[];
   /** Playlists grouped into folders in the sidebar. */
@@ -103,6 +105,7 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   discordStatusDisplay: 'details',
   channelPageId: '',
   pinnedPlaylists: [],
+  pinnedPlaylistsByChannel: {},
   recentPlaylists: [],
   playlistFolders: [],
   sidebarOrder: [],

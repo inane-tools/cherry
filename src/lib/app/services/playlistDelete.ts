@@ -7,7 +7,7 @@ import { removePlaylistLocally } from './addablePlaylists';
 import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import { playlistStore, homeSectionsStore } from './playlists';
 import { isPlaylistOwned } from './playlistLibrary';
-import { pinnedStore } from './pins';
+import { removePin } from './pins';
 import { initFolders } from './folders';
 import { settingsStore, updateSettings } from './settings';
 import { forgetPlaylistPage } from './navigation';
@@ -54,15 +54,13 @@ export async function confirmPlaylistDeletion(): Promise<boolean> {
       removePlaylistLocally(playlist.browseId);
       homeSectionsStore.update((sections) => sections.map((section) => ({ ...section, cards: section.cards.filter((card) => card.browseId !== playlist.browseId), order: section.order?.filter((key) => key !== `c:${playlist.browseId}`) })).filter((section) => section.cards.length || section.songs.length));
       const settings = get(settingsStore);
-      const pinnedPlaylists = settings.pinnedPlaylists.filter((p) => p.browseId !== playlist.browseId);
+      await removePin(playlist.browseId);
       await updateSettings({
-        pinnedPlaylists,
         recentPlaylists: settings.recentPlaylists.filter((p) => p.browseId !== playlist.browseId),
         playlistFolders: settings.playlistFolders.map((folder) => ({ ...folder, playlistIds: folder.playlistIds.filter((id) => id !== playlist.browseId) })),
         sidebarOrder: settings.sidebarOrder.filter((id) => id !== playlist.browseId),
         ...(settings.defaultPlaylistBrowseId === playlist.browseId ? { defaultPlaylistBrowseId: '' } : {}),
       });
-      pinnedStore.set(pinnedPlaylists);
       initFolders();
       forgetPlaylistPage(playlist.browseId);
       notify(`Deleted “${playlist.title}”`);

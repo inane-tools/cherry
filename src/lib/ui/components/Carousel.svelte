@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import Spinner from './Spinner.svelte';
   import { thumbnailSources } from '$lib/core/models';
   import { artwork } from '$lib/ui/actions/artwork';
@@ -8,8 +9,15 @@
   export let entries: CarouselEntry[] = [];
   export let onSelect: (entry: CarouselEntry) => void;
   export let onPlay: (entry: CarouselEntry) => void | Promise<void>;
+  export let onContextMenu: (event: MouseEvent, entry: CarouselEntry) => void = () => {};
   export let layout: 'cards' | 'songs' | 'buttons' = 'cards';
   export let rows = 3;
+  export let onLoadMore: (() => Promise<void>) | undefined = undefined;
+  export let loadingMore = false;
+  export let presentation: 'carousel' | 'grid' | 'list' = 'carousel';
+  export let scrollKey: string | undefined = undefined;
+  $: rowLayout = presentation === 'list' || (presentation === 'carousel' && layout === 'songs');
+  $: cardRounding = layout === 'songs' ? 'rounded-2xl' : hero ? 'rounded-3xl' : 'rounded-[20px]';
   let playingEntry: string | null = null;
   async function play(entry: CarouselEntry): Promise<void> {
     if (playingEntry) return;
@@ -21,12 +29,13 @@
   let atStart = true;
   let atEnd = true;
   function measure(): void {
-    if (!scroller) return;
+    if (!scroller || presentation !== 'carousel') return;
     atStart = scroller.scrollLeft <= 2;
     atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 2;
   }
   $: if (entries) queueMicrotask(measure);
   function watchSize(node: HTMLDivElement) {
+    if (presentation !== 'carousel') return;
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     measure();
@@ -40,70 +49,80 @@
     const count = Math.max(1, Math.floor(scroller.clientWidth / step));
     scroller.scrollBy({ left: direction * step * count, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
+  async function nextPage() {
+    if (atEnd && onLoadMore) { await onLoadMore(); await tick(); }
+    scrollByPage(1);
+  }
 </script>
 
-<!-- Bleeds to the right window edge (cancelling the content padding) so cards
-     scroll all the way out; the left edge stays aligned with the heading. -->
-<div class="group/carousel relative -mr-6">
-  {#if !atStart || !atEnd}
+<!-- Bleed to the right edge and compensate for cards' inner padding on the
+     left, keeping artwork aligned with headings while retaining hover padding. -->
+<div class="group/carousel relative {presentation === 'carousel' ? '-mr-6' : '-mr-2'} {layout === 'buttons' ? '' : '-ml-2'}">
+  {#if presentation === 'carousel' && (!atStart || !atEnd || onLoadMore)}
   <button
-    class="absolute right-14 -top-11 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-card)] text-zinc-200 hover:bg-[var(--color-elevated)] disabled:cursor-default disabled:opacity-30"
+    class="cherry-nav-button absolute right-14 -top-11 z-20 flex h-8 w-8 items-center justify-center rounded-full text-zinc-200 transition-colors disabled:cursor-default disabled:opacity-30"
     disabled={atStart}
     aria-label="Scroll left"
     onclick={() => scrollByPage(-1)}
   >
-    <i class="bx bx-chevron-left text-xl"></i>
+    <i class="ph ph-caret-left text-xl"></i>
   </button>
   <button
-    class="absolute right-4 -top-11 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-card)] text-zinc-200 hover:bg-[var(--color-elevated)] disabled:cursor-default disabled:opacity-30"
-    disabled={atEnd}
-    aria-label="Scroll right"
-    onclick={() => scrollByPage(1)}
+    class="cherry-nav-button absolute right-4 -top-11 z-20 flex h-8 w-8 items-center justify-center rounded-full text-zinc-200 transition-colors disabled:cursor-default disabled:opacity-30"
+    disabled={loadingMore || (atEnd && !onLoadMore)}
+    aria-label={loadingMore ? 'Loading more items' : atEnd && onLoadMore ? 'Load more items' : 'Scroll right'}
+    onclick={nextPage}
   >
-    <i class="bx bx-chevron-right text-xl"></i>
+    {#if loadingMore}<Spinner size={18} />{:else}<i class="ph ph-caret-right text-xl"></i>{/if}
   </button>
   {/if}
 
-  <div bind:this={scroller} use:watchSize onscroll={measure} style:grid-template-rows={layout === 'songs' ? `repeat(${Math.max(1, Math.min(6, rows))}, minmax(0, auto))` : undefined} class="cherry-carousel snap-x snap-proximity overflow-x-auto pb-1 pr-6 {layout === 'songs' ? 'grid grid-flow-col auto-cols-[18rem] gap-x-4 gap-y-2 sm:auto-cols-[21rem]' : 'flex gap-3'}">
+  <div bind:this={scroller} use:watchSize onscroll={measure}
+    data-page-scroll-key={presentation === 'carousel' ? scrollKey : undefined}
+    style:grid-template-rows={presentation === 'carousel' && rowLayout ? `repeat(${Math.max(1, Math.min(6, rows))}, minmax(0, auto))` : undefined}
+    style:grid-template-columns={presentation === 'grid' ? 'repeat(auto-fill, minmax(min(100%, 9rem), 1fr))' : undefined}
+    class={presentation === 'grid' ? 'grid gap-x-3 gap-y-5' : presentation === 'list' ? 'flex flex-col gap-0.5' : `cherry-carousel snap-x snap-proximity overflow-x-hidden touch-pan-y pb-1 pr-6 ${rowLayout ? 'grid grid-flow-col auto-cols-[18rem] gap-x-4 gap-y-2 sm:auto-cols-[21rem]' : 'flex gap-3'}`}>
     {#each entries as entry (entry.key)}
       {#if layout === 'buttons'}
-        <button class="min-w-36 shrink-0 snap-start rounded-lg bg-[var(--color-card)] px-5 py-4 text-left text-[14px] font-semibold text-zinc-100 hover:bg-[var(--color-elevated)]" onclick={() => onSelect(entry)}>{entry.title}</button>
+        <button class="min-w-36 shrink-0 snap-start rounded-lg bg-[var(--color-card)] px-5 py-4 text-left text-[14px] font-semibold text-zinc-100 hover:bg-[var(--color-elevated)]" onclick={() => onSelect(entry)} oncontextmenu={(event) => onContextMenu(event, entry)}>{entry.title}</button>
       {:else}
       <div
-        class="group relative shrink-0 snap-start rounded-lg p-2 text-left transition-colors hover:bg-white/5 {layout === 'songs' ? 'flex items-center gap-3' : hero
+        class="group relative min-w-0 shrink-0 snap-start {cardRounding} p-2 text-left transition-colors hover:bg-white/5 {rowLayout ? 'flex items-center gap-3' : presentation !== 'carousel' ? '' : hero
           ? 'w-48 sm:w-56'
           : 'w-36 sm:w-40'}"
+        oncontextmenu={(event) => onContextMenu(event, entry)}
+        role="presentation"
       >
-        <button class="absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent2)]" title={entry.kind === 'song' ? `Play ${entry.title}` : `Open ${entry.title}`} aria-label={entry.kind === 'song' ? `Play ${entry.title}` : `Open ${entry.title}`} onclick={() => onSelect(entry)}></button>
-        <div class="pointer-events-none relative overflow-hidden bg-white/5 {entry.round ? 'rounded-full' : 'rounded-lg'} {layout === 'songs' ? 'h-12 w-12 shrink-0' : 'aspect-square w-full'}">
+        <button class="absolute inset-0 {cardRounding} outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent2)]" title={entry.kind === 'song' ? `Play ${entry.title}` : `Open ${entry.title}`} aria-label={entry.kind === 'song' ? `Play ${entry.title}` : `Open ${entry.title}`} onclick={() => onSelect(entry)}></button>
+        <div class="pointer-events-none relative overflow-hidden bg-white/5 {entry.round ? 'rounded-full' : rowLayout ? 'rounded-lg' : hero ? 'rounded-2xl' : 'rounded-xl'} {rowLayout ? 'h-12 w-12 shrink-0' : 'aspect-square w-full'}">
           {#if entry.thumbnails.length > 0}
             <img
-              use:artwork={{ urls: thumbnailSources(entry.thumbnails, hero ? 544 : 320) }}
+              use:artwork={{ urls: thumbnailSources(entry.thumbnails, rowLayout ? 96 : hero ? 544 : 320) }}
               alt=""
               class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
               loading="lazy"
             />
           {:else}
             <div class="flex h-full w-full items-center justify-center text-zinc-600">
-              <i class="bx bx-music text-2xl"></i>
+              <i class="ph-duotone ph-music-notes text-2xl"></i>
             </div>
           {/if}
           {#if entry.canPlay !== false}
           <button
-            class="pointer-events-auto absolute z-10 flex items-center justify-center text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 {layout === 'songs' ? 'inset-0 h-full w-full rounded-lg bg-black/65' : hero ? 'bottom-2 right-2 h-11 w-11 rounded-full bg-black' : 'bottom-2 right-2 h-8 w-8 rounded-full bg-black'}"
+            class="pointer-events-auto absolute z-10 flex items-center justify-center text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 {rowLayout ? 'inset-0 h-full w-full rounded-lg bg-black/65' : hero ? 'bottom-2 right-2 h-11 w-11 rounded-full bg-black' : 'bottom-2 right-2 h-8 w-8 rounded-full bg-black'}"
             title={`Play ${entry.title}`} aria-label={`Play ${entry.title}`} disabled={!!playingEntry}
             onclick={() => play(entry)}
           >
             {#if playingEntry === entry.key}
               <Spinner size={hero ? 24 : 18} />
             {:else}
-              <i class="bx bx-play {hero ? 'text-2xl' : 'text-lg'}"></i>
+              <i class="ph-fill ph-play {hero ? 'text-2xl' : 'text-lg'}"></i>
             {/if}
           </button>
           {/if}
         </div>
-        <div class="pointer-events-none min-w-0 {layout === 'songs' ? 'flex-1' : 'mt-2'}">
-        <div class="truncate text-zinc-100 {hero ? 'text-[15px] font-semibold' : 'text-[12px] font-medium'}">
+        <div class="pointer-events-none min-w-0 {rowLayout ? 'flex-1' : 'mt-2'}">
+        <div class="truncate text-zinc-100 {hero ? 'text-[15px] font-semibold' : presentation === 'list' ? 'text-[14px] font-medium' : 'text-[12px] font-medium'}">
           {entry.title}
         </div>
         {#if entry.subtitle}

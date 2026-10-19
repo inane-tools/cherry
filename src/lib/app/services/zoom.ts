@@ -12,7 +12,7 @@ export const ZOOM_STEP = 0.1;
 /**
  * Baseline scale applied to every level, so the slider's "100%" renders at the
  * size the app used to be at 110%. The stored `uiZoom` stays a plain percentage
- * (1 = 100%); only the webview factor is multiplied by this.
+ * (1 = 100%); only the renderer zoom factor is multiplied by this.
  */
 export const ZOOM_BASE = 1.1;
 
@@ -37,7 +37,7 @@ export function zoomFillPercent(value: number): number {
 
 let applied = -1;
 
-/** Apply a zoom level to the current (main) webview. */
+/** Apply a zoom level to the current (main) renderer. */
 export function applyZoom(scale: number): void {
   const next = clampZoom(scale);
   if (next === applied) return;
@@ -47,7 +47,7 @@ export function applyZoom(scale: number): void {
 }
 
 let started = false;
-/** Begin mirroring the stored zoom onto the webview. Safe to call once. */
+/** Begin mirroring the stored zoom onto the renderer. Safe to call once. */
 export function startZoom(): void {
   if (started) return;
   started = true;

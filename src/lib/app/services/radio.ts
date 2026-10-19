@@ -12,14 +12,14 @@ let active: { endpoint: RadioEndpoint; continuation?: string; cookie: string; ch
 let loading = false;
 export async function playRadio(endpoint: RadioEndpoint): Promise<void> {
   const session = get(authStore);
-  if (!session) { notify('Sign in with YouTube Music to play a station.'); return; }
+  if (!session) { notify('Sign in with YouTube Music to play a mix.'); return; }
   const id = ++generation; active = null; loading = false;
   const channel = getActiveChannel();
   const previousQueue = get(queueItems);
   try {
     const page = await getRadioPage(endpoint, session);
     if (id !== generation || get(authStore)?.cookie !== session.cookie || channel !== getActiveChannel() || get(queueItems) !== previousQueue) return;
-    if (!page.tracks.length) throw new Error('This station has no playable tracks right now.');
+    if (!page.tracks.length) throw new Error('This mix has no playable tracks right now.');
     const playback = playTracks(page.tracks);
     const ids = new Set(get(queueItems).map(item => item.queueId));
     await playback;
@@ -27,7 +27,7 @@ export async function playRadio(endpoint: RadioEndpoint): Promise<void> {
     if (!get(queueItems).some(item => ids.has(item.queueId))) return;
     active = { endpoint: { ...(page.endpoint ?? endpoint), playlistId: page.playlistId ?? page.endpoint?.playlistId ?? endpoint.playlistId }, continuation: page.continuation,
       cookie: session.cookie, channel, ids, tokens: new Set() };
-  } catch (error) { if (id === generation) notify(errorMessage(error, 'Could not play this station.')); }
+  } catch (error) { if (id === generation) notify(errorMessage(error, 'Could not play this mix.')); }
 }
 export function startRadioRefill(): () => void {
   const stop = playerStore.subscribe(state => {
@@ -49,7 +49,7 @@ export function startRadioRefill(): () => void {
       if (current && get(queueItems).length > 200) cutQueueTo(current.queueId);
       enqueue(tracks);
       radio.ids = new Set(get(queueItems).map(item => item.queueId));
-    }).catch(() => { if (active === radio) { radio.continuation = undefined; notify('Could not load more station tracks. The queued songs will still play.'); } })
+    }).catch(() => { if (active === radio) { radio.continuation = undefined; notify('Could not load more mix tracks. The queued songs will still play.'); } })
       .finally(() => { if (id === generation) loading = false; });
   });
   return () => { stop(); active = null; generation++; loading = false; };

@@ -1,17 +1,19 @@
 // Shared context-menu item builders, so every surface (track rows, playlist
 // cards, the rail) offers the same actions.
 
-import type { Playlist, PlaylistFolder, Track } from '$lib/core/models';
+import type { Album, ArtistRef, Playlist, PlaylistFolder, RadioEndpoint, Track } from '$lib/core/models';
 import { get } from 'svelte/store';
 import { playRadio } from './radio';
 import { playTracks } from './player';
 import { playPlaylist } from './playlists';
-import { isPinned, togglePin } from './pins';
+import { isPinned, togglePin, toggleAlbumPin, toggleArtistPin, toggleTrackPin } from './pins';
 import {
   copyText,
   musicUrlForPlaylist,
   musicUrlForTrack,
   playlistYouTubeUrl,
+  playlistMusicUrl,
+  trackMusicUrl,
   trackYouTubeUrl,
 } from './links';
 import { notify, type ContextMenuItem } from './contextMenu';
@@ -30,6 +32,8 @@ import { openFolderDialog } from './folderDialog';
 import { openPlaylistEditor } from './playlistEditor';
 import { openPlaylistPicker } from './playlistPicker';
 import { openSongCredits } from './songCredits';
+import { queueTracks, queueCollection } from './queueActions';
+import { openArtist } from './catalog';
 
 async function copy(label: string, url: string): Promise<void> {
   const ok = await copyText(url);
@@ -54,7 +58,8 @@ export function trackMenu(
   const items: ContextMenuItem[] = [
     {
       label: 'Play',
-      icon: 'bx bx-play',
+      quick: true,
+      icon: 'ph-fill ph-play',
       disabled: !canPlay,
       action: () => {
         if (!get(authStore)) return announceSignInRequired();
@@ -63,28 +68,25 @@ export function trackMenu(
         void playTracks(queue, at);
       },
     },
+    { label: 'Add to queue', icon: 'ph ph-list-plus', quick: true, disabled: !canPlay, action: () => queueTracks([track]) },
   ];
 
   if (signedIn) {
-    items.push({ label: 'Start radio', icon: 'bx bx-radio', action: () => playRadio({ videoId: track.videoId }) });
+    const pinned = isPinned(`song:${track.videoId}`);
+    items.push({ label: pinned ? 'Unpin song' : 'Pin song', quick: true, icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin', action: () => toggleTrackPin(track) });
+    items.push({ label: 'Start mix', icon: 'ph-fill ph-play-circle', customIcon: 'mix', action: () => playRadio({ videoId: track.videoId }) });
     items.push({
       label: preferred ? `Add to “${preferred.title}”` : 'Add to playlist…',
-      icon: 'bx bx-plus',
-      separatorBefore: true,
+      icon: preferred ? 'ph ph-playlist' : 'ph ph-list-plus',
+      playlistArtwork: preferred?.thumbnails,
+      quick: true,
       action: () => void saveTrack(track),
     });
     if (preferred) {
       items.push({
         label: 'Add to another playlist…',
-        icon: 'bx bx-list-plus',
+        icon: 'ph ph-list-plus',
         action: () => openPlaylistPicker([track]),
-      });
-    }
-    if (playlist) {
-      items.push({
-        label: 'Remove from this playlist',
-        icon: 'bx bx-trash',
-        action: () => void removeTrackFrom(playlist, track),
       });
     }
   }
@@ -92,22 +94,31 @@ export function trackMenu(
   items.push(
     {
       label: 'Song credits',
-      icon: 'bx bx-info-circle',
-      separatorBefore: true,
+      icon: 'ph ph-info',
       action: () => void openSongCredits(track),
     },
     {
-      label: 'Copy link (YouTube Music)',
-      icon: 'bx bx-link',
+      label: 'Copy music link',
+      brandIcon: 'youtube-music',
       separatorBefore: true,
       action: () => copy('YouTube Music link', musicUrlForTrack(track)),
     },
     {
-      label: 'Copy link (YouTube)',
-      icon: 'bx bxl-youtube',
+      label: 'Copy video link',
+      icon: 'ph-fill ph-youtube-logo',
       action: () => copy('YouTube link', trackYouTubeUrl(track.videoId)),
     },
   );
+
+  if (signedIn && playlist && isPlaylistOwned(playlist.browseId)) {
+    items.push({
+      label: 'Remove from this playlist',
+      icon: 'ph ph-trash',
+      destructive: true,
+      separatorBefore: true,
+      action: () => void removeTrackFrom(playlist, track, index),
+    });
+  }
 
   return items;
 }
@@ -124,7 +135,8 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
   const items: ContextMenuItem[] = [
     {
       label: 'Play',
-      icon: 'bx bx-play',
+      quick: true,
+      icon: 'ph-fill ph-play',
       disabled: !canPlay,
       action: () => {
         if (!get(authStore)) return announceSignInRequired();
@@ -133,26 +145,27 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
     },
     {
       label: 'Shuffle play',
-      icon: 'bx bx-shuffle',
+      quick: true,
+      icon: 'ph ph-shuffle',
       disabled: !canPlay,
       action: () => {
         if (!get(authStore)) return announceSignInRequired();
         void playPlaylist(playlist, true);
       },
     },
+    { label: 'Add to queue', icon: 'ph ph-list-plus', quick: true, disabled: !canPlay, action: () => queueCollection(playlist) },
   ];
 
   if (signedIn) {
     if (owned) {
       items.push({
         label: 'Edit details…',
-        icon: 'bx bx-pencil',
+        icon: 'ph ph-pencil-simple',
         action: () => openPlaylistEditor(playlist),
       });
-      items.push({ label: 'Delete playlist…', icon: 'bx bx-trash', destructive: true, action: () => requestPlaylistDeletion(playlist) });
       items.push({
         label: isDefault ? 'Clear default playlist' : 'Set as default playlist',
-        icon: isDefault ? 'bx bx-check-circle' : 'bx bx-target-lock',
+        icon: isDefault ? 'ph-fill ph-check-circle' : 'ph ph-crosshair',
         action: () => void setDefaultPlaylist(isDefault ? null : playlist),
       });
     } else if (ownershipKnown()) {
@@ -160,7 +173,7 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
       // editable set loads we cannot tell, so no destructive action is offered.)
       items.push({
         label: saved ? 'Remove from library' : 'Save to library',
-        icon: saved ? 'bx bxs-bookmark' : 'bx bx-bookmark',
+        icon: saved ? 'ph-fill ph-bookmark-simple' : 'ph ph-bookmark-simple',
         action: () => void (saved ? unsavePlaylist(playlist) : savePlaylist(playlist)),
       });
     }
@@ -174,7 +187,7 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
     if (current) {
       folderItems.push({
         label: `Remove from “${current.name}”`,
-        icon: 'bx bx-folder-minus',
+        icon: 'ph ph-folder-minus',
         action: () => void movePlaylistToFolder(playlist.browseId, null),
       });
     }
@@ -182,16 +195,16 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
       if (folder.id === current?.id) continue;
       folderItems.push({
         label: `Move to “${folder.name}”`,
-        icon: 'bx bx-folder',
+        icon: 'ph-duotone ph-folder',
         action: () => void movePlaylistToFolder(playlist.browseId, folder.id),
       });
     }
     folderItems.push({
       label: 'New folder…',
-      icon: 'bx bx-folder-plus',
+      icon: 'ph ph-folder-plus',
       action: () => openFolderDialog(null),
     });
-    folderItems[0].separatorBefore = true;
+    folderItems[0].separatorBefore = folderItems.length > 1;
     items.push(...folderItems);
   }
 
@@ -200,27 +213,73 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
   if (opts.pin && (pinned || !folderFor(playlist.browseId))) {
     items.push({
       label: pinned ? 'Unpin playlist' : 'Pin playlist',
-      icon: pinned ? 'bx bxs-pin' : 'bx bx-pin',
-      separatorBefore: true,
+      quick: true,
+      icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin',
       action: () => void togglePin(playlist),
     });
   }
 
   items.push(
     {
-      label: 'Copy link (YouTube Music)',
-      icon: 'bx bx-link',
+      label: 'Copy music link',
+      brandIcon: 'youtube-music',
       separatorBefore: true,
       action: () => copy('YouTube Music link', musicUrlForPlaylist(playlist)),
     },
     {
-      label: 'Copy link (YouTube)',
-      icon: 'bx bxl-youtube',
+      label: 'Copy video link',
+      icon: 'ph-fill ph-youtube-logo',
       action: () => copy('YouTube link', playlistYouTubeUrl(playlist.browseId)),
     },
   );
 
+  if (signedIn && owned) {
+    items.push({ label: 'Delete playlist…', icon: 'ph ph-trash', destructive: true, separatorBefore: true, action: () => requestPlaylistDeletion(playlist) });
+  }
+
   return items;
+}
+
+/** Albums can be queued without opening their detail page. */
+export function albumMenu(album: Album): ContextMenuItem[] {
+  const pinned = isPinned(album.browseId);
+  return [{ label: 'Add to queue', icon: 'ph ph-list-plus', disabled: !get(authStore), action: () => queueCollection(album) },
+    { label: pinned ? 'Unpin album' : 'Pin album', icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin', disabled: !get(authStore), action: () => toggleAlbumPin(album) }];
+}
+
+export function artistMenu(artist: ArtistRef): ContextMenuItem[] {
+  const browseId = artist.browseId;
+  if (!browseId) return [];
+  const pinned = isPinned(browseId);
+  const url = browseId.startsWith('UC')
+    ? `https://music.youtube.com/channel/${encodeURIComponent(browseId)}`
+    : `https://music.youtube.com/browse/${encodeURIComponent(browseId)}`;
+  return [
+    { label: 'Open artist', icon: 'ph ph-user', action: () => openArtist(artist) },
+    { label: pinned ? 'Unpin artist' : 'Pin artist', icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin', disabled: !get(authStore), action: () => toggleArtistPin(artist) },
+    { label: 'Copy music link', brandIcon: 'youtube-music', separatorBefore: true, action: () => copy('YouTube Music link', url) },
+    ...(browseId.startsWith('UC') ? [{
+      label: 'Copy video link', icon: 'ph-fill ph-youtube-logo',
+      action: () => copy('YouTube link', `https://www.youtube.com/channel/${encodeURIComponent(browseId)}`),
+    }] : []),
+  ];
+}
+
+/** A station has a dynamic queue, so use its radio endpoint rather than treating it as a saved playlist. */
+export function stationMenu(endpoint: RadioEndpoint): ContextMenuItem[] {
+  const playable = !!(endpoint.videoId || endpoint.playlistId);
+  const url = new URL(endpoint.videoId ? trackMusicUrl(endpoint.videoId) : playlistMusicUrl(endpoint.playlistId ?? ''));
+  if (endpoint.playlistId) url.searchParams.set('list', endpoint.playlistId.replace(/^VL/, ''));
+  if (endpoint.params) url.searchParams.set('params', endpoint.params);
+  const videoUrl = new URL(url);
+  videoUrl.hostname = 'www.youtube.com';
+  return [
+    { label: 'Start mix', icon: 'ph-fill ph-play-circle', customIcon: 'mix', disabled: !get(authStore) || !playable, action: () => playRadio(endpoint) },
+    ...(playable ? [
+      { label: 'Copy music link', brandIcon: 'youtube-music' as const, separatorBefore: true, action: () => copy('YouTube Music link', url.href) },
+      { label: 'Copy video link', icon: 'ph-fill ph-youtube-logo', action: () => copy('YouTube link', videoUrl.href) },
+    ] : []),
+  ];
 }
 
 /** Menu for a folder header in the sidebar. */
@@ -228,13 +287,12 @@ export function folderMenu(folder: PlaylistFolder): ContextMenuItem[] {
   return [
     {
       label: 'Rename folder…',
-      icon: 'bx bx-pencil',
+      icon: 'ph ph-pencil-simple',
       action: () => openFolderDialog(folder),
     },
     {
       label: 'Delete folder',
-      icon: 'bx bx-trash',
-      separatorBefore: true,
+      icon: 'ph ph-trash',
       action: () => void deleteFolder(folder.id),
     },
   ];

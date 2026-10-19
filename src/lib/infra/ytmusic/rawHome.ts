@@ -40,8 +40,16 @@ export interface HomeSection {
   songs: HomeSong[];
   order?: string[];
   layout?: 'cards' | 'songs' | 'buttons';
+  /** Keep collection pages' grid/list structure distinct from Home carousels. */
+  presentation?: 'carousel' | 'grid' | 'list';
   rows?: number;
+  /** Pagination for this shelf, separate from the surrounding page. */
+  continuation?: string;
+  header?: { subtitle?: string; thumbnails: Thumbnail[]; profile?: BrowseTarget; more?: BrowseTarget };
 }
+
+export interface BrowseTarget { browseId: string; params?: string; pageType?: string }
+export interface PageAction { label: string; playback?: HomePlayback; browse?: BrowseTarget; share?: boolean }
 
 export interface HomeFilter { label: string; browseId: string; params?: string }
 
@@ -53,8 +61,12 @@ export interface PageHeader {
   subtitle?: string;
   /** Best-effort artist line (album/artist pages). */
   artist?: string;
+  /** Playlist creator, separate from media type/year/count metadata. */
+  author?: string;
   description?: string;
   thumbnails: Thumbnail[];
+  banner?: Thumbnail[];
+  actions?: PageAction[];
 }
 
 /** Renderers that carry a page header, in the order we prefer them. */
@@ -84,11 +96,63 @@ export function scanPageHeader(raw: Json): PageHeader | null {
   return {
     ...(node.musicEditablePlaylistDetailHeaderRenderer ? { canEdit: true } : {}),
     title: textOf(header.title) ?? textOf(node.title) ?? '',
-    subtitle: textOf(header.subtitle) ?? textOf(node.subtitle),
+    subtitle: textOf(header.subtitle) ?? textOf(node.subtitle) ?? textOf(header.subscriptionButton?.subscribeButtonRenderer?.longSubscriberCountText),
     artist: artistHintOf(header),
+    author: creatorOf(header),
     description: descriptionOf(header) ?? descriptionFromPage(raw),
-    thumbnails: thumbnailsOf(header),
+    thumbnails: thumbnailsOf(header.foregroundThumbnail ?? header.thumbnail ?? header),
+    ...(header.foregroundThumbnail || node.musicImmersiveHeaderRenderer ? { banner: thumbnailsOf(header.thumbnail) } : {}),
+    actions: pageActions(header),
   };
+}
+
+function pageActions(header: Json): PageAction[] {
+  const roots = [header.buttons, header.playButton, header.menu?.menuRenderer?.topLevelButtons, header.menu?.menuRenderer?.items];
+  const actions: PageAction[] = [];
+  const seen = new Set<string>();
+  const pending = [...roots].reverse();
+  let visited = 0;
+  while (pending.length && visited++ < 1000) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') continue;
+    const button = node.buttonRenderer ?? node.musicPlayButtonRenderer ?? node.menuNavigationItemRenderer;
+    if (button) {
+      if (button.isDisabled) continue;
+      const command = button.navigationEndpoint ?? button.playNavigationEndpoint ?? button.command ?? button.serviceEndpoint;
+      const watch = command?.watchPlaylistEndpoint ?? command?.watchEndpoint;
+      const playback = watch && (watch.videoId || watch.playlistId)
+        ? { videoId: watch.videoId, playlistId: watch.playlistId, params: watch.params } : undefined;
+      const browse = browseTarget(command);
+      const share = !!command?.shareEntityEndpoint;
+      const label = textOf(button.text) ?? button.accessibilityPlayData?.accessibilityData?.label ?? button.tooltip ?? (playback ? 'Play mix' : share ? 'Share' : '');
+      if (label && (playback || browse || share)) {
+        const key = JSON.stringify([label, playback, browse, share]);
+        if (!seen.has(key)) { seen.add(key); actions.push({ label, ...(playback ? { playback } : {}), ...(browse ? { browse } : {}), ...(share ? { share: true } : {}) }); }
+      }
+      continue;
+    }
+    pending.push(...(Array.isArray(node) ? [...node].reverse() : Object.values(node).reverse()));
+  }
+  return actions;
+}
+
+function creatorOf(header: Json): string | undefined {
+  // Current playlist headers put the owner beside the avatar stack rather
+  // than in straplineTextOne. Its label is attributed text, not a runs array.
+  const facepileText = header?.facepile?.avatarStackViewModel?.text;
+  const facepileName = typeof facepileText?.content === 'string'
+    ? facepileText.content.trim() : textOf(facepileText);
+  if (facepileName) return facepileName;
+  const sources = [header?.straplineTextOne, header?.straplineTextTwo, header?.subtitle, header?.author];
+  for (const source of sources) {
+    const linked = source?.runs?.find((run: Json) => /^UC/.test(run?.navigationEndpoint?.browseEndpoint?.browseId ?? '') && run?.text?.trim());
+    if (linked) return linked.text.trim();
+  }
+  for (const source of [header?.author, header?.straplineTextOne]) {
+    const name = textOf(source);
+    if (name && !isNoiseSegment(name)) return name;
+  }
+  return undefined;
 }
 
 /**
@@ -346,6 +410,38 @@ function sectionTitle(shelf: Json): string {
   );
 }
 
+function browseTarget(endpoint: Json): BrowseTarget | undefined {
+  const browse = endpoint?.browseEndpoint;
+  if (!browse?.browseId) return undefined;
+  return { browseId: browse.browseId, ...(browse.params ? { params: browse.params } : {}),
+    ...(browse.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType
+      ? { pageType: browse.browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig.pageType } : {}) };
+}
+
+function sectionHeader(shelf: Json): HomeSection['header'] {
+  const header = shelf?.header?.musicCarouselShelfBasicHeaderRenderer ?? shelf?.header?.musicCardShelfHeaderBasicRenderer;
+  if (!header) return undefined;
+  const profileNode = findFirst(header, value => {
+    const target = browseTarget(value);
+    return target?.pageType === 'MUSIC_PAGE_TYPE_USER_CHANNEL' || !!target?.browseId.startsWith('UC');
+  });
+  const moreNode = findFirst(header.moreContentButton ?? header.title, value => !!value?.browseEndpoint?.browseId);
+  return { subtitle: textOf(header.strapline), thumbnails: thumbnailsOf(header.thumbnail),
+    profile: browseTarget(profileNode), more: browseTarget(moreNode) };
+}
+
+function ownerContinuation(owner: Json): string | undefined {
+  for (const item of owner?.continuations ?? []) {
+    const token = item?.nextContinuationData?.continuation ?? item?.reloadContinuationData?.continuation;
+    if (typeof token === 'string' && token) return token;
+  }
+  for (const item of owner?.contents ?? owner?.items ?? []) {
+    const token = item?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+    if (typeof token === 'string' && token) return token;
+  }
+  return undefined;
+}
+
 /** Extract the home feed's carousel shelves, in document order. */
 export function scanHome(raw: Json): HomeSection[] {
   const sections: HomeSection[] = [];
@@ -370,7 +466,8 @@ export function scanHome(raw: Json): HomeSection[] {
       if (
         (key === 'musicCarouselShelfRenderer' ||
           key === 'musicShelfRenderer' ||
-          key === 'musicPlaylistShelfRenderer' || key === 'musicCardShelfRenderer' || key === 'gridRenderer' || key === 'musicGridRenderer') &&
+          key === 'musicPlaylistShelfRenderer' || key === 'musicCardShelfRenderer' || key === 'gridRenderer' || key === 'musicGridRenderer' ||
+          key === 'musicShelfContinuation' || key === 'musicCarouselShelfContinuation' || key === 'musicPlaylistShelfContinuation' || key === 'gridContinuation') &&
         value &&
         typeof value === 'object'
       ) {
@@ -387,7 +484,7 @@ export function scanHome(raw: Json): HomeSection[] {
           if (!entry || typeof entry !== 'object') continue;
           const responsive = entry.musicResponsiveListItemRenderer;
           const navigation = entry.musicNavigationButtonRenderer;
-          const twoRow = entry.musicTwoRowItemRenderer ?? entry.musicMultiRowListItemRenderer ?? (navigation ? { title: navigation.buttonText, navigationEndpoint: navigation.clickCommand, navigation: true } : null);
+          const twoRow = entry.musicTwoRowItemRenderer ?? entry.musicMultiRowListItemRenderer ?? entry.gridPlaylistRenderer ?? entry.gridVideoRenderer ?? entry.gridChannelRenderer ?? (navigation ? { title: navigation.buttonText, navigationEndpoint: navigation.clickCommand, navigation: true } : null);
           if (responsive || twoRow) {
             const { card, song } = responsive ? extractResponsive(responsive) : extractTwoRow(twoRow);
             const itemKey = song ? `s:${song.videoId}` : card ? `c:${card.browseId}${card.params ? `:${card.params}` : ''}` : '';
@@ -404,10 +501,11 @@ export function scanHome(raw: Json): HomeSection[] {
           }
         }
         const dedupeKey = `${title}|${order.join('|')}`;
-        if ((cards.length > 0 || songs.length > 0) && !seenTitles.has(dedupeKey)) {
+        if ((cards.length > 0 || songs.length > 0 || ownerContinuation(shelf)) && !seenTitles.has(dedupeKey)) {
           seenTitles.add(dedupeKey);
           const rows = Number.parseInt(shelf.numItemsPerColumn, 10);
-          sections.push({ title, cards, songs, order, ...(Number.isFinite(rows) ? { rows: Math.max(1, Math.min(6, rows)) } : {}), layout: songs.length > 0 && cards.length === 0 ? 'songs' : cards.length > 0 && cards.every((card) => card.navigation) ? 'buttons' : 'cards' });
+          const presentation = /[Gg]rid/.test(key) ? 'grid' : /Carousel|CardShelf/.test(key) ? 'carousel' : songs.length && !cards.length ? 'list' : 'grid';
+          sections.push({ title, cards, songs, order, presentation, header: sectionHeader(shelf), ...(ownerContinuation(shelf) ? { continuation: ownerContinuation(shelf) } : {}), ...(Number.isFinite(rows) ? { rows: Math.max(1, Math.min(6, rows)) } : {}), layout: songs.length > 0 && cards.length === 0 ? 'songs' : cards.length > 0 && cards.every((card) => card.navigation) ? 'buttons' : 'cards' });
         }
         continue;
       }
@@ -415,6 +513,14 @@ export function scanHome(raw: Json): HomeSection[] {
     }
   }
 
+  // Some shelf continuations append bare cards/rows rather than a shelf wrapper.
+  if (!sections.length) {
+    const actions = raw?.onResponseReceivedActions ?? raw?.onResponseReceivedEndpoints ?? [];
+    for (const action of actions) {
+      const items = action?.appendContinuationItemsAction?.continuationItems;
+      if (Array.isArray(items)) sections.push(...scanHome({ musicShelfContinuation: { contents: items } }));
+    }
+  }
   return sections;
 }
 

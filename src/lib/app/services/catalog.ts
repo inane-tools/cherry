@@ -9,7 +9,7 @@ import {
   type ArtistPage,
 } from '$lib/infra/ytmusic/InnertubeClient';
 import { authStore } from './auth';
-import { openPage } from './navigation';
+import { openPage, pageStore } from './navigation';
 
 export type { AlbumPage, ArtistPage };
 
@@ -47,6 +47,10 @@ export async function loadArtistPage(artist: ArtistRef): Promise<void> {
     const page = await getArtistPage(artist.browseId ?? '', get(authStore));
     if (id !== artistSeq) return;
     artistPageStore.set(page);
+    if (page?.thumbnails?.length) {
+      pageStore.update(current => current.view === 'artist' && current.entity.browseId === artist.browseId
+        ? { ...current, entity: { ...current.entity, thumbnails: page.thumbnails } } : current);
+    }
   } catch (e) {
     if (id === artistSeq) artistError.set(e instanceof Error ? e.message : String(e));
   } finally {

@@ -1,6 +1,7 @@
 ﻿<script lang="ts">
   import type { Track } from '$lib/core/models';
-  import { bestThumbnail } from '$lib/core/models';
+  import { thumbnailSources } from '$lib/core/models';
+  import { artwork } from '$lib/ui/actions/artwork';
   import { playerStore } from '$lib/app/services/player';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
@@ -13,9 +14,12 @@
   export let list: Track[] | undefined = undefined;
   /** Set on a playlist page so the menu can offer "Remove from this playlist". */
   export let playlist: import('$lib/core/models').Playlist | undefined = undefined;
+  /** A collection can identify the playing occurrence when videos repeat. */
+  export let current: boolean | undefined = undefined;
 
-  $: isCurrent = $playerStore.track?.videoId === track.videoId;
+  $: isCurrent = !!$playerStore.track && (current ?? ($playerStore.track.videoId === track.videoId));
   $: playing = isCurrent && $playerStore.status === 'playing';
+  $: coverSources = thumbnailSources(track.thumbnails, 96);
 
   function fmt(s?: number): string {
     if (s == null || !Number.isFinite(s)) return '';
@@ -49,13 +53,13 @@
 >
   <span class="w-6 text-center text-xs text-zinc-600 group-hover:hidden">{index + 1}</span>
   <span class="hidden w-6 items-center justify-center group-hover:flex">
-    <i class={playing ? 'bx bx-pause text-[var(--color-accent2)]' : 'bx bx-play text-zinc-200'}></i>
+    <i class={playing ? 'ph-fill ph-pause text-[var(--color-accent2)]' : 'ph-fill ph-play text-zinc-200'}></i>
   </span>
-  {#if bestThumbnail(track.thumbnails, 96)}
-    <img src={bestThumbnail(track.thumbnails, 96)} alt="" class="h-10 w-10 rounded-md object-cover" loading="lazy" />
+  {#if coverSources.length}
+    <img use:artwork={{ urls: coverSources }} alt="" class="h-10 w-10 rounded-md object-cover" loading="lazy" decoding="async" />
   {:else}
     <div class="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-art)] text-zinc-600">
-      <i class="bx bx-music text-lg"></i>
+      <i class="ph-duotone ph-music-notes text-lg"></i>
     </div>
   {/if}
   <span class="min-w-0 flex-1">

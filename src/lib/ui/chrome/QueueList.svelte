@@ -10,7 +10,8 @@
     removeFromQueue,
   } from '$lib/app/services/queue';
   import { playerStore, playQueueItem } from '$lib/app/services/player';
-  import { bestThumbnail } from '$lib/core/models';
+  import { thumbnailSources } from '$lib/core/models';
+  import { artwork } from '$lib/ui/actions/artwork';
   import { tick } from 'svelte';
   import { virtualRows, rowIndexes } from '$lib/ui/actions/virtualRows';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
@@ -105,17 +106,18 @@
   </p>
 {:else}
   {#if $currentItem}
+    {@const coverSources = thumbnailSources($currentItem.track.thumbnails, 96)}
     <div class="mb-1 px-2 text-[11px] font-medium text-zinc-400">
       Now playing
     </div>
     <div
       class="mb-3 flex items-center gap-2 rounded-lg bg-[var(--color-accent)]/10 px-2 py-1.5"
     >
-      {#if bestThumbnail($currentItem.track.thumbnails, 96)}
-        <img src={bestThumbnail($currentItem.track.thumbnails, 96)} alt="" class="h-8 w-8 shrink-0 rounded-lg object-cover" />
+      {#if coverSources.length}
+        <img use:artwork={{ urls: coverSources }} alt="" class="h-8 w-8 shrink-0 rounded-lg object-cover" />
       {:else}
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-600">
-          <i class="bx bx-music text-lg"></i>
+          <i class="ph-duotone ph-music-notes text-lg"></i>
         </span>
       {/if}
       <span class="min-w-0 flex-1">
@@ -123,7 +125,7 @@
         <ArtistsLine artists={$currentItem.track.artists} textClass="block truncate text-[11px] text-zinc-400" />
       </span>
       {#if $playerStore.status === 'playing'}
-        <i class="bx bx-volume-full text-[var(--color-accent2)]"></i>
+        <i class="ph-fill ph-speaker-high text-[var(--color-accent2)]"></i>
       {/if}
     </div>
   {/if}
@@ -134,6 +136,7 @@
       use:virtualRows={{ count: upcoming.length, rowHeight, onRange }}>
       {#each visibleRows as entry (entry.item.queueId)}
         {@const qi = entry.item}
+        {@const coverSources = thumbnailSources(qi.track.thumbnails, 96)}
         {@const i = entry.index}
         <div
           data-queue-row={qi.queueId}
@@ -160,14 +163,14 @@
             <span class="pointer-events-none absolute inset-x-2 -bottom-1 h-0.5 rounded-full bg-[var(--color-accent)]"></span>
           {/if}
           <i
-            class="bx bx-dots-vertical-rounded shrink-0 text-base text-zinc-600 transition-colors group-hover:text-zinc-400"
+            class="ph ph-dots-three-vertical shrink-0 text-base text-zinc-600 transition-colors group-hover:text-zinc-400"
             aria-hidden="true"
           ></i>
-          {#if bestThumbnail(qi.track.thumbnails, 96)}
-            <img src={bestThumbnail(qi.track.thumbnails, 96)} alt="" draggable="false" class="h-8 w-8 shrink-0 rounded-lg object-cover" loading="lazy" />
+          {#if coverSources.length}
+            <img use:artwork={{ urls: coverSources }} alt="" draggable="false" class="h-8 w-8 shrink-0 rounded-lg object-cover" loading="lazy" />
           {:else}
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-600">
-              <i class="bx bx-music text-lg"></i>
+              <i class="ph-duotone ph-music-notes text-lg"></i>
             </span>
           {/if}
           <span class="min-w-0 flex-1">
@@ -180,7 +183,7 @@
             aria-label="Remove from queue"
             onclick={(event) => remove(event, qi.queueId)}
           >
-            <i class="bx bx-x"></i>
+            <i class="ph ph-x"></i>
           </button>
         </div>
       {/each}

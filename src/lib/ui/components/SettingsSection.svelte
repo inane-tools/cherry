@@ -67,7 +67,7 @@
     <slot name="action" />
     {#if collapsible}
       <i
-        class="bx {expanded ? 'bx-chevron-up' : 'bx-chevron-down'} shrink-0 text-xl text-zinc-500"
+        class="{expanded ? 'ph ph-caret-up' : 'ph ph-caret-down'} shrink-0 text-xl text-zinc-500"
         aria-hidden="true"
       ></i>
     {/if}
@@ -77,7 +77,7 @@
          close without setting an explicit pixel height, which kept the overlay's
          scroll geometry sane. -->
     <div
-      class="grid transition-[grid-template-rows] duration-200 ease-out {expanded
+      class="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none {expanded
         ? 'grid-rows-[1fr]'
         : 'grid-rows-[0fr]'}"
       inert={!expanded}

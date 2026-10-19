@@ -15,29 +15,28 @@ with **Electron + Chromium**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
 ## Platform status
 
-**Cherry 2.0.0 (Furano) is in development.** The desktop host is moving from
-Tauri to Electron on both Windows and Linux, keeping Cherry's custom frontend.
-No 2.0 installers have been built or released yet. macOS remains deferred.
+**Cherry 2.0.0 (Furano)** uses Electron and Chromium on Windows and Linux,
+keeping Cherry's custom frontend. Chromium replaces the WebKitGTK host on Linux;
+Steam Deck testing no longer showed the rendering glitches seen in the Tauri
+version. Performance can still vary with hardware and virtual machines.
+The shared renderer brings more consistent behavior across Windows and Linux.
 
-The Electron version uses Chromium on both platforms. Steam Deck testing has
-eliminated the observed WebKit rendering glitches and felt much smoother;
-the Fedora VM remains more sluggish. Desktop integrations, account handling,
-playback and video support have been ported, with further testing ongoing.
+Downloads are **NSIS for Windows** and **AppImage / Flatpak for Linux** (x86_64).
+macOS remains deferred. The original Tauri source and releases are preserved in
+[cherry-tauri](https://github.com/inane-tools/cherry-tauri).
 
-**The stable downloads below are still Tauri 1.7.0.** Windows is its most polished
-version. Linux uses WebKitGTK and can still show animation flicker, rendering
-glitches and inconsistent responsiveness despite the existing workarounds.
-The original Tauri source and releases are preserved in
-[cherry-tauri](https://github.com/inane-tools/cherry-tauri); this repository now
-continues development with Electron. The Electron 1.7.1 preview has been
-withdrawn from public distribution and retained as a draft for updater testing.
+**Coming from 1.x? Keep the old Cherry installed until you finish migrating.**
+Install 2.0 separately, close the old app, then choose **Migrate from 1.x** on
+the welcome screen after accepting the disclaimer. Once you have checked the
+imported data, you can uninstall the old Cherry. Tauri cannot update itself to 2.0.
 
 ## Features
 
 - **Fully custom UI** - Cherry is not a wrapper on the YouTube Music web app, it has a fully custom built user interface, with a focus on simplicity and good looks.
 - **A customizable sidebar** - one user-organised list of playlists and folders. Drag to
   reorder, drop a playlist onto a folder to file it, **pin** favourites to the
-  top, resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
+  top, including albums, artists and songs. Pins and their order are separate for
+  each YouTube channel. Resize the sidebar (only when compact sidebar is turned off), or switch to a compact icon-only mode. Below ~820px it
   collapses into a slide-in drawer.
 - **Expanded player** - click the album art for Art, Queue and Lyrics tabs over
   the artwork background. The selected tab is remembered when collapsed, and
@@ -50,7 +49,7 @@ withdrawn from public distribution and retained as a draft for updater testing.
   1080p where available. Choose Highest, Auto or a remembered resolution, with
   optional black letterboxing. Collapsing keeps playback running; video
   preference survives audio-only tracks and restarts. Lyrics pause in video mode.
-- **Stations & radio** - play station recommendations or start radio from a song,
+- **Mixes** - start a mix from a song or play YouTube's mix recommendations,
   with more tracks loaded as playback continues.
 - **In-app sign in** - loads music.youtube.com and captures the session from the
   native cookie store. Saved credentials are **encrypted using OS secure storage**,
@@ -65,7 +64,10 @@ withdrawn from public distribution and retained as a draft for updater testing.
   drag-reorder, remove tracks, and clear. Keep the queue in a right sidebar
   when there is room, with the player queue button available in smaller windows.
 - **Home & Explore** - browse recommendations, filter the Home feed, and open
-  moods, genres, charts and new releases from the separate Explore page.
+  moods, genres, charts and new releases from the separate Explore page. Profile
+  pages include public collections and your private repeat-listening sections.
+- **Filtered search** - search all results or just songs, artists, albums and
+  playlists, using filter buttons or `@songs`, `@artists`, `@albums`, `@playlists`.
 - **Paste a link** - drop a YouTube / YouTube Music song or playlist URL into the
   search box to preview it, then click the result to play or open it.
 - **Desktop integration** - OS media controls through Chromium Media Session, hardware
@@ -73,8 +75,9 @@ withdrawn from public distribution and retained as a draft for updater testing.
   taskbar preview buttons and Jump Lists for pinned and recent playlists.
   Closing the window exits Cherry; minimizing keeps it on the taskbar.
 - **Light & dark themes** - follow the system or pick one, with the accent taken
-  from the album art or a custom colour and optional background gradients. The
-  window title follows the current track.
+  from the album art or a custom colour, optional tinted surfaces and background
+  gradients. Colors transition smoothly, and startup restores the last palette
+  before revealing content. The window title follows the current track.
 - **Keyboard shortcuts** - Space to play/pause, arrows to seek, Ctrl+arrows
   to skip and change volume, S/R for shuffle/repeat, Ctrl+F to search (full
   list in Settings).
@@ -92,13 +95,16 @@ from Tauri.
 
 ## Changelog
 
-**v2.0.0 (Furano), in development,** replaces the Tauri host with Electron on
+**v2.0.0 (Furano)** replaces the Tauri host with Electron on
 Windows and Linux. It brings Chromium rendering to Linux, ports the desktop
 integrations and GitHub updater, improves account and playlist handling, fixes
 HD video in packaged builds and track-transition skips, and makes large queues
-faster to open. Existing Tauri installations require a manual switch; a data
-importer is not implemented yet. Installed Electron 1.7.1 previews will be able
-to test updating to 2.0 through the compatibility feed.
+faster to open. It also refreshes navigation, menus, the compact player and
+collection headers, adds profile pages and filtered search, and separates pins
+by channel. Existing Tauri installations require a manual installation;
+the welcome screen can import preferences, pins, folders, YouTube Music sign-in
+and Last.fm credentials. Installed Electron 1.7.1 previews can update to 2.0
+through the compatibility feed; later updates use this repository directly.
 
 **v1.7.0 (Fukagawa)** adds lyrics, music videos and station playback, with
 smoother transitions, improved artwork handling and a calmer startup.
@@ -117,44 +123,30 @@ songs and app restarts; restored video loads paused. Collapsing keeps playback
 running. Lyrics are suspended during video playback. Optional letterboxing adds
 black bars without resizing the player.
 
-**v1.6.2 (Shibetsu)** adds signed GitHub updates for Tauri Windows and AppImage installs.
-
-**v1.6.1 (Shibetsu)** fixes Discord presence clearing and adds links to the
-current song on album artwork and to inane.tools on the Cherry badge.
-
-**v1.6.0 (Shibetsu)** refreshes Home with more YouTube Music layouts, filters
-and pagination, separates Explore into its own page, and adds an optional queue
-sidebar. It also adds confirmed playlist deletion, expanded tray controls and
-Windows playlist shortcuts, with improved artwork recovery and accent gradients.
-Windows NSIS and Linux Flatpak/AppImage are supported; macOS builds are deferred.
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Download
 
-**2.0 is not released yet.** The latest stable version is the Tauri-based
-**[v1.7.0 Fukagawa](https://github.com/inane-tools/cherry-tauri/releases/tag/v1.7.0)**:
+**[v2.0.0 Furano](https://github.com/inane-tools/cherry/releases/tag/v2.0.0)**:
 
-- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry-tauri/releases/download/v1.7.0/Cherry_1.7.0_x64-setup.exe).
-- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry-tauri/releases/download/v1.7.0/Cherry_1.7.0_x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry-tauri/releases/download/v1.7.0/Cherry_1.7.0_amd64.AppImage).
+- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v2.0.0/Cherry-Setup-2.0.0-x64.exe).
+- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v2.0.0/Cherry-2.0.0-x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v2.0.0/Cherry-2.0.0-x86_64.AppImage).
 
-Install the downloaded Tauri Flatpak with
-`flatpak install --user Cherry_1.7.0_x86_64.flatpak`, then run
-`flatpak run tools.inane.cherry`. This is a self-distributed bundle; Cherry is
-not listed on Flathub. For the Tauri AppImage, run
-`chmod +x Cherry_1.7.0_amd64.AppImage` before opening it. Read the
-[platform status](#platform-status) before downloading these Linux packages.
-The [preserved platform notes](https://github.com/inane-tools/cherry-tauri/blob/main/docs/platforms.md)
-cover Tauri-specific requirements and limitations.
+Install the Flatpak with `flatpak install --user Cherry-2.0.0-x86_64.flatpak`,
+then run `flatpak run tools.inane.cherry.electron`. This is a self-distributed
+bundle; Cherry is not listed on Flathub. For AppImage, run
+`chmod +x Cherry-2.0.0-x86_64.AppImage` before opening it.
 
-Future Electron releases will be published in
-[this repository's releases](https://github.com/inane-tools/cherry/releases),
-with **NSIS for Windows** and **Flatpak / AppImage for Linux**. The Electron
-1.7.1 preview is no longer a public download. Switching from Tauri will require
-a manual installation; see [migration](docs/MIGRATION.md).
+After installing 2.0, accept the welcome-screen disclaimer and choose **Migrate
+from 1.x** to preview and import your old data. **Keep 1.x installed until this
+is done, and close it before importing.** Check that your imported data works
+before optionally uninstalling the old version. Existing Electron sign-ins are
+kept, and a verified backup is made before applying changes. Windows puts the
+new Start menu shortcut under **inane → Cherry** and leaves the legacy shortcut
+separate. The new installer does not create a desktop shortcut.
 
-**Tauri users on 1.6.1 or earlier need to install 1.7.0 manually once to add its updater.**
-The `.sig` files and `latest.json` on Tauri releases are updater assets; manual
-installation only needs the installer for your platform.
+Manual installation only needs the package for your platform. The YAML,
+blockmap and legacy JSON files attached to releases are updater metadata.
 
 ## Requirements
 
@@ -164,9 +156,6 @@ installation only needs the installer for your platform.
   longer required. CI uses Node 24.
 - To package Linux Flatpaks: `flatpak`, `flatpak-builder`, Freedesktop Platform / SDK
   25.08 and Electron BaseApp 25.08. See [packaging](docs/RELEASING.md).
-
-These requirements apply to the Electron source. The stable Tauri downloads
-have their original [platform requirements](https://github.com/inane-tools/cherry-tauri/blob/main/docs/platforms.md).
 
 ## Develop
 
@@ -200,8 +189,7 @@ npm run dist:flatpak   # Flatpak only
 
 Build Windows packages on Windows and Linux packages on Linux. Outputs go in
 `release/`. Development pushes and pull requests run checks only; installer
-builds require an explicit manual workflow run or a release tag. **No 2.0
-installers have been built yet.** See [the release guide](docs/RELEASING.md)
+builds require an explicit manual workflow run or a release tag. See [the release guide](docs/RELEASING.md)
 for packaging, update metadata and release testing.
 
 ## App updates
@@ -269,7 +257,7 @@ See [`docs/TESTING.md`](docs/TESTING.md) and
 
 ## Credits
 
-Cherry is developed with LLM assistance, from the ideas and feedback of
+Cherry is developed with LLMs, guided by
 [inane.tools](https://inane.tools). DeepSeek v4.1 Flash generated much of the
 original code through 1.4. Codex with GPT-6.1 Sol has contributed since 1.4.2,
 with additional work by Claude through the jannuary fork.

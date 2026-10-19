@@ -4,5 +4,5 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig({
   plugins: [svelte()],
   resolve: { conditions: ['browser'], alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) } },
-  test: { environment: 'jsdom', include: ['tests/ui/**/*.test.ts'], restoreMocks: true },
+  test: { environment: 'jsdom', setupFiles: ['tests/ui/setup.ts'], include: ['tests/ui/**/*.test.ts'], restoreMocks: true },
 });

@@ -65,7 +65,7 @@
   </div>
 {:else if $lyricsStore.status === 'ready' && data}
   <button class="flex w-full items-center justify-center gap-3 px-4 py-3 text-sm font-semibold text-white" title="Expand lyrics" onclick={() => { expandedPlayerPanel.set('lyrics'); playerExpanded.set(true); }}>
-    <i class="bx bx-captions text-base text-[var(--color-accent)]" aria-hidden="true"></i>
+    <i class="ph-fill ph-microphone-stage text-base text-[var(--color-accent)]" aria-hidden="true"></i>
     {#key `${$playerStore.track?.videoId}:${active}:${data.synced}`}
       <span in:fly={{ y: 4, duration: 160 }} class="truncate text-sm font-semibold">{data.synced ? (active >= 0 ? data.lines[active].text : '♪') : 'Timing unavailable, Open Lyrics'}</span>
     {/key}

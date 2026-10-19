@@ -19,6 +19,8 @@ export interface Thumbnail {
 
 export interface Track {
   videoId: VideoId;
+  /** Identifies one occurrence in its source playlist, not the video itself. */
+  playlistEntryId?: string;
   title: string;
   artists: ArtistRef[];
   album?: { name: string; browseId?: BrowseId };
@@ -62,6 +64,8 @@ export type RepeatMode = 'off' | 'all' | 'one';
 
 export interface QueueItem {
   track: Track;
+  /** Zero-based occurrence of this video in the list it was queued from. */
+  sourceOccurrence?: number;
   /** stable id for drag-reorder / dedupe */
   queueId: string;
 }
@@ -104,11 +108,21 @@ export interface AuthSession {
   savedAt: number;
 }
 
-/** A playlist pinned to the top bar for quick access. */
+/** Legacy playlist pins remain valid without an explicit kind. */
 export interface PinnedPlaylist {
+  kind?: 'playlist';
   browseId: BrowseId;
   title: string;
   thumbnail?: string;
+}
+
+export type SidebarPin = PinnedPlaylist
+  | { kind: 'album'; browseId: string; title: string; thumbnail?: string; album: Album }
+  | { kind: 'artist'; browseId: string; title: string; thumbnail?: string; artist: ArtistRef }
+  | { kind: 'song'; browseId: string; title: string; thumbnail?: string; track: Track };
+
+export function isPlaylistPin(pin: SidebarPin): pin is PinnedPlaylist {
+  return !pin.kind || pin.kind === 'playlist';
 }
 
 /** A user-created folder that groups playlists in the sidebar. */
@@ -139,15 +153,26 @@ export function trackDisplayArtists(t: Pick<Track, 'artists'>): string {
 }
 
 export function bestThumbnail(ts: Thumbnail[], size = 256): string {
-  if (ts.length === 0) return '';
-  const sorted = [...ts].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
-  return (sorted.find((t) => (t.width ?? 0) >= size) ?? sorted[sorted.length - 1]).url;
+  let best: Thumbnail | undefined;
+  let largest: Thumbnail | undefined;
+  for (const thumbnail of ts) {
+    const width = thumbnail.width ?? 0;
+    if (!largest || width >= (largest.width ?? 0)) largest = thumbnail;
+    if (width >= size && (!best || width < (best.width ?? 0))) best = thumbnail;
+  }
+  return (best ?? largest)?.url ?? '';
 }
 
 /** Preferred artwork followed by the other supplied sizes as fallbacks. */
 export function thumbnailSources(ts: Thumbnail[], size = 256): string[] {
+  const supplied = bestThumbnail(ts, size);
+  // Google artwork URLs explicitly support dimensions. Avoid decoding a 544px
+  // image for a 40–48px row when no smaller variant was supplied by the API.
+  const sized = /^https:\/\/[^/]+\.(?:googleusercontent\.com|ggpht\.com)\//i.test(supplied)
+    ? supplied.replace(/=w(\d+)-h(\d+)/, (match, width, height) => Number(width) > size && Number(height) > size ? `=w${Math.ceil(size)}-h${Math.ceil(size)}` : match)
+    : supplied;
   return [...new Set([
-    bestThumbnail(ts, size),
+    sized, supplied,
     ...[...ts].sort((a, b) => (b.width ?? 0) - (a.width ?? 0)).map((t) => t.url),
   ].filter(Boolean))];
 }

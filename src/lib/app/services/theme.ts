@@ -11,7 +11,7 @@
 // `themeColor.ts`.
 
 import { isDesktop } from './platform';
-import { clampLuminance, dominantColour, fromHex, mix, toHex, vividify, washCompanion, type Rgb } from './themeColor';
+import { clampLuminance, dominantColour, fromHex, mix, toHex, vividify, type Rgb } from './themeColor';
 
 const DEFAULT_PAIR = {
   accent: { r: 255, g: 77, b: 94 } as Rgb,
@@ -42,6 +42,31 @@ export function setAccentSource(source: 'song' | 'custom'): void {
  */
 let lightMode = false;
 let current = { accent: DEFAULT_PAIR.accent, accent2: DEFAULT_PAIR.accent2 };
+const SNAPSHOT_KEY = 'cherry.appearance';
+let lastSnapshot = '';
+
+/** Restore a small visual snapshot before mounting; settings remain authoritative. */
+export function restoreStartupAppearance(): void {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) ?? 'null');
+    if (!saved || typeof saved.light !== 'boolean' || typeof saved.tinted !== 'boolean') return;
+    const accent = typeof saved.accent === 'string' ? fromHex(saved.accent) : null;
+    const accent2 = typeof saved.accent2 === 'string' ? fromHex(saved.accent2) : null;
+    if (!accent || !accent2) return;
+    current = { accent, accent2 };
+    lightMode = saved.light;
+    tinted = saved.tinted;
+    document.documentElement.classList.toggle('light', lightMode);
+    document.documentElement.classList.toggle('dark', !lightMode);
+    applyAccent();
+  } catch { /* Missing or unavailable storage must not block launch. */ }
+}
+
+function saveAppearanceSnapshot(): void {
+  const snapshot = JSON.stringify({ accent: toHex(current.accent), accent2: toHex(current.accent2), light: lightMode, tinted });
+  if (snapshot === lastSnapshot) return;
+  try { localStorage.setItem(SNAPSHOT_KEY, snapshot); lastSnapshot = snapshot; } catch { /* Optional visual cache. */ }
+}
 
 const cache = new Map<string, Rgb | null>();
 /** Bounded so a long listening session can't grow this without limit. */
@@ -83,8 +108,8 @@ function applyAccent(preview = false): void {
   root.setProperty('--color-accent', toHex(accent));
   root.setProperty('--color-accent2', toHex(accent2));
   if (preview) return;
-  root.setProperty('--color-wash-secondary', toHex(washCompanion(accent)));
   applySurfaceTint();
+  saveAppearanceSnapshot();
 }
 
 /** Called by `appearance.ts` when the light/dark theme changes. */
@@ -166,6 +191,30 @@ export function previewCustomAccent(hex: string): void {
   setAccent(fromHex(hex) ?? DEFAULT_PAIR.accent, false, true);
 }
 
+async function readArtworkColour(artworkUrl: string, current: () => boolean): Promise<Rgb | null> {
+  const { invoke } = await import('$lib/desktop/core');
+  const base64 = await invoke<string>('http_proxy_fetch_base64', { url: artworkUrl });
+  if (!current()) return null;
+  if (!base64) throw new Error('empty artwork');
+  const image = new Image();
+  const canvas = document.createElement('canvas');
+  try {
+    image.src = `data:image/jpeg;base64,${base64}`;
+    await image.decode();
+    if (!current()) return null;
+    canvas.width = canvas.height = 24;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('no 2d context');
+    context.drawImage(image, 0, 0, 24, 24);
+    return dominantColour(context.getImageData(0, 0, 24, 24).data);
+  } finally {
+    // The presentation callback may wait for other artwork. Release decoded
+    // pixels and the canvas backing store before waiting for that transition.
+    image.removeAttribute('src');
+    canvas.width = canvas.height = 0;
+  }
+}
+
 /** Adopt the dominant colour of `artworkUrl` as the app accent. */
 export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
   if (accentSource !== 'song') return;
@@ -188,24 +237,9 @@ export async function applyArtworkTheme(artworkUrl: string): Promise<void> {
   }
 
   try {
-    const { invoke } = await import('$lib/desktop/core');
-    const base64 = await invoke<string>('http_proxy_fetch_base64', { url: artworkUrl });
-    if (!base64) throw new Error('empty artwork');
-
-    const image = new Image();
-    image.src = `data:image/jpeg;base64,${base64}`;
-    await image.decode();
-
-    const size = 24;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) throw new Error('no 2d context');
-    context.drawImage(image, 0, 0, size, size);
-    const { data } = context.getImageData(0, 0, size, size);
-
-    const colour = dominantColour(data);
+    const current = () => generation === artworkGeneration && accentSource === 'song';
+    const colour = await readArtworkColour(artworkUrl, current);
+    if (!current()) return;
     remember(artworkUrl, colour);
     await commit(colour);
   } catch (e) {

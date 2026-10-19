@@ -4,25 +4,106 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] — Unreleased
+## [2.0.0] — 2026-10-19
 
 Furano. The Electron transition; installing from Tauri remains a manual switch.
 
-### Changed
+To migrate, keep Cherry 1.x installed, close it, install 2.0 and choose
+**Migrate from 1.x** on the welcome screen after accepting the disclaimer.
+Check your imported data before optionally uninstalling the old version.
 
-- Replaced the Tauri host with Electron/Chromium, retaining the Cherry frontend
-  and automatic release codenames. The original Cherry repository adopts Electron;
-  Tauri source and releases are preserved in cherry-tauri. macOS is deferred.
-- Windows caption buttons use the system Segoe Fluent/MDL2 glyphs, scale with
-  app zoom and use black or white ink for light and dark themes.
-- Added a minimal one-click NSIS installer: progress, then launch Cherry.
-  Setup uses the dedicated install-cherry artwork; the app icon stays unchanged.
-  Windows packaging produces only NSIS; Linux targets AppImage and Flatpak.
-- GitHub-based updates for Windows and AppImage use explicit download and
-  install actions, progress in the accent color and the existing topbar badge.
-  Flatpak stays managed by Flatpak. The Electron feed is separate from Tauri.
+### Added
+
+- An account menu opens your profile, Settings or quits Cherry, and displays the
+  app version. The sidebar's New button uses a matching anchored creation menu.
+
+- Common actions sit in a cursor-adjacent shortcut row on longer context menus,
+  with consistent icon spacing and clearer music/video link actions. Text fields
+  support native copy, paste and editing menus.
+
+- Search only songs, artists, albums or playlists using `@songs`, `@artists`,
+  `@albums` and `@playlists`, or the labeled result filters. Search requests and
+  caches respect the selected category. Search now sits above Home in the sidebar.
+
+- Pin albums, artists and songs to the sidebar from their context menus. Mixed
+  pins persist and reorder together above playlists/folders in either sidebar
+  layout; album/artist pins open their pages and song pins start playback.
+
+- Create playlists with a title, description and optional cover image in the same
+  sheet used for editing. Selected songs carry over from the playlist picker;
+  retrying failed details or artwork saves reuses the newly created playlist.
+
+- Home shelf headings retain account pictures and profile links. User profiles
+  show their avatar/banner and YouTube's public and signed-in shelves, with
+  working mix playback, playlist links and continuation/More navigation.
+
+- Add songs, playlists and albums to the queue from context menus, including
+  Home/Explore/artist carousels and search. Additions preserve playback and the
+  existing play order, including shuffle; an empty queue is cued without autoplay.
+
+- Added **Migrate from 1.x** to the welcome screen, unlocked by accepting the
+  disclaimer. Preview and import supported preferences, pins, folders and sidebar
+  order, with verified backups, rollback and recovery after an interrupted import.
+- Carry over YouTube Music sign-in and Last.fm credentials through Windows
+  Credential Manager or Linux Secret Service, re-encrypting them for Electron.
+  Existing Electron accounts are kept. Flatpak includes the secret-tool helper.
 
 ### Fixed
+
+- Sidebar pins and their order are isolated by YouTube channel, including rapid
+  account switches and imported 1.x settings. Existing pins stay with their
+  previously selected channel.
+- Long playlist/album views render only the visible rows, retaining full-list
+  playback, keyboard navigation and source indexes for duplicate songs. Small
+  artwork requests use display-sized images while expanded art stays high resolution.
+
+- Automatically skip songs explicitly blocked in your region. Restricted music
+  video counterparts fall back to the original audio when available.
+
+- Back/Forward restores Home and Explore scroll positions, including carousels
+  and filter rows. Explore keeps its loaded sections and pagination for that
+  history visit; fresh navigation still starts at the top.
+
+- Browse subpages follow YouTube's grid/list structure instead of forcing every
+  collection into Home carousels, with matching loading placeholders and working
+  pagination. These pages use Cherry's icon in the top bar. Carousel and filter
+  rows now use their arrows exclusively, without manual scrolling or scrollbars.
+
+- Home preserves YouTube's section order without generating a history-based
+  Listen again fallback. The account avatar appears on the first visible shelf;
+  YouTube's profile endpoint is retained even when supplied by a later section.
+
+- Profile carousels can load beyond their preview items using each section's
+  continuation or More endpoint. Grid/song continuations append without duplicate
+  items; retries preserve existing content and page pagination stays independent.
+
+- Align banner fades with the artwork on playlist, album, artist and profile
+  pages. Header details and artwork reveal when ready, loading shelves match
+  the finished layout, and page changes share reduced-motion-aware transitions.
+
+- Rebuilt custom scrollbars so their thumbs cannot change the measured scroll
+  range. Content growth updates size and position together; dragging rebases
+  safely as content loads. Shared vertical and horizontal scrollbars cover
+  menus, dialogs, lyrics, queues, text fields and carousels, retaining the look.
+- Metadata updates no longer reset a page's scroll position. Playlist header
+  details reveal together once creator metadata arrives; album and artist
+  headers also wait for their details instead of filling in piecemeal.
+- Remove individual songs from editable playlists using their unique playlist
+  entry IDs, preserving other copies of the same video and the playing queue.
+
+- Playlist playback highlights only the playing occurrence when a song appears
+  more than once, including with shuffle. Overlapping identical add-to-playlist
+  requests share one write; intentional duplicate additions remain supported.
+
+- Settings dims and covers the top bar navigation; expanded player Queue/Lyrics
+  shading follows the light theme. Playlist creator metadata loads when opening
+  cards from Home and updates the page and top bar.
+
+- Home/Explore/artist context menus cover artists, mixes/stations and button-style
+  navigation cards. Menu routing honors YouTube's page type as well as browse IDs,
+  and keeps normal selection and station playback endpoints intact.
+
+- Context menus remain visible inside the fullscreen player.
 
 - Installed builds allow generated DASH manifests through the content security
   policy, preventing HD video from silently falling back to the 360p file.
@@ -41,6 +122,95 @@ Furano. The Electron transition; installing from Tauri remains a manual switch.
   stale settings writes, logout clears browser sign-in data, and Settings sizes
   the full local profile rather than only the HTTP cache.
 - Ported Discord Rich Presence, Last.fm scrobbling and playlist-art uploads.
+
+- Recover stalled audio/video with a fresh stream while preserving position.
+  Bound stream resolution, media startup and adaptive-video fallback waits so
+  playback cannot stay stuck indefinitely; failed retries show an error.
+- Show a buffering spinner inside both play buttons after a 300 ms delay,
+  avoiding flashes during quick song changes.
+
+### Changed
+
+- Profile, artist, album and playlist pages share the playlist-style header,
+  with banner art fading behind the details and soft cover-art backdrops where
+  no banner is available. Banners extend behind the top bar and scroll with the
+  page. A shallow top wash uses the player bar's subtle accent tint, follows the
+  Accent gradients setting and stays off on banner pages. Wash colours crossfade;
+  a shallow, even top-bar blur with a 90%
+  surface overlay appears behind the controls only while scrolled down.
+  Album and playlist headers share a
+  shorter layout in both themes.
+
+- Home and Explore use two-row top bar headings; Home's time-based greeting
+  appears above the page name. Home filters gain scroll arrows and edge fades
+  when more filters are available offscreen.
+
+- Top bar artwork uses matching 32px sizing and 8px gaps, with artist portraits
+  and larger page icons. Page headers center shorter details against their 176px
+  artwork while keeping fuller details aligned at the top;
+  artist/profile portraits share that size and the compact banner spacing used
+  by playlist and album pages.
+
+- Moved Back from the sidebar into the top bar beside the current page's
+  artwork, title and details. Home and Explore use filled icons and two-row
+  page headings.
+
+- Compact-player transport and secondary actions use consistent spacing and
+  icon/button sizes. The active queue button keeps its regular queue glyph;
+  active sleep timers retain fixed button sizing with the countdown in the tooltip.
+
+- A floating, rounded compact player puts playback controls on the left and
+  secondary actions on the right. Artwork and track information fill the middle
+  and form the seek bar, with the timestamp always visible. Narrow layouts move
+  controls to a second row; queue popups follow the player's measured height.
+  Play buttons and the seek fill use vertical accent gradients, and the seek
+  background follows the tinted-surfaces option.
+
+- Shared theme colors transition over 300 ms, respecting reduced motion. The
+  accent picker previews immediately and defers surface/wash updates until
+  release. Startup restores the last committed palette before fading in content,
+  avoiding a flash of the default red accent.
+- The first Home shelf always uses the larger heading; later shelves use the
+  standard size, including Listen again when it appears below the first shelf.
+
+- Reduced retained playback-response data and released temporary theme image/canvas
+  buffers before artwork transitions. Disk-restored cache entries now obey the
+  memory limit, with expired entries removed before valid entries are evicted.
+- Shared artwork recovery listeners only while images need recovery, and skipped
+  thumbnail/preload and tray scheduling work on ordinary playback-clock ticks.
+- Removed obsolete WebView memory trimming, GTK window masks and WebKit animation
+  workarounds; Chromium keeps native CSS transitions on every platform.
+
+- Replaced Boxicons with Phosphor fill, duotone and regular variants.
+  Icons are bundled locally; native Windows caption glyphs and the original
+  Discord/Last.fm integration logos are retained.
+- Toggle icons use outline/filled states where applicable. Player transport
+  glyphs match the other controls without shrinking the play-button background;
+  sidebar Back and New icons match the navigation icon sizes.
+- Expanded playback keeps secondary buttons below the main controls. During
+  video playback, idle top/bottom controls slide away with a fade and return on
+  interaction; paused video, audio and queue views keep their controls visible.
+  Songs and videos can enter fullscreen using the bottom-right button, with
+  volume in the bottom left and Escape returning to the expanded player.
+  Video controls hide after 2.4 seconds with a quicker fade. Top controls share
+  Home's button backgrounds and fit two rows in narrow windows; the background
+  gradient starts lower on the screen.
+- Replaced the Tauri host with Electron/Chromium, retaining the Cherry frontend
+  and automatic release codenames. The original Cherry repository adopts Electron;
+  Tauri source and releases are preserved in cherry-tauri. macOS is deferred.
+- Windows caption buttons use the system Segoe Fluent/MDL2 glyphs, scale with
+  app zoom and use black or white ink for light and dark themes.
+- Added a minimal one-click NSIS installer: progress, then launch Cherry.
+  Setup uses the dedicated install-cherry artwork; the app icon stays unchanged.
+  Windows packaging produces only NSIS; Linux targets AppImage and Flatpak.
+- Windows installs its Start menu shortcut under **inane → Cherry**, separate
+  from the legacy Tauri shortcut. Desktop shortcut creation is disabled to avoid
+  another shared-name collision.
+- GitHub-based updates for Windows and AppImage use explicit download and
+  install actions, progress in the accent color and the existing topbar badge.
+  Windows/AppImage use inane-tools/cherry; Flatpak bundles update manually.
+  Electron 1.7.1 previews can reach 2.0 through the cherry-electron bridge, then
+  use the canonical feed. Legacy Tauri update metadata stays pinned to 1.7.0.
 
 ## [1.7.1] — 2026-10-17
 

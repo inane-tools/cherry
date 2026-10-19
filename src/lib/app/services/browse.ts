@@ -3,7 +3,7 @@
 // album / artist / playlist page.
 
 import type { ArtistRef, Thumbnail, Track } from '$lib/core/models';
-import type { HomeSection } from '$lib/infra/ytmusic/rawHome';
+import type { BrowseTarget, HomeSection } from '$lib/infra/ytmusic/rawHome';
 import type { CarouselEntry } from '$lib/ui/components/carouselTypes';
 import { playTracks } from './player';
 import { openPlaylist, playPlaylist } from './playlists';
@@ -11,7 +11,7 @@ import { openAlbum, openArtist } from './catalog';
 import { get } from 'svelte/store';
 import { authStore } from './auth';
 import { getAlbumPage } from '$lib/infra/ytmusic/InnertubeClient';
-import { notify } from './contextMenu';
+import { notify, openContextMenu } from './contextMenu';
 import { errorMessage } from './platform';
 import { playRadio } from './radio';
 import { openPage } from './navigation';
@@ -35,13 +35,14 @@ export function entriesOf(section: HomeSection): CarouselEntry[] {
     key: `c:${card.browseId}${card.params ? `:${card.params}` : ''}`,
     browseId: card.browseId,
     browseParams: card.params,
+    pageType: card.pageType,
     title: card.title,
     subtitle: card.subtitle,
     thumbnails: card.thumbnails,
     kind: 'card',
     playback: card.playback,
-    canPlay: !!card.playback || /^(VL|PL|RD|MPR)/.test(card.browseId) || card.browseId.startsWith('FEmusic_library_privately_owned_release'),
-    round: card.browseId.startsWith('UC') || card.pageType === 'MUSIC_PAGE_TYPE_ARTIST',
+    canPlay: card.pageType !== 'MUSIC_PAGE_TYPE_USER_CHANNEL' && (!!card.playback || /^(VL|PL|RD|MPR)/.test(card.browseId) || card.browseId.startsWith('FEmusic_library_privately_owned_release')),
+    round: card.browseId.startsWith('UC') || card.pageType === 'MUSIC_PAGE_TYPE_ARTIST' || card.pageType === 'MUSIC_PAGE_TYPE_USER_CHANNEL',
   }));
   const songs: CarouselEntry[] = section.songs.map((song) => ({
     key: `s:${song.videoId}`,
@@ -66,19 +67,55 @@ export function sectionTracks(section: HomeSection): Track[] {
   }));
 }
 
+/** Use the same menus on Home, Explore and artist-page carousels. */
+export async function openCarouselMenu(section: HomeSection, entry: CarouselEntry, event: MouseEvent): Promise<void> {
+  const browseId = entry.browseId ?? entry.key.slice(2);
+  event.preventDefault();
+  event.stopPropagation();
+  // Menus pull in library editing; load them only when actually requested.
+  const { trackMenu, playlistMenu, albumMenu, artistMenu, stationMenu } = await import('./menus');
+  if (entry.kind === 'song') {
+    const tracks = sectionTracks(section);
+    const index = tracks.findIndex(track => `s:${track.videoId}` === entry.key);
+    if (index >= 0) openContextMenu(event, trackMenu(tracks[index], tracks, index));
+    return;
+  }
+  if (entry.pageType === 'MUSIC_PAGE_TYPE_USER_CHANNEL') {
+    openContextMenu(event, [{ label: 'Open profile', icon: 'ph ph-user', action: () => openProfile({ browseId, params: entry.browseParams }, entry.title, entry.thumbnails) }]);
+  } else if (entry.pageType === 'MUSIC_PAGE_TYPE_ARTIST' || browseId.startsWith('UC') || browseId.startsWith('FEmusic_library_privately_owned_artist')) {
+    openContextMenu(event, artistMenu({ browseId, name: entry.title }));
+  } else if (entry.pageType === 'MUSIC_PAGE_TYPE_ALBUM' || browseId.startsWith('MPR') || browseId.startsWith('FEmusic_library_privately_owned_release')) {
+    openContextMenu(event, albumMenu({ browseId, title: entry.title, thumbnails: entry.thumbnails, artists: artistsFromSubtitle(entry.subtitle) }));
+  } else if (/^(?:VL)?RD/.test(browseId) || browseId.startsWith('station:') || (!entry.browseId && entry.playback)) {
+    const endpoint = entry.playback ?? { playlistId: browseId.replace(/^VL/, '') };
+    openContextMenu(event, stationMenu(endpoint));
+  } else if (entry.pageType === 'MUSIC_PAGE_TYPE_PLAYLIST' || /^(VL|PL|OLAK)/.test(browseId)) {
+    openContextMenu(event, playlistMenu({ browseId, title: entry.title, thumbnails: entry.thumbnails }));
+  } else if (browseId) {
+    openContextMenu(event, [{ label: 'Open', icon: 'ph ph-arrow-right', action: () => selectCarouselEntry(section, entry) }]);
+  }
+}
+
 /** Open a browse id on the right page type. */
+export function openProfile(target: BrowseTarget, name: string, thumbnails: Thumbnail[] = []): void {
+  openPage({ view: 'browse', entity: { browseId: target.browseId, title: name || 'Profile', params: target.params, kind: 'profile', thumbnails } });
+}
+
 export function openBrowseCard(
   browseId: string,
   title: string,
   thumbnails: Thumbnail[],
   subtitle?: string,
   params?: string,
+  pageType?: string,
 ): void {
   if (!browseId) return;
-  if (browseId.startsWith('MPR') || browseId.startsWith('FEmusic_library_privately_owned_release')) {
+  if (pageType === 'MUSIC_PAGE_TYPE_USER_CHANNEL') {
+    openProfile({ browseId, params }, title, thumbnails);
+  } else if (pageType === 'MUSIC_PAGE_TYPE_ALBUM' || browseId.startsWith('MPR') || browseId.startsWith('FEmusic_library_privately_owned_release')) {
     openAlbum({ browseId, title, artists: artistsFromSubtitle(subtitle), thumbnails });
-  } else if (browseId.startsWith('UC') || browseId.startsWith('FEmusic_library_privately_owned_artist')) {
-    openArtist({ name: title, browseId });
+  } else if (pageType === 'MUSIC_PAGE_TYPE_ARTIST' || browseId.startsWith('UC') || browseId.startsWith('FEmusic_library_privately_owned_artist')) {
+    openArtist({ name: title, browseId, ...(thumbnails.length ? { thumbnails } : {}) });
   } else if (browseId.startsWith('FE')) {
     openPage({ view: 'browse', entity: { browseId, title, params } });
   } else {
@@ -94,7 +131,7 @@ export async function selectCarouselEntry(section: HomeSection, entry: CarouselE
     return;
   }
   if (entry.playback && (!entry.browseId || /^VL?RD/.test(entry.browseId) || entry.browseId.startsWith('RD') || entry.browseId.startsWith('station:'))) { await playRadio(entry.playback); return; }
-  openBrowseCard(entry.browseId ?? entry.key.slice(2), entry.title, entry.thumbnails, entry.subtitle, entry.browseParams);
+  openBrowseCard(entry.browseId ?? entry.key.slice(2), entry.title, entry.thumbnails, entry.subtitle, entry.browseParams, entry.pageType);
 }
 
 /** Play the collection without navigating away from the Home/artist page. */

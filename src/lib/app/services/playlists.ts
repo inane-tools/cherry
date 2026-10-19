@@ -1,7 +1,8 @@
 import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import { get, writable } from 'svelte/store';
-import type { Playlist, Track } from '$lib/core/models';
+import type { AccountProfile, Playlist, Track } from '$lib/core/models';
 import { getActiveChannel, getHomePage, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
+import { withHomeProfile } from '$lib/core/listenAgain';
 import type { HomeSection, HomeFilter } from '$lib/infra/ytmusic/rawHome';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
@@ -27,12 +28,14 @@ export const openPlaylistStore = writable<Playlist | null>(null);
 export const openPlaylistTracks = writable<Track[]>([]);
 export const openPlaylistDescription = writable<string | null>(null);
 export const openPlaylistLoading = writable(false);
+export const openPlaylistHeaderLoading = writable(false);
 export const openPlaylistError = writable<string | null>(null);
 
 let inflight: Promise<void> | null = null;
 let homeInflight: Promise<void> | null = null;
 let moreInflight: Promise<void> | null = null;
 let homeGeneration = 0;
+let homeProfile: AccountProfile | null = null;
 const homeTokens = new Set<string>();
 let generation = 0;
 let lastArtworkRefresh = -Infinity;
@@ -48,10 +51,13 @@ export function refreshPlaylistArtwork(): void {
 function invalidateLoads(): number {
   generation++;
   openSeq++;
+  removedOpenTracks.clear();
+  removedOpenEntries.clear();
   inflight = null;
   homeInflight = null;
   moreInflight = null;
   homeGeneration++;
+  homeProfile = null;
   homeFilterStore.set(null);
   homeFiltersStore.set([]);
   homeTokens.clear();
@@ -61,6 +67,7 @@ function invalidateLoads(): number {
   libraryLoading.set(false);
   homeLoading.set(false);
   openPlaylistLoading.set(false);
+  openPlaylistHeaderLoading.set(false);
   return generation;
 }
 
@@ -124,12 +131,13 @@ export function loadHome(): Promise<void> {
   homeInflight = (async () => {
     homeLoading.set(true);
     try {
-      await initChannel();
+      const profile = await initChannel();
       if (stale()) return;
       channel = getActiveChannel();
       const page = await getHomePage(session, undefined, get(homeFilterStore));
       if (stale()) return;
-      homeSectionsStore.set(page.sections);
+      homeProfile = profile;
+      homeSectionsStore.set(withHomeProfile(page.sections, profile));
       homeTokens.clear();
       homeContinuationStore.set(page.continuation);
       homeMoreError.set('');
@@ -170,7 +178,7 @@ export function loadMoreHome(): Promise<void> {
       const key = (section: HomeSection) => JSON.stringify([section.title, section.cards.map((c) => c.browseId), section.songs.map((s) => s.videoId)]);
       homeSectionsStore.update((sections) => {
         const seen = new Set(sections.map(key));
-        return [...sections, ...page.sections.filter((section) => { const identity = key(section); if (seen.has(identity)) return false; seen.add(identity); return true; })];
+        return withHomeProfile([...sections, ...page.sections.filter((section) => { const identity = key(section); if (seen.has(identity)) return false; seen.add(identity); return true; })], homeProfile);
       });
       homeContinuationStore.set(page.continuation && !homeTokens.has(page.continuation) && homeTokens.size < 20 ? page.continuation : null);
     } catch { if (!stale()) homeMoreError.set('Could not load more recommendations. Try again.'); }
@@ -233,6 +241,8 @@ export async function refreshLibrary(): Promise<void> {
  * restores the page without a redundant reload.
  */
 export function openPlaylist(playlist: Playlist): void {
+  const known = get(playlistStore).find(item => item.browseId === playlist.browseId);
+  if (known) playlist = { ...known, ...playlist, author: playlist.author || known.author };
   rememberPlaylist(playlist);
   openPage({ view: 'playlist', entity: playlist });
 }
@@ -283,11 +293,20 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
 // Guards against out-of-order responses: opening playlist A then B quickly must
 // not let A's (slower) fetch overwrite B's tracks.
 let openSeq = 0;
+let removedOpenTracks = new Set<Track>();
+let removedOpenEntries = new Set<string>();
+function visibleOpenTracks(tracks: Track[]): Track[] {
+  if (!removedOpenTracks.size && !removedOpenEntries.size) return tracks;
+  return tracks.filter(track => !removedOpenTracks.has(track) && !(track.playlistEntryId && removedOpenEntries.has(track.playlistEntryId)));
+}
 
 /** Load the tracks for the playlist currently on screen. */
 export async function loadOpenPlaylist(playlist: Playlist, options: { preserveContent?: boolean } = {}): Promise<void> {
   const preserve = options.preserveContent && get(openPlaylistStore)?.browseId === playlist.browseId;
   const id = ++openSeq;
+  removedOpenTracks = new Set();
+  removedOpenEntries = new Set();
+  openPlaylistHeaderLoading.set(!preserve);
   openPlaylistStore.set(playlist);
   // Clear synchronously so the previous playlist's tracks can never flash under
   // the new header while this load is in flight.
@@ -298,12 +317,14 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
   openPlaylistError.set(null);
   const session = get(authStore);
   if (!session) {
+    openPlaylistHeaderLoading.set(false);
     openPlaylistLoading.set(false);
     openPlaylistError.set('Sign in to open playlists.');
     return;
   }
   openPlaylistLoading.set(!preserve);
   let channel: string | undefined;
+  let headerStarted = false;
   const stale = () => id !== openSeq || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   try {
@@ -312,11 +333,13 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
     channel = getActiveChannel();
     // Header metadata (description/art) is independent of the track stream, so
     // fetch it alongside rather than serialising the two.
+    headerStarted = true;
     void getPlaylistMeta(playlist.browseId, session).then((meta) => {
       if (stale()) return;
       openPlaylistDescription.set(meta?.description ?? null);
       if (meta) patchPlaylist(playlist.browseId, {
         ...(meta.title ? { title: meta.title } : {}),
+        ...(meta.author ? { author: meta.author } : {}),
         ...(meta.thumbnails?.length ? { thumbnails: meta.thumbnails } : {}),
       });
       if (meta?.canEdit) {
@@ -326,25 +349,28 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
           }
         });
       }
-    });
+    }).catch(error => console.warn('[cherry] playlist header could not be loaded:', error))
+      .finally(() => { if (!stale()) openPlaylistHeaderLoading.set(false); });
     const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done) => {
       if (stale()) return;
       if (preserve && !done) return;
-      openPlaylistTracks.set(partial);
+      openPlaylistTracks.set(visibleOpenTracks(partial));
       // The first page is enough to render and play; drop the skeleton while
       // the remaining pages keep streaming in.
       if (!done) openPlaylistLoading.set(false);
     });
     if (stale()) return;
-    openPlaylistTracks.set(tracks);
-    patchPlaylist(playlist.browseId, { trackCount: tracks.length });
-    if (tracks.length === 0) {
+    const visible = visibleOpenTracks(tracks);
+    openPlaylistTracks.set(visible);
+    patchPlaylist(playlist.browseId, { trackCount: visible.length });
+    if (visible.length === 0) {
       openPlaylistError.set('This playlist has no playable tracks.');
     }
   } catch (e) {
     if (stale()) return;
     if (!preserve || !get(openPlaylistTracks).length) openPlaylistError.set(e instanceof Error ? e.message : String(e));
   } finally {
+    if (id === openSeq && !headerStarted) openPlaylistHeaderLoading.set(false);
     if (id === openSeq) openPlaylistLoading.set(false);
   }
 }
@@ -355,6 +381,20 @@ function patchPlaylist(browseId: string, patch: Partial<Playlist>): void {
   openPlaylistStore.update(item => item?.browseId === browseId ? { ...item, ...patch } : item);
   pageStore.update(page => page.view === 'playlist' && page.entity.browseId === browseId ? { ...page, entity: { ...page.entity, ...patch } } : page);
   homeSectionsStore.update(sections => sections.map(section => ({ ...section, cards: section.cards.map(card => card.browseId === browseId ? { ...card, ...patch } : card) })));
+}
+
+/** Remove one confirmed entry without interrupting the playing queue. */
+export function recordPlaylistRemoval(playlist: Playlist, track: Track): void {
+  if (get(openPlaylistStore)?.browseId === playlist.browseId) {
+    removedOpenTracks.add(track);
+    if (track.playlistEntryId) removedOpenEntries.add(track.playlistEntryId);
+    openPlaylistTracks.update(tracks => {
+      const at = track.playlistEntryId ? tracks.findIndex(item => item.playlistEntryId === track.playlistEntryId) : tracks.indexOf(track);
+      return at < 0 ? tracks : [...tracks.slice(0, at), ...tracks.slice(at + 1)];
+    });
+  }
+  const current = get(playlistStore).find(item => item.browseId === playlist.browseId) ?? playlist;
+  if (current.trackCount !== undefined) patchPlaylist(playlist.browseId, { trackCount: Math.max(0, current.trackCount - 1) });
 }
 
 const editRefreshes = new Map<string, symbol>();
@@ -373,12 +413,13 @@ export async function refreshEditedPlaylist(playlist: Playlist, addedTracks: Tra
   if (current.trackCount !== undefined) patchPlaylist(playlist.browseId, { trackCount: current.trackCount + addedTracks.length });
   try {
     if (get(openPlaylistStore)?.browseId === playlist.browseId) {
-      openPlaylistTracks.update(tracks => [...tracks, ...addedTracks]);
+      openPlaylistTracks.update(tracks => [...tracks, ...addedTracks.map(({ playlistEntryId: _sourceEntry, ...track }) => track)]);
       await loadOpenPlaylist(get(openPlaylistStore)!, { preserveContent: true });
     } else {
       const meta = await getPlaylistMeta(playlist.browseId, session);
       if (!stale() && meta) patchPlaylist(playlist.browseId, {
         ...(meta.title ? { title: meta.title } : {}),
+        ...(meta.author ? { author: meta.author } : {}),
         ...(meta.thumbnails?.length ? { thumbnails: meta.thumbnails } : {}),
       });
     }
@@ -398,6 +439,7 @@ authStore.subscribe((session) => {
   homeSectionsStore.set([]);
   libraryError.set(null);
   openPlaylistStore.set(null);
+  openPlaylistHeaderLoading.set(false);
   openPlaylistTracks.set([]);
   openPlaylistDescription.set(null);
   openPlaylistError.set(null);

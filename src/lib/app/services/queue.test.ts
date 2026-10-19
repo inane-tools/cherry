@@ -43,6 +43,15 @@ beforeEach(() => {
 });
 
 describe('linear queue', () => {
+  it('appends explicit additions without rearranging an existing shuffled tail', () => {
+    setQueue(tracks('a', 'b', 'c', 'd'));
+    setShuffle(true);
+    const before = upcoming();
+    const now = current();
+    enqueue(tracks('x', 'y'), false, { appendInOrder: true });
+    expect(current()).toBe(now);
+    expect(upcoming()).toEqual([...before, 'x', 'y']);
+  });
   it('starts at the requested track and steps forward', () => {
     setQueue(tracks('a', 'b', 'c'), 1);
     expect(current()).toBe('b');

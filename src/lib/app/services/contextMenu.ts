@@ -5,11 +5,18 @@
 // component renders and dispatches them.
 
 import { writable } from 'svelte/store';
+import type { Thumbnail } from '$lib/core/models';
 
 export interface ContextMenuItem {
   label: string;
-  /** Boxicons class, e.g. `bx bx-play`. */
+  /** Phosphor icon classes, e.g. `ph-fill ph-play`. */
   icon?: string;
+  brandIcon?: 'youtube-music';
+  customIcon?: 'mix';
+  /** Playlist artwork with a small add badge; an empty array uses a fallback. */
+  playlistArtwork?: Thumbnail[];
+  /** Promote this action into the shortcut row on longer menus. */
+  quick?: boolean;
   disabled?: boolean;
   /** Clearly mark actions that permanently delete something. */
   destructive?: boolean;

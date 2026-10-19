@@ -1,257 +1,307 @@
-// A thin, overlay scrollbar drawn by the app.
-//
-// WebView2/Edge renders native scrollbars and ignores all `::-webkit-scrollbar`
-// styling, which is why the app previously used the `OverlayScrollbar` browser
-// flag — but that flag stops *secondary* webviews (the YouTube Music login
-// window) from initialising, so it can't be used. Instead the native bar is
-// hidden with the standard `scrollbar-width: none` (which WebView2 does honour
-// when set on the scroll container itself) and this action paints a slim thumb
-// over the content.
-//
-// The thumb is an absolutely-positioned child of the scroller, so it scrolls
-// with the content. On scroll we therefore position it purely with `transform`
-// (never `top`), which avoids a per-frame layout read/reflow and — because it is
-// written synchronously in the scroll handler, not deferred to an animation
-// frame — never lags a frame behind the content (the old source of "jitter" on
-// long playlists).
-
+// The track is a sibling of the viewport: it never contributes to scrollHeight.
+// Content/viewport changes are measured once per frame; ordinary scrolling only
+// paints from cached geometry. Thumb size and position always update together.
 const MIN_THUMB = 28;
 const HIDE_AFTER_MS = 800;
-/**
- * Content can stream in (playlist pages, home feed) which changes `scrollHeight`
- * many times a second. Measuring on every mutation forces a layout read + write
- * each frame and makes the thumb jump around, so growth is coalesced instead.
- */
-const MEASURE_DEBOUNCE_MS = 120;
+const positionedParents = new WeakMap<HTMLElement, { count: number; original: string; changed: boolean }>();
+const owners = new WeakMap<Element, HTMLElement>();
+let nextId = 0;
 
-export interface OverlayScrollbarOptions {
-  /** Hide the thumb entirely (e.g. the compact sidebar). */
-  enabled?: boolean;
-  /** Reveal for wheel/touch/keyboard input, not playback-driven scrolls. */
-  userScrollOnly?: boolean;
-  /**
-   * Pixels at the top of the scroller the thumb must stay below. Used when the
-   * scroller runs under an overlaid title bar, so the bar does not sit behind it.
-   */
-  topInset?: number;
+/** Floating menus can recognize interaction with their external scrollbar. */
+export function scrollbarOwner(target: EventTarget | null): HTMLElement | undefined {
+  return target instanceof Element ? owners.get(target.closest('.cherry-sb-track')!) : undefined;
 }
 
-export function overlayScrollbar(node: HTMLElement, options: OverlayScrollbarOptions = {}) {
+function positionParent(parent: HTMLElement): () => void {
+  let state = positionedParents.get(parent);
+  if (!state) {
+    const position = getComputedStyle(parent).position;
+    state = { count: 0, original: parent.style.position, changed: position === 'static' || !position };
+    if (state.changed) parent.style.position = 'relative';
+    positionedParents.set(parent, state);
+  }
+  state.count++;
+  return () => {
+    if (--state!.count) return;
+    if (state!.changed && parent.style.position === 'relative') parent.style.position = state!.original;
+    positionedParents.delete(parent);
+  };
+}
+
+export interface OverlayScrollbarOptions {
+  enabled?: boolean;
+  /** Reveal only for manual input, not lyric-follow scrolling. */
+  userScrollOnly?: boolean;
+  /** Keep the vertical thumb below an overlaid top bar. */
+  topInset?: number;
+  axis?: 'x' | 'y';
+}
+
+export function overlayScrollbar(node: HTMLElement, initial: OverlayScrollbarOptions = {}) {
+  const parent = node.parentElement;
+  if (!parent) return;
+  const releaseParent = positionParent(parent);
+  const axis = initial.axis ?? 'y';
+  const horizontal = axis === 'x';
+  const nativeClass = horizontal ? 'cherry-overlay-scroll-x' : 'cherry-overlay-scroll';
+  const hadClass = node.classList.contains(nativeClass);
+  node.classList.add(nativeClass);
+  const assignedId = !node.id ? `cherry-scroll-${++nextId}` : '';
+  if (assignedId) node.id = assignedId;
+  const track = document.createElement('div');
+  track.className = `cherry-sb-track ${horizontal ? 'is-horizontal' : 'is-vertical'}`;
+  track.style.zIndex = String(Math.max(5, (Number.parseInt(getComputedStyle(node).zIndex, 10) || 0) + 1));
   const thumb = document.createElement('div');
   thumb.className = 'cherry-sb-thumb';
-  node.appendChild(thumb);
+  thumb.setAttribute('role', 'scrollbar');
+  thumb.setAttribute('aria-label', node.getAttribute('aria-label') || 'Scroll');
+  thumb.setAttribute('aria-controls', node.id);
+  thumb.setAttribute('aria-orientation', horizontal ? 'horizontal' : 'vertical');
+  thumb.setAttribute('aria-valuemin', '0');
+  thumb.setAttribute('aria-valuemax', '100');
+  track.appendChild(thumb);
+  parent.appendChild(track);
+  owners.set(track, node);
 
-  let enabled = options.enabled !== false;
-  let topInset = Math.max(0, options.topInset ?? 0);
-  let userScrollOnly = options.userScrollOnly === true;
-  let userScrollUntil = 0;
-
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let measureTimer: ReturnType<typeof setTimeout> | null = null;
+  let options = initial;
   let frame = 0;
-  let dragging = false;
-
-  // Cached geometry; refreshed on resize/mutation/content-size change.
+  let destroyed = false;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  let userUntil = 0;
+  let viewport = 0, range = 0, length = 0, size = 0, travel = 0;
   let hasThumb = false;
-  let travel = 0; // thumb travel per pixel scrolled: (available - h) / (content - viewport)
-  let contentHeight = 0;
-  let thumbHeight = 0;
-  let lastContent = -1;
-  let lastViewport = -1;
-
-  function measure(): void {
-    if (!enabled) {
-      hasThumb = false;
-      thumb.style.display = 'none';
-      return;
-    }
-    const viewport = node.clientHeight;
-    const content = node.scrollHeight;
-    if (content === lastContent && viewport === lastViewport) return;
-    lastContent = content;
-    lastViewport = viewport;
-    contentHeight = content;
-    if (content <= viewport + 1) {
-      hasThumb = false;
-      thumb.style.display = 'none';
-      return;
-    }
-    hasThumb = true;
-    thumb.style.display = '';
-    // The track is only as long as the visible content area (below the inset).
-    const available = Math.max(0, viewport - topInset);
-    const height = Math.max(MIN_THUMB, Math.round((available * viewport) / content));
-    thumbHeight = height;
-    travel = content - viewport > 0 ? (available - height) / (content - viewport) : 0;
-    thumb.style.height = `${height}px`;
-  }
+  let overThumb = false;
+  let drag: { id: number; anchor: number; last: number; scroll: number; factor: number } | undefined;
+  const enabled = () => options.enabled !== false;
+  const position = () => horizontal ? node.scrollLeft : node.scrollTop;
+  const coordinate = (event: PointerEvent) => horizontal ? event.clientX : event.clientY;
+  const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max));
 
   function paint(): void {
     if (!hasThumb) return;
-    // The thumb rides the content, so add the scroll offset back before applying
-    // the proportional travel. Crucially, clamp it inside the content: a stale
-    // `travel` (the content grew since the last measure) would otherwise push the
-    // thumb past the end, and because it is a child of the scroller its
-    // transformed box then *extends the scrollable area* — which lets you scroll
-    // further, pushing it further again (runaway scroll). The clamp breaks that.
-    const wanted = topInset + node.scrollTop * (1 + travel);
-    const maxTop = Math.max(0, contentHeight - thumbHeight);
-    const top = Math.min(Math.max(0, wanted), maxTop);
-    thumb.style.transform = `translateY(${top}px)`;
+    const fraction = range ? clamp(position(), range) / range : 0;
+    thumb.style.transform = horizontal ? `translateX(${fraction * travel}px)` : `translateY(${fraction * travel}px)`;
+    thumb.setAttribute('aria-valuenow', String(Math.round(fraction * 100)));
   }
-
-  function scheduleMeasure(): void {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      measure();
-      paint();
-    });
+  function clearHide(): void {
+    if (hideTimer !== undefined) clearTimeout(hideTimer);
+    hideTimer = undefined;
   }
-
-  function scheduleMeasureDebounced(): void {
-    if (measureTimer) clearTimeout(measureTimer);
-    measureTimer = setTimeout(() => {
-      measureTimer = null;
-      scheduleMeasure();
-    }, MEASURE_DEBOUNCE_MS);
+  function hide(): void {
+    if (!drag && !overThumb && document.activeElement !== thumb) thumb.classList.remove('is-visible');
   }
-
-  function setVisible(value: boolean): void {
-    thumb.classList.toggle('is-visible', value);
-  }
-
   function reveal(): void {
-    if (!enabled) return;
-    setVisible(true);
-    paint();
-    if (hideTimer) clearTimeout(hideTimer);
-    // Keep it pinned open while the user is dragging it.
-    if (!dragging) hideTimer = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
+    if (!enabled() || !hasThumb) return;
+    thumb.classList.add('is-visible');
+    clearHide();
+    if (!drag && !overThumb && document.activeElement !== thumb) hideTimer = setTimeout(hide, HIDE_AFTER_MS);
   }
-
-  function onEnter(): void {
-    if (!enabled || userScrollOnly) return;
-    setVisible(true);
-    if (hideTimer) clearTimeout(hideTimer);
+  function setPosition(value: number): void {
+    if (horizontal) node.scrollLeft = clamp(value, range);
+    else node.scrollTop = clamp(value, range);
     paint();
   }
-
-  function onLeave(): void {
-    if (!dragging) setVisible(false);
+  function measure(): void {
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    if (destroyed) return;
+    viewport = horizontal ? node.clientWidth : node.clientHeight;
+    const content = horizontal ? node.scrollWidth : node.scrollHeight;
+    const inset = horizontal ? 0 : clamp(options.topInset ?? 0, viewport);
+    length = Math.max(0, viewport - inset);
+    range = Math.max(0, content - viewport);
+    size = Math.min(length, Math.max(MIN_THUMB, content ? length * viewport / content : 0));
+    travel = Math.max(0, length - size);
+    hasThumb = enabled() && viewport > 0 && range > 1 && travel > 0;
+    track.hidden = !hasThumb;
+    thumb.tabIndex = hasThumb ? 0 : -1;
+    // Layout offsets keep the track aligned inside translated/scaled sheets.
+    track.style.left = `${node.offsetLeft + node.clientLeft + (horizontal ? 0 : node.clientWidth - 12)}px`;
+    track.style.top = `${node.offsetTop + node.clientTop + (horizontal ? node.clientHeight - 12 : inset)}px`;
+    track.style.width = `${horizontal ? viewport : 12}px`;
+    track.style.height = `${horizontal ? 12 : length}px`;
+    thumb.style.width = horizontal ? `${size}px` : '4px';
+    thumb.style.height = horizontal ? '4px' : `${size}px`;
+    if (!hasThumb) {
+      endDrag();
+      clearHide();
+      thumb.classList.remove('is-visible');
+    } else if (drag) {
+      // Rebase to the current pointer/scroll position when streamed content
+      // changes the mapping. A resize must never move the page by itself.
+      const rect = track.getBoundingClientRect();
+      const scale = (horizontal ? rect.width : rect.height) / length || 1;
+      drag.anchor = drag.last;
+      drag.scroll = position();
+      drag.factor = range / travel / scale;
+    }
+    paint();
   }
-  function onUserScroll(event: Event): void {
-    if (event instanceof KeyboardEvent && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
-    userScrollUntil = performance.now() + 1200;
-    if (userScrollOnly) reveal();
+  function schedule(): void {
+    if (!destroyed && !frame) frame = requestAnimationFrame(measure);
   }
   function onScroll(): void {
-    if (!userScrollOnly || dragging || performance.now() < userScrollUntil) reveal();
-    else paint();
+    paint();
+    if (!options.userScrollOnly || drag || performance.now() < userUntil) reveal();
   }
-
-  // Drag the thumb to scroll. The thumb rides the content, so one screen pixel
-  // of pointer travel maps to `travel` scroll pixels; fall back to a whole-range
-  // jump if the geometry is degenerate.
-  function onThumbDown(event: PointerEvent): void {
-    if (!enabled || !hasThumb) return;
+  function onUserScroll(event: Event): void {
+    if (event instanceof KeyboardEvent && !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+    userUntil = performance.now() + 1200;
+    if (options.userScrollOnly) reveal();
+  }
+  function onEnter(): void { if (!options.userScrollOnly) reveal(); }
+  function onLeave(event: MouseEvent): void {
+    const target = event.relatedTarget;
+    if (target instanceof Node && (node.contains(target) || track.contains(target))) return;
+    hide();
+  }
+  function onThumbEnter(): void { overThumb = true; reveal(); }
+  function onThumbLeave(event: MouseEvent): void { overThumb = false; onLeave(event); }
+  function onMove(event: PointerEvent): void {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag.last = coordinate(event);
+    setPosition(drag.scroll + (drag.last - drag.anchor) * drag.factor);
+  }
+  function endDrag(): void {
+    const previous = drag;
+    drag = undefined;
+    window.removeEventListener('pointermove', onMove, true);
+    window.removeEventListener('pointerup', onUp, true);
+    window.removeEventListener('pointercancel', onUp, true);
+    window.removeEventListener('blur', endDrag);
+    if (previous) {
+      try { thumb.releasePointerCapture(previous.id); } catch { /* capture already lost */ }
+      if (!destroyed) reveal();
+    }
+  }
+  function onUp(event: PointerEvent): void { if (event.pointerId === drag?.id) endDrag(); }
+  function onDown(event: PointerEvent): void {
+    if (event.button !== 0 || drag || !enabled()) return;
+    measure();
+    if (!hasThumb) return;
     event.preventDefault();
     event.stopPropagation();
-    dragging = true;
-    setVisible(true);
-    if (hideTimer) clearTimeout(hideTimer);
-
-    const startY = event.clientY;
-    const startScroll = node.scrollTop;
-    const perPixel = travel > 0.0001 ? 1 / travel : node.scrollHeight - node.clientHeight;
-
-    const onMove = (ev: PointerEvent) => {
-      node.scrollTop = startScroll + (ev.clientY - startY) * perPixel;
-    };
-    const end = (ev: PointerEvent) => {
-      dragging = false;
-      thumb.removeEventListener('pointermove', onMove);
-      thumb.removeEventListener('pointerup', end);
-      thumb.removeEventListener('pointercancel', end);
-      try {
-        thumb.releasePointerCapture(ev.pointerId);
-      } catch {
-        /* already released */
-      }
-      reveal();
-    };
-
-    try {
-      thumb.setPointerCapture(event.pointerId);
-    } catch {
-      /* capture is best-effort */
-    }
-    thumb.addEventListener('pointermove', onMove);
-    thumb.addEventListener('pointerup', end);
-    thumb.addEventListener('pointercancel', end);
+    const rect = track.getBoundingClientRect();
+    const scale = (horizontal ? rect.width : rect.height) / length || 1;
+    drag = { id: event.pointerId, anchor: coordinate(event), last: coordinate(event), scroll: position(), factor: range / travel / scale };
+    reveal();
+    try { thumb.setPointerCapture(event.pointerId); } catch { /* window listeners cover capture failure */ }
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
+    window.addEventListener('blur', endDrag);
   }
+  function onKey(event: KeyboardEvent): void {
+    const forward = horizontal ? 'ArrowRight' : 'ArrowDown';
+    const backward = horizontal ? 'ArrowLeft' : 'ArrowUp';
+    let next = position();
+    if (event.key === forward) next += 40;
+    else if (event.key === backward) next -= 40;
+    else if (event.key === 'PageDown' || event.key === ' ') next += viewport * (event.shiftKey ? -0.9 : 0.9);
+    else if (event.key === 'PageUp') next -= viewport * 0.9;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = range;
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPosition(next);
+    reveal();
+  }
+  function onThumbWheel(event: WheelEvent): void {
+    if (!hasThumb) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = horizontal ? event.deltaX || event.deltaY : event.deltaY;
+    setPosition(position() + delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport : 1));
+    reveal();
+  }
+  function stopClick(event: Event): void { event.stopPropagation(); }
 
-  // No layout read here — just `scrollTop` and a transform write — so this can
-  // run synchronously on every scroll without reflowing or lagging.
   node.addEventListener('scroll', onScroll, { passive: true });
   node.addEventListener('wheel', onUserScroll, { passive: true });
   node.addEventListener('touchmove', onUserScroll, { passive: true });
   node.addEventListener('keydown', onUserScroll);
   node.addEventListener('mouseenter', onEnter);
   node.addEventListener('mouseleave', onLeave);
-  thumb.addEventListener('pointerdown', onThumbDown);
+  node.addEventListener('load', schedule, true);
+  node.addEventListener('input', schedule);
+  thumb.addEventListener('pointerdown', onDown);
+  thumb.addEventListener('lostpointercapture', endDrag);
+  thumb.addEventListener('keydown', onKey);
+  thumb.addEventListener('focus', reveal);
+  thumb.addEventListener('blur', hide);
+  thumb.addEventListener('mouseenter', onThumbEnter);
+  thumb.addEventListener('mouseleave', onThumbLeave);
+  track.addEventListener('click', stopClick);
+  track.addEventListener('mousedown', stopClick);
+  thumb.addEventListener('wheel', onThumbWheel, { passive: false });
 
-  const resize = new ResizeObserver(() => scheduleMeasure());
+  const resize = new ResizeObserver(schedule);
   resize.observe(node);
-  // `node` keeps its size while its *content* grows (e.g. a settings section
-  // expanding), so watch the content too — otherwise `travel` goes stale and the
-  // thumb drifts past the end (see `paint`).
-  const contentResize = new ResizeObserver(() => scheduleMeasure());
+  resize.observe(parent);
+  const siblings = new Set<Element>();
+  function observeLayout(): void {
+    const children = new Set(Array.from(parent!.children).filter(child => child !== node && !child.classList.contains('cherry-sb-track')));
+    for (const child of siblings) if (!children.has(child)) { resize.unobserve(child); siblings.delete(child); }
+    for (const child of children) if (!siblings.has(child)) { resize.observe(child); siblings.add(child); }
+  }
+  observeLayout();
+  const contentResize = new ResizeObserver(schedule);
+  const observed = new Set<Element>();
   function observeContent(): void {
-    contentResize.disconnect();
-    for (const child of Array.from(node.children)) {
-      if (child !== thumb) contentResize.observe(child);
-    }
+    const children = new Set(Array.from(node.children).filter(child => !child.classList.contains('cherry-sb-track')));
+    for (const child of observed) if (!children.has(child)) { contentResize.unobserve(child); observed.delete(child); }
+    for (const child of children) if (!observed.has(child)) { contentResize.observe(child); observed.add(child); }
   }
   observeContent();
-  const mutate = new MutationObserver(() => {
-    observeContent();
-    scheduleMeasureDebounced();
+  const mutate = new MutationObserver(records => {
+    if (records.some(record => record.target === node && record.type === 'childList')) observeContent();
+    schedule();
   });
-  mutate.observe(node, { childList: true, subtree: true });
-
+  mutate.observe(node, { childList: true, subtree: true, characterData: true });
+  const hostMutate = new MutationObserver(records => {
+    if (!records.some(record => [...record.addedNodes, ...record.removedNodes].some(child => child instanceof Element && !child.classList.contains('cherry-sb-track')))) return;
+    observeLayout();
+    schedule();
+  });
+  hostMutate.observe(parent, { childList: true });
+  // Portalled menus can move without changing size; follow their position too.
+  const placement = new MutationObserver(schedule);
+  placement.observe(node, { attributes: true, attributeFilter: ['style', 'class'] });
+  window.addEventListener('resize', schedule);
   measure();
-  paint();
 
   return {
     update(next: OverlayScrollbarOptions = {}): void {
-      const nextEnabled = next.enabled !== false;
-      const nextInset = Math.max(0, next.topInset ?? 0);
-      const nextUserOnly = next.userScrollOnly === true;
-      if (nextEnabled === enabled && nextInset === topInset && nextUserOnly === userScrollOnly) return;
-      enabled = nextEnabled;
-      topInset = nextInset;
-      userScrollOnly = nextUserOnly;
-      lastContent = -1;
-      lastViewport = -1;
-      if (!enabled) setVisible(false);
-      scheduleMeasure();
+      if (next.enabled === options.enabled && next.topInset === options.topInset && next.userScrollOnly === options.userScrollOnly) return;
+      options = next;
+      if (!enabled()) { endDrag(); clearHide(); thumb.classList.remove('is-visible'); }
+      schedule();
     },
-    destroy() {
+    destroy(): void {
+      destroyed = true;
+      endDrag();
+      clearHide();
+      if (frame) cancelAnimationFrame(frame);
+      resize.disconnect();
+      contentResize.disconnect();
+      mutate.disconnect();
+      hostMutate.disconnect();
+      placement.disconnect();
+      window.removeEventListener('resize', schedule);
       node.removeEventListener('scroll', onScroll);
       node.removeEventListener('wheel', onUserScroll);
       node.removeEventListener('touchmove', onUserScroll);
       node.removeEventListener('keydown', onUserScroll);
       node.removeEventListener('mouseenter', onEnter);
       node.removeEventListener('mouseleave', onLeave);
-      thumb.removeEventListener('pointerdown', onThumbDown);
-      resize.disconnect();
-      contentResize.disconnect();
-      mutate.disconnect();
-      if (hideTimer) clearTimeout(hideTimer);
-      if (measureTimer) clearTimeout(measureTimer);
-      if (frame) cancelAnimationFrame(frame);
-      thumb.remove();
+      node.removeEventListener('load', schedule, true);
+      node.removeEventListener('input', schedule);
+      track.remove();
+      owners.delete(track);
+      if (!hadClass) node.classList.remove(nativeClass);
+      if (assignedId && node.id === assignedId) node.removeAttribute('id');
+      releaseParent();
     },
   };
 }

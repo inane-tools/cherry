@@ -1,30 +1,35 @@
 <script lang="ts">
-  import { bestThumbnail, thumbnailSources, trackDisplayArtists } from '$lib/core/models';
-  import { artwork } from '$lib/ui/actions/artwork';
+  import { fade } from '$lib/ui/transitions';
+  import { trackDisplayArtists } from '$lib/core/models';
+  import EntityHeader from '$lib/ui/components/EntityHeader.svelte';
   import {
     loadOpenPlaylist,
     openPlaylistDescription,
     openPlaylistError,
     openPlaylistLoading,
+    openPlaylistHeaderLoading,
     openPlaylistTracks,
     playlistStore,
   } from '$lib/app/services/playlists';
   import { pageStore } from '$lib/app/services/navigation';
   import { playTracks, playTracksShuffled } from '$lib/app/services/player';
-  import { shuffleMode } from '$lib/app/services/queue';
+  import { currentItem, shuffleMode } from '$lib/app/services/queue';
+  import { playingTrackIndex } from '$lib/core/playingTrackIndex';
   import { authStore } from '$lib/app/services/auth';
   import { openPlaylistEditor } from '$lib/app/services/playlistEditor';
   import { addablePlaylistsStore } from '$lib/app/services/addablePlaylists';
   import { savePlaylist, unsavePlaylist } from '$lib/app/services/playlistLibrary';
   import { requestPlaylistDeletion } from '$lib/app/services/playlistDelete';
+  import { playlistMenu } from '$lib/app/services/menus';
+  import { queueCollection } from '$lib/app/services/queueActions';
   import { openContextMenu } from '$lib/app/services/contextMenu';
-  import TrackRow from '$lib/ui/components/TrackRow.svelte';
+  import TrackList from '$lib/ui/components/TrackList.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
 
   $: page = $pageStore;
   $: playlist = page.view === 'playlist' ? page.entity : null;
   $: tracks = $openPlaylistTracks;
-  $: cover = playlist ? bestThumbnail(playlist.thumbnails, 512) : '';
+  $: currentTrackIndex = playingTrackIndex(tracks, $currentItem);
   $: artworkPlaylist = $playlistStore.find((p) => p.browseId === playlist?.browseId) ?? playlist;
   $: totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds ?? 0), 0);
   $: totalLabel = fmtTotal(totalSeconds);
@@ -57,8 +62,9 @@
     const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
     event.stopPropagation();
     openContextMenu(new MouseEvent('click', { clientX: bounds.left, clientY: bounds.bottom + 4 }), [
-      { label: 'Edit playlist…', icon: 'bx bx-pencil', action: () => openPlaylistEditor(selected) },
-      { label: 'Delete playlist…', icon: 'bx bx-trash', destructive: true, action: () => requestPlaylistDeletion(selected) },
+      { label: 'Add to queue', icon: 'ph ph-list-plus', action: () => queueCollection(selected) },
+      { label: 'Edit playlist…', icon: 'ph ph-pencil-simple', action: () => openPlaylistEditor(selected) },
+      { label: 'Delete playlist…', icon: 'ph ph-trash', destructive: true, action: () => requestPlaylistDeletion(selected) },
     ]);
   }
 </script>
@@ -67,22 +73,14 @@
   {#if !playlist}
     <p class="text-[13px] text-zinc-500">No playlist selected.</p>
   {:else}
-    <header class="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start">
-      <div class="h-44 w-44 shrink-0 overflow-hidden rounded-lg bg-white/5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
-        {#if cover}
-          <img use:artwork={{ urls: thumbnailSources(artworkPlaylist?.thumbnails ?? [], 512) }} alt="" class="h-full w-full object-cover" />
-        {:else}
-          <div class="flex h-full w-full items-center justify-center text-zinc-600">
-            <i class="bx bx-music text-5xl"></i>
-          </div>
-        {/if}
-      </div>
+    <EntityHeader thumbnails={artworkPlaylist?.thumbnails ?? []} condensed loading={$openPlaylistHeaderLoading}
+      onContextMenu={(event) => openContextMenu(event, playlistMenu(playlist))}>
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
           <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-semibold text-zinc-300">Playlist</span>
           <span class="rounded-full bg-white/[0.06] px-3 py-0.5 text-[10px] font-medium text-zinc-400">
             {#if $openPlaylistLoading && tracks.length === 0}
-              <span class="inline-block h-2.5 w-9 animate-pulse rounded bg-white/10 align-middle"></span>
+              <span class="inline-block h-2.5 w-9 motion-safe:animate-pulse rounded bg-white/10 align-middle"></span>
             {:else}
               {tracks.length} songs
             {/if}
@@ -107,34 +105,34 @@
         {/if}
         <div class="mt-4 flex items-center gap-2">
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            class="cherry-nav-button flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold text-white transition-colors disabled:cursor-default disabled:opacity-40"
             disabled={tracks.length === 0}
             onclick={() => playTracks(tracks, 0)}
           >
-            <i class="bx bx-play text-xl leading-none"></i>
+            <i class="ph-fill ph-play text-xl leading-none" aria-hidden="true"></i>
             Play
           </button>
           <button
-            class="cherry-btn-scrim flex items-center gap-2 rounded-full bg-white/5 px-5 py-2.5 text-[13px] font-semibold {$shuffleMode
+            class="cherry-nav-button flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-xl transition-colors disabled:cursor-default disabled:opacity-40 {$shuffleMode
               ? 'text-[var(--color-accent2)]'
-              : 'text-zinc-200'} hover:bg-white/10 disabled:opacity-40"
+              : 'text-zinc-200'}"
             disabled={tracks.length === 0}
             title="Shuffle play"
+            aria-label="Shuffle play"
             onclick={() => playTracksShuffled(tracks)}
           >
-            <i class="bx bx-shuffle text-xl leading-none"></i>
-            Shuffle
+            <i class="ph ph-shuffle leading-none" aria-hidden="true"></i>
           </button>
           {#if $authStore}
             {#if owned}
               <button
-                class="cherry-btn-scrim flex h-[42px] w-[42px] items-center justify-center rounded-full bg-white/5 text-lg text-zinc-200 hover:bg-white/10"
+                class="cherry-nav-button flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-lg text-zinc-200 transition-colors"
                 title="Playlist actions"
                 aria-label="Playlist actions"
                 aria-haspopup="menu"
                 onclick={openPlaylistActions}
               >
-                <i class="bx bx-dots-horizontal-rounded leading-none"></i>
+                <i class="ph ph-dots-three leading-none"></i>
               </button>
             {:else if ownershipLoaded}
               <button
@@ -145,13 +143,13 @@
                 aria-label={saved ? 'Remove from library' : 'Save to library'}
                 onclick={() => (saved ? unsavePlaylist(playlist) : savePlaylist(playlist))}
               >
-                <i class="{saved ? 'bx bxs-bookmark' : 'bx bx-bookmark'} leading-none"></i>
+                <i class="{saved ? 'ph-fill ph-bookmark-simple' : 'ph ph-bookmark-simple'} leading-none"></i>
               </button>
             {/if}
           {/if}
         </div>
       </div>
-    </header>
+    </EntityHeader>
 
     {#if $openPlaylistLoading}
       <TrackListSkeleton rows={9} />
@@ -160,19 +158,17 @@
     {:else if tracks.length === 0}
       <p class="text-[12px] text-zinc-500">Nothing playable in this playlist.</p>
     {:else}
+      <div in:fade={{ duration: 160 }}>
       <div class="flex items-center gap-3 border-b border-white/5 px-2 pb-2 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
         <span class="w-6 text-center">#</span>
         <span class="flex-1">Title</span>
         <span>Duration</span>
       </div>
-      <div class="mt-1 flex flex-col gap-0.5">
-        {#each tracks as track, index (track.videoId + index)}
-          <TrackRow track={track} index={index} list={tracks} playlist={playlist} onPlay={(_t, i) => playTracks(tracks, i)} />
-        {/each}
-      </div>
+      <TrackList {tracks} {playlist} currentIndex={currentTrackIndex} onPlay={(_t, i) => playTracks(tracks, i)} />
       <p class="mt-4 px-2 text-[11px] text-zinc-600">
         {trackDisplayArtists(tracks[0])} and more — {tracks.length} songs.
       </p>
+      </div>
     {/if}
   {/if}
 </div>

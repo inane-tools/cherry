@@ -1,4 +1,4 @@
-/** Paint color changes on the main thread, including WebKitGTK. */
+/** Animate lyric highlight colors while preserving theme-variable updates. */
 export function lyricHighlight(node: HTMLElement, active: boolean) {
   let amount = active ? 1 : 0;
   let selected = active;

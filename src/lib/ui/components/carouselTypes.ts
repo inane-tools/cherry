@@ -16,4 +16,5 @@ export interface CarouselEntry {
   round?: boolean;
   browseId?: string;
   browseParams?: string;
+  pageType?: string;
 }

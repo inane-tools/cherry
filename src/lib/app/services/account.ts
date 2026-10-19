@@ -13,9 +13,10 @@ import { getAccountProfile, getChannels, pickPrimaryChannel, setActiveChannel } 
 import { authStore } from './auth';
 import { updateSettings } from './settings';
 import { settingsStore } from './settings';
+import { activeChannelStore } from './channelProfile';
 
 export const channelsStore = writable<AccountProfile[]>([]);
-export const activeChannelStore = writable<AccountProfile | null>(null);
+export { activeChannelStore };
 
 let initialized = false;
 let generation = 0;
@@ -90,6 +91,10 @@ export function initChannel(force = false): Promise<AccountProfile | null> {
       if (chosen?.pageId) await updateSettings({ channelPageId: chosen.pageId });
     }
     if (!chosen || stale()) return null;
+    if (getStore(settingsStore).channelPageId !== (chosen.pageId ?? '')) {
+      await updateSettings({ channelPageId: chosen.pageId ?? '' });
+      if (stale()) return null;
+    }
 
     applyChannel(chosen);
     initialized = true;
@@ -119,6 +124,6 @@ export async function refreshActiveProfile(): Promise<AccountProfile | null> {
   const id = generation;
   const profile = await getAccountProfile(session);
   if (id !== generation || authIdentity(getStore(authStore)) !== authIdentity(session)) return null;
-  if (profile) activeChannelStore.set(profile);
+  if (profile) activeChannelStore.set({ ...profile, pageId: getStore(activeChannelStore)?.pageId ?? profile.pageId });
   return profile;
 }

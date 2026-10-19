@@ -15,6 +15,8 @@
 
   /** Larger icon for the full-screen player. */
   export let size: 'sm' | 'lg' = 'sm';
+  /** Icon-only sizing for the compact player's evenly spaced action row. */
+  export let compact = false;
 
   let open = false;
   let now = Date.now();
@@ -63,15 +65,15 @@
   <button
     class="flex h-9 items-center justify-center gap-1 rounded-full {size === 'lg' ? 'text-xl' : 'text-lg'} {active
       ? 'text-[var(--color-accent2)]'
-      : 'text-zinc-400 hover:text-white'} {timer.mode === 'time' ? 'px-2' : 'w-9'}"
+      : 'text-zinc-400 hover:text-white'} {timer.mode === 'time' && !compact ? 'px-2' : 'w-9'}"
     onclick={() => (open = !open)}
     title={label}
     aria-label={label}
     aria-haspopup="menu"
     aria-expanded={open}
   >
-    <i class="bx {active ? 'bxs-moon' : 'bx-moon'}"></i>
-    {#if timer.mode === 'time'}
+    <i class="{active ? 'ph-fill ph-moon' : 'ph ph-moon'}"></i>
+    {#if timer.mode === 'time' && !compact}
       <span class="text-[11px] font-medium tabular-nums">{formatCountdown(remaining)}</span>
     {/if}
   </button>
@@ -91,7 +93,7 @@
           onclick={() => choose(() => startSleepTimer(minutes))}
         >
           <span>{minutes < 60 ? `${minutes} minutes` : minutes === 60 ? '1 hour' : `${minutes / 60} hours`}</span>
-          {#if timer.mode === 'time' && timer.minutes === minutes}<i class="bx bx-check text-[var(--color-accent2)]"></i>{/if}
+          {#if timer.mode === 'time' && timer.minutes === minutes}<i class="ph ph-check text-[var(--color-accent2)]"></i>{/if}
         </button>
       {/each}
       <button
@@ -100,7 +102,7 @@
         onclick={() => choose(sleepAfterTrack)}
       >
         <span>End of track</span>
-        {#if timer.mode === 'track'}<i class="bx bx-check text-[var(--color-accent2)]"></i>{/if}
+        {#if timer.mode === 'track'}<i class="ph ph-check text-[var(--color-accent2)]"></i>{/if}
       </button>
       {#if active}
         <div class="my-1"></div>
@@ -109,7 +111,7 @@
           class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-rose-300 hover:bg-rose-500/10"
           onclick={() => choose(cancelSleepTimer)}
         >
-          <i class="bx bx-x"></i> Turn off
+          <i class="ph ph-x"></i> Turn off
         </button>
       {/if}
     </div>

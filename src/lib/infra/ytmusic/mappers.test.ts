@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 
 describe('mapTrack', () => {
+  it('keeps playlist occurrence IDs from raw and parsed Music rows', () => {
+    const song = { id: 'same', title: 'Song', item_type: 'song' };
+    expect(mapTrack({ ...song, playlistItemData: { playlistSetVideoId: 'raw-entry' } })?.playlistEntryId).toBe('raw-entry');
+    expect(mapTrack({ ...song, menu: { items: [{ endpoint: { payload: { actions: [{ action: 'ACTION_REMOVE_VIDEO', setVideoId: 'parsed-entry' }] } } }] } })?.playlistEntryId).toBe('parsed-entry');
+  });
   it('maps a current search row', () => {
     const t = mapTrack({
       item_type: 'song',

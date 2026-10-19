@@ -74,8 +74,17 @@ function rebuildOrder(n: number, keepFirst?: number): void {
   order.set(keepFirst == null ? tail : [keepFirst, ...tail]);
 }
 
+function queueEntries(tracks: Track[]): QueueItem[] {
+  const occurrences = new Map<string, number>();
+  return tracks.map(track => {
+    const sourceOccurrence = occurrences.get(track.videoId) ?? 0;
+    occurrences.set(track.videoId, sourceOccurrence + 1);
+    return { track, queueId: uid(), sourceOccurrence };
+  });
+}
+
 export function setQueue(tracks: Track[], startAt = 0): void {
-  const list = tracks.map((track) => ({ track, queueId: uid() }));
+  const list = queueEntries(tracks);
   items.set(list);
   const clamped = Math.max(0, Math.min(startAt, list.length - 1));
   if (list.length === 0) {
@@ -90,14 +99,14 @@ export function setQueue(tracks: Track[], startAt = 0): void {
   }
 }
 
-export function enqueue(tracks: Track[], playNext = false): void {
+export function enqueue(tracks: Track[], playNext = false, options: { appendInOrder?: boolean } = {}): void {
   if (tracks.length === 0) return;
   const list = get(items);
   if (list.length === 0) {
     setQueue(tracks, 0);
     return;
   }
-  const additions = tracks.map((track) => ({ track, queueId: uid() }));
+  const additions = queueEntries(tracks);
 
   if (get(shuffleOn)) {
     // Append the new items to `items` and splice their indices into the play
@@ -112,7 +121,9 @@ export function enqueue(tracks: Track[], playNext = false): void {
     const head = current.slice(0, pos + 1);
     const tail = current.slice(pos + 1);
     items.set([...list, ...additions]);
-    order.set(playNext ? [...head, ...added, ...tail] : [...head, ...shuffled([...tail, ...added])]);
+    order.set(playNext ? [...head, ...added, ...tail] : options.appendInOrder
+      ? [...head, ...tail, ...added]
+      : [...head, ...shuffled([...tail, ...added])]);
     return;
   }
 

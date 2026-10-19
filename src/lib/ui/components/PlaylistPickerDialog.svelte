@@ -1,18 +1,19 @@
 <script lang="ts">
+  import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import { fly, fade } from '$lib/ui/transitions';
   import type { Playlist } from '$lib/core/models';
   import { bestThumbnail, thumbnailSources } from '$lib/core/models';
   import { artwork } from '$lib/ui/actions/artwork';
   import { addablePlaylistsStore, addablePlaylistsLoading, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
-  import { addTracksTo, createNewPlaylist } from '$lib/app/services/playlistEdit';
+  import { addTracksTo } from '$lib/app/services/playlistEdit';
   import { closePlaylistPicker, playlistPickerStore } from '$lib/app/services/playlistPicker';
   import DialogHeader from './DialogHeader.svelte';
+  import { openPlaylistCreator } from '$lib/app/services/playlistEditor';
 
   $: state = $playlistPickerStore;
   $: adding = state.tracks.length > 0;
 
   let query = '';
-  let newName = '';
   let busy = false;
 
   // Only playlists the user can actually write to are offered.
@@ -33,15 +34,11 @@
     if (ok) closePlaylistPicker();
   }
 
-  async function create(): Promise<void> {
-    if (busy || !newName.trim()) return;
-    busy = true;
-    const id = await createNewPlaylist(newName, state.tracks);
-    busy = false;
-    if (id) {
-      newName = '';
-      closePlaylistPicker();
-    }
+  function create(): void {
+    if (busy) return;
+    const tracks = state.tracks;
+    closePlaylistPicker();
+    openPlaylistCreator(tracks);
   }
 
   function onKey(event: KeyboardEvent): void {
@@ -79,27 +76,14 @@
         onClose={closePlaylistPicker}
       />
 
-      <div class="px-6 pb-6">
-        <div class="flex items-center gap-2">
-          <input
-            id="new-playlist-name"
-            aria-label="New playlist name"
-            bind:value={newName}
-            placeholder="New playlist name…"
-            class="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--color-accent)]/60"
-            onkeydown={(e) => {
-              if (e.key === 'Enter') create();
-            }}
-          />
-          <button
-            class="cherry-btn-scrim flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[var(--color-accent2)] disabled:opacity-40"
-            disabled={busy || !newName.trim()}
-            onclick={create}
-          >
-            <i class="bx bx-plus"></i>
-            Create
-          </button>
-        </div>
+      <div class="px-6 pb-4">
+        <button
+          class="flex w-full items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2.5 text-[12px] font-medium text-zinc-200 transition-colors hover:bg-white/[0.07] disabled:opacity-40"
+          disabled={busy} onclick={create}
+        >
+          <i class="ph ph-plus text-lg" aria-hidden="true"></i>
+          New playlist
+        </button>
       </div>
 
       {#if adding}
@@ -111,7 +95,7 @@
             <label
               class="flex h-7 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-zinc-400"
             >
-              <i class="bx bx-search text-sm"></i>
+              <i class="ph ph-magnifying-glass text-sm"></i>
               <input
                 bind:value={query}
                 placeholder="Filter"
@@ -121,7 +105,7 @@
           {/if}
         </div>
 
-        <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <div use:overlayScrollbar class="cherry-overlay-scroll min-h-0 flex-1 px-3 pb-3">
           {#if $addablePlaylistsLoading && playlists.length === 0}
             <p class="px-3 py-5 text-center text-[12px] text-zinc-500">Loading your playlists…</p>
           {:else if playlists.length === 0}
@@ -141,7 +125,7 @@
                   {#if bestThumbnail(playlist.thumbnails, 96)}
                     <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96) }} alt="" class="h-full w-full object-cover" />
                   {:else}
-                    <span class="flex h-full w-full items-center justify-center text-zinc-600"><i class="bx bx-music text-lg"></i></span>
+                    <span class="flex h-full w-full items-center justify-center text-zinc-600"><i class="ph-duotone ph-music-notes text-lg"></i></span>
                   {/if}
                 </span>
                 <span class="min-w-0 flex-1">
@@ -151,7 +135,7 @@
                   {/if}
                 </span>
                 <i
-                  class="bx bx-chevron-right shrink-0 text-lg text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100"
+                  class="ph ph-caret-right shrink-0 text-lg text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100"
                 ></i>
               </button>
             {/each}

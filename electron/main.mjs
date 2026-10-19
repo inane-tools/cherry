@@ -1,10 +1,11 @@
-import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme, dialog } from 'electron';
+import { installTextMenu } from './text-menu.mjs';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assetPath, trustedRenderer, externalUrl } from './policy.mjs';
+import { assetPath, trustedRenderer, externalUrl, fullscreenPermission } from './policy.mjs';
 import { fetchAllowed, apiHeaders, createMediaFetch } from './network.mjs';
 import { captureYouTubeSession, createAuthPersistence } from './login.mjs';
 import { createDiscordPresence } from './discord.mjs';
@@ -15,6 +16,8 @@ import { createJumpLists, createPlaylistLaunch, playlistArgument } from './jump-
 import { createUpdates, updateEnvironment } from './updates.mjs';
 import { profileSize, cleanupSteps, clearSessionCaches } from './maintenance.mjs';
 import { prepareWindowsIdentity } from './windows-identity.mjs';
+import { createMigration, legacySettingsPaths, recoverMigration } from './migration.mjs';
+import { createLegacyCredentialReader } from './legacy-credentials.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const assets = join(here, 'assets');
@@ -40,8 +43,27 @@ let login;
 let tray;
 let settings = {};
 let resettingData = false;
+let migratingData = false;
 let writeChain = Promise.resolve();
 const data = name => join(app.getPath('userData'), name);
+const migration = createMigration({
+  profile: profilePath,
+  candidates: legacySettingsPaths({ platform: process.platform, appData: app.getPath('appData'), home: app.getPath('home') }),
+  credentials: {
+    supported: !smoke && ['win32', 'linux'].includes(process.platform),
+    available: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
+    read: createLegacyCredentialReader({ helperPath: app.isPackaged
+      ? join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'legacy-credentials.ps1')
+      : join(here, 'legacy-credentials.ps1') }),
+    encrypt: plaintext => safeStorage.encryptString(plaintext),
+    decrypt: encrypted => safeStorage.decryptString(encrypted),
+  },
+  chooseFile: async () => {
+    const result = await dialog.showOpenDialog(window, { title: 'Choose Tauri Cherry settings',
+      properties: ['openFile'], filters: [{ name: 'Cherry settings', extensions: ['json'] }] });
+    return result.canceled ? null : result.filePaths[0];
+  },
+});
 const send = (name, value) => { if (window && !window.isDestroyed()) window.webContents.send(name, value); };
 const discord = createDiscordPresence();
 const lastfm = createLastfm();
@@ -86,8 +108,11 @@ async function secretWrite(name, value) {
   });
 }
 function permissions(ses) {
-  ses.setPermissionRequestHandler((_contents, _permission, answer) => answer(false));
-  ses.setPermissionCheckHandler(() => false);
+  const allowed = (contents, permission, details) => !!window && !window.isDestroyed() && contents === window.webContents
+    && fullscreenPermission(permission, details, contents.getURL(), devUrl);
+  ses.setPermissionRequestHandler((contents, permission, answer, details) => answer(allowed(contents, permission, details)));
+  ses.setPermissionCheckHandler((contents, permission, origin, details) => allowed(contents, permission,
+    { ...details, requestingUrl: details.requestingUrl ?? origin }));
 }
 async function boundedBytes(response, max = 32 * 1024 * 1024) {
   if (Number(response.headers.get('content-length')) > max) { await response.body?.cancel(); throw new Error('Response too large'); }
@@ -201,7 +226,17 @@ const commands = {
   set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); },
   'settings:get': ({ key }) => { if (key !== 'settings') throw new Error('Unknown settings key'); return settings; },
   'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; await atomic('settings.json', JSON.stringify(settings)); }); },
-  'app:relaunch': () => { app.relaunch(); app.quit(); },
+  'app:relaunch': () => {
+    if (migratingData && !migration.committed) throw new Error('Wait for the import to finish before restarting.');
+    app.relaunch(); app.quit();
+  },
+  migration_inspect: args => migration.inspect(args),
+  migration_import: args => {
+    if (args.accepted !== true) throw new Error('Accept the disclaimer before importing data.');
+    migratingData = true;
+    cancelLogin();
+    return enqueueWrite(() => migration.import(args)).finally(() => { migratingData = migration.committed; });
+  },
   'app:open-url': ({ url }) => shell.openExternal(externalUrl(url)),
   open_devtools: () => window.webContents.openDevTools({ mode: 'detach' }),
   close_devtools: () => window.webContents.closeDevTools(),
@@ -249,6 +284,10 @@ const commands = {
       ['login browser data', () => clearAuth()],
       ['Last.fm credentials', () => secretWrite('lastfm', null)],
       ['settings', () => enqueueWrite(async () => { settings = {}; await rm(data('settings.json'), { force: true }); })],
+      ['migration backups', async () => {
+        await rm(data('migration-backups'), { recursive: true, force: true });
+        await rm(data('tauri-migration.json'), { force: true });
+      }],
       ['Windows playlist shortcuts', () => jumpLists.update([], [])],
       ['shortcut artwork', () => rm(data('jump-artwork'), { recursive: true, force: true })],
       ['Discord presence', () => discord.clear()],
@@ -272,6 +311,11 @@ const commands = {
 };
 async function main() {
   await app.whenReady();
+  try { await recoverMigration(profilePath); }
+  catch {
+    dialog.showErrorBox('Cherry migration recovery', 'An interrupted import could not be restored. Close Cherry and restore the files in migration-backups inside ' + profilePath + ' before starting again.');
+    app.quit(); return;
+  }
   permissions(session.defaultSession);
   await prepareWindowsIdentity({ appId, assets, directory: data('branding'), register: !smoke }).catch(error => console.warn('[windows] Could not register app name/icon:', error.message));
   try { settings = JSON.parse(await readFile(data('settings.json'), 'utf8')); } catch { settings = {}; }
@@ -303,14 +347,21 @@ async function main() {
   window = new BrowserWindow({ title: 'Cherry', width: 1280, height: 850, minWidth: 460, minHeight: 540,
     frame: false, show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !smoke } });
+  installTextMenu(window, Menu);
   if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
   ipcMain.handle('desktop:invoke', async (event, command, args = {}) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !trustedRenderer(event.senderFrame.url, devUrl)) throw new Error('Untrusted IPC sender');
     if (!Object.hasOwn(commands, command)) throw new Error('Desktop feature not ported: ' + String(command));
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid command arguments');
+    if (migratingData) {
+      // The renderer still holds the pre-import settings. Ignore its delayed
+      // saves until restart so an unrelated subscription cannot undo the import.
+      if (['settings:set', 'secret_save', 'update_jump_list', 'cache_jump_artwork'].includes(command)) return;
+      if (['migration_inspect', 'migration_import', 'auth_save', 'auth_clear', 'ytm_login_finish', 'open_ytm_login', 'clear_local_data', 'updater_check', 'updater_download', 'updater_install'].includes(command)) throw new Error('Restart Cherry to finish importing data.');
+    }
     if (resettingData) {
       if (['settings:set', 'secret_save', 'update_jump_list', 'cache_jump_artwork'].includes(command)) return;
-      if (['auth_save', 'ytm_login_finish', 'open_ytm_login', 'updater_check', 'updater_download', 'updater_install'].includes(command)) throw new Error('Restart Cherry to finish clearing data.');
+      if (['migration_inspect', 'migration_import', 'auth_save', 'ytm_login_finish', 'open_ytm_login', 'updater_check', 'updater_download', 'updater_install'].includes(command)) throw new Error('Restart Cherry to finish clearing data.');
       if (command === 'auth_load' || command === 'secret_load') return null;
     }
     return commands[command](args);

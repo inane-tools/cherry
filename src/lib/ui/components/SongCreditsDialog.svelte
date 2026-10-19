@@ -45,7 +45,7 @@
             <img use:artwork={{ urls: art }} alt="" class="h-full w-full object-cover" />
           {:else}
             <span class="flex h-full w-full items-center justify-center text-zinc-600">
-              <i class="bx bx-music text-lg"></i>
+              <i class="ph-duotone ph-music-notes text-lg"></i>
             </span>
           {/if}
         </span>

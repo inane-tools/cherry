@@ -8,6 +8,30 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('cache', () => {
+  it('bounds disk-restored entries as well as newly written entries', () => {
+    for (let i = 0; i < 70; i++) {
+      localStorage.setItem(`cherry.cache.restored:${i}`, JSON.stringify({ e: Date.now() + 60000, v: i }));
+    }
+    for (let i = 0; i < 70; i++) expect(cacheGet(`restored:${i}`)).toBe(i);
+    localStorage.clear();
+    const retained = Array.from({ length: 70 }, (_, i) => cacheGet(`restored:${i}`)).filter(value => value !== null);
+    expect(retained).toHaveLength(48);
+  });
+
+  it('keeps recently read entries and prunes expired entries before evicting valid data', () => {
+    vi.useFakeTimers();
+    cacheSet('keep', 'keep', 60000, { persist: false });
+    for (let i = 0; i < 47; i++) cacheSet(`old:${i}`, i, 10, { persist: false });
+    vi.advanceTimersByTime(11);
+    cacheSet('new', 'new', 60000, { persist: false });
+    expect(cacheGet('keep')).toBe('keep');
+    for (let i = 0; i < 46; i++) cacheSet(`fill:${i}`, i, 60000, { persist: false });
+    expect(cacheGet('keep')).toBe('keep');
+    cacheSet('extra', 'extra', 60000, { persist: false });
+    expect(cacheGet('keep')).toBe('keep');
+    expect(cacheGet('new')).toBeNull();
+  });
+
   it('returns values until they expire', () => {
     vi.useFakeTimers();
     cacheSet('k', { a: 1 }, 1000);

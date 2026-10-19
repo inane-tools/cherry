@@ -5,17 +5,18 @@
   import { startLyrics } from '$lib/app/services/lyrics';
   import { startRadioRefill } from '$lib/app/services/radio';
   import { startUpdateChecks } from '$lib/app/services/updates';
-  import { get } from 'svelte/store';
+  import { derived, get } from 'svelte/store';
   import { fade, fly } from '$lib/ui/transitions';
-  import { pageStore, startMouseNavigation, go } from '$lib/app/services/navigation';
+  import { pageStore, pageKey, startMouseNavigation, go } from '$lib/app/services/navigation';
   import { restoreSettings, settingsStore } from '$lib/app/services/settings';
   import { authStore, initAuth } from '$lib/app/services/auth';
-  import { initChannel } from '$lib/app/services/account';
-  import { loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
+  import { activeChannelStore, initChannel } from '$lib/app/services/account';
+  import { clearPageVisitCache } from '$lib/app/services/pageVisit';
+  import { homeSectionsStore, loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
+  import { warmProfileGreetings } from '$lib/app/services/profilePersonalization';
   import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startTray } from '$lib/app/services/tray';
-  import { startMemoryTrimming } from '$lib/app/services/memory';
   import { startScrobbling } from '$lib/app/services/scrobble';
   import { startShortcuts } from '$lib/app/services/shortcuts';
   import { openDevTools } from '$lib/app/services/devtools';
@@ -31,7 +32,8 @@
   } from '$lib/app/services/layout';
   import { initFolders } from '$lib/app/services/folders';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
-  import { washTransition } from '$lib/ui/actions/washTransition';
+  import { pageScroll } from '$lib/ui/actions/pageScroll';
+  import { accentWash } from '$lib/ui/actions/accentWash';
   import Titlebar from '$lib/ui/chrome/Titlebar.svelte';
   import Sidebar from '$lib/ui/chrome/Sidebar.svelte';
   import PlayerBar from '$lib/ui/chrome/PlayerBar.svelte';
@@ -58,23 +60,35 @@
   let destroyed = false;
   onDestroy(() => { destroyed = true; stopTray(); });
   let mainEl: HTMLElement | undefined;
+  let pageScrolled = false;
+  let drawerVisible = false;
+  $: if ($sidebarDrawerOpen) drawerVisible = true;
 
-  // Apply the stored theme/accent as early as possible (defaults until settings
-  // load, then re-applied) so there is minimal theme flash on launch.
-  startAppearance();
-  // Mirror the stored UI zoom level onto the webview.
+  function drawerSlide(node: Element) {
+    return fly(node, { x: -node.getBoundingClientRect().width, opacity: 1, duration: 220 });
+  }
+
+  function onPageScroll(event: Event): void {
+    const scrolled = (event.currentTarget as HTMLElement).scrollTop > 0;
+    if (pageScrolled !== scrolled) pageScrolled = scrolled;
+  }
+
+  // Mirror the stored UI zoom level onto the renderer.
   startZoom();
 
   // Pages that are useless without a session (everything except Settings, where
   // the sign-in button lives). When signed out these show a full-window gate
   // instead of partial content.
   $: signedOut = ready && !$authStore;
+  $: bannerPage = ['playlist', 'album', 'artist'].includes($pageStore.view)
+    || ($pageStore.view === 'browse' && $pageStore.entity.kind === 'profile');
 
   // Lightweight notice banner. The auth gate publishes `cherry:notice` when it
   // blocks an action (search / play) so the user learns *why* nothing happened
   // instead of the app looking broken.
   let notice = '';
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  onDestroy(() => { if (noticeTimer) clearTimeout(noticeTimer); });
   function showNotice(message: string) {
     notice = message;
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -85,20 +99,17 @@
     if (detail?.message) showNotice(detail.message);
   }
 
-  // Every page starts at the top (previously a scrolled feed left the next
-  // page opened "in the middle"), and the mouse Back/Forward (X1/X2) buttons
-  // drive the same history stack.
+  // Fresh pages start at the top; Back/Forward restores feed positions.
   onMount(() => {
     const stopLyrics = startLyrics();
     const stopRadio = startRadioRefill();
     const stopUpdates = startUpdateChecks();
     const stopMouse = startMouseNavigation();
     const stopLayout = startLayoutTracking();
-    const unsubscribe = pageStore.subscribe(() => {
-      if (mainEl) mainEl.scrollTop = 0;
-    });
+    const stopVisitContext = derived([authStore, activeChannelStore], ([session, profile]) =>
+      `${authIdentity(session)}:${profile?.pageId ?? ''}`).subscribe(clearPageVisitCache);
     window.addEventListener('cherry:notice', onNotice);
-    // F12 / Ctrl+Shift+I opens the WebView DevTools when the Developer option is
+    // F12 / Ctrl+Shift+I opens the renderer DevTools when the Developer option is
     // enabled (the Settings button is the primary route; this is a convenience).
     const onKeyDown = (event: KeyboardEvent) => {
       const settings = get(settingsStore);
@@ -113,33 +124,37 @@
     window.addEventListener('keydown', onKeyDown);
     // Player / navigation shortcuts (Space, arrows, Ctrl+F, …).
     const stopShortcuts = startShortcuts();
-    // WebView2 memory trimming is async to set up; hold the cleanup once ready.
-    let stopMemory = () => {};
-    void startMemoryTrimming().then((stop) => (stopMemory = stop));
     return () => {
       stopLyrics();
       stopRadio();
       stopUpdates();
       stopMouse();
       stopLayout();
-      unsubscribe();
+      stopVisitContext();
       window.removeEventListener('cherry:notice', onNotice);
       window.removeEventListener('keydown', onKeyDown);
       stopShortcuts();
-      stopMemory();
     };
   });
 
-  // The app is not a web page: its own right-click menus are the only ones that
-  // make sense. Elements that want a menu call `preventDefault` themselves;
-  // anything else should not show the browser's ("Save image", "Reload", …).
+  // Let Electron provide text editing menus; app surfaces own their menus.
   function suppressNativeContextMenu(event: MouseEvent): void {
+    if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]')) return;
+    if (window.getSelection()?.toString()) return;
     event.preventDefault();
   }
+
+  // Warm optional greeting data after Home arrives, outside the startup budget.
+  onMount(() => homeSectionsStore.subscribe(sections => {
+    if (sections.length) void warmProfileGreetings(sections);
+  }));
 
   onMount(async () => {
     try {
     await restoreSettings();
+    // Keep the startup snapshot until real settings arrive, rather than briefly
+    // applying defaults over it.
+    startAppearance();
     initFolders();
     // Volume / mute / repeat / shuffle must be applied before the first track.
     applyStoredPlaybackSettings();
@@ -173,6 +188,9 @@
       if (!destroyed) {
         ready = true;
         launched = true;
+        requestAnimationFrame(() => {
+          if (!destroyed) document.documentElement.classList.add('theme-ready');
+        });
       }
     }
   });
@@ -205,7 +223,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions : only prevents the native menu -->
-<div use:washTransition class="cherry-wash relative flex h-full flex-col text-zinc-100" oncontextmenu={suppressNativeContextMenu}>
+<div use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} oncontextmenu={suppressNativeContextMenu}>
   {#if !launched}
     <div class="absolute inset-0 z-[35] bg-[var(--color-surface)]" out:fade={{ duration: 300 }} aria-hidden="true"></div>
   {/if}
@@ -216,25 +234,27 @@
     {#if ready && !signedOut && !$narrowLayout}
       <Sidebar />
     {/if}
-    <!-- Content column: owns the translucent top bar and the floating player.
-         `overflow-x-clip` keeps the player bar's drop shadow from spilling left
-         over the sidebar, without clipping anything vertically. -->
-    <div class="relative flex min-w-0 flex-1 flex-col overflow-x-clip">
+    <!-- Content column owns the translucent top bar and floating player;
+         horizontal clipping keeps their effects inside the column. -->
+    <div data-page-content class="relative flex min-w-0 flex-1 flex-col overflow-x-clip">
+      <div data-page-backdrop-host class="pointer-events-none absolute inset-0 isolate overflow-hidden" aria-hidden="true"></div>
       <!-- On the welcome screen only the native window controls remain; the bar
            itself stays draggable. -->
-      <Titlebar minimal={signedOut} narrow={$narrowLayout} onMenu={toggleSidebarDrawer} />
+      <Titlebar minimal={signedOut} scrolled={pageScrolled} narrow={$narrowLayout} {drawerVisible} onMenu={toggleSidebarDrawer} />
       <div class="flex min-h-0 flex-1">
       <div class="relative flex min-w-0 flex-1 flex-col">
       <main
         bind:this={mainEl}
+        onscroll={onPageScroll}
         use:overlayScrollbar={{ topInset: 48 }}
-        class="cherry-overlay-scroll cherry-fade-top min-w-0 flex-1 px-6 transition-[padding] duration-300 ease-out {$playerExpanded
+        use:pageScroll
+        class="cherry-overlay-scroll relative z-0 min-w-0 flex-1 px-6 {$playerExpanded
           ? 'pt-16 pb-24'
           : 'pt-12 pb-40'}"
       >
         {#if ready}
           <div>
-            {#key $pageStore.view}
+            {#key `${$pageStore.view}:${pageKey($pageStore)}`}
               <div in:fade={{ duration: launched ? 180 : 0 }}>
                 {#if $pageStore.view === 'playlist'}
                   <PlaylistView />
@@ -256,23 +276,24 @@
 
       <!-- Transient notice. Lives inside the content column (not the window) so
            it is centred over the app content instead of being pulled left by
-           the playlist rail. It fades in from under the title bar. -->
+           the playlist rail. Match the floating compact-player lyrics strip. -->
+      {#key notice}
       {#if notice}
         <div
           class="pointer-events-none absolute inset-x-0 top-14 z-50 flex justify-center px-4"
           role="status"
           aria-live="polite"
-          in:fly={{ y: -12, duration: 220 }}
-          out:fly={{ y: -12, duration: 160 }}
+          transition:fly|global={{ y: -12, duration: 240 }}
         >
           <div
-            class="flex max-w-lg items-center gap-2 rounded-lg border border-white/10 bg-[var(--color-elevated)]/95 px-4 py-2 text-[12px] text-zinc-200 shadow-[0_12px_40px_rgba(0,0,0,0.5)] backdrop-blur"
+            class="flex w-max max-w-[36rem] items-center gap-3 rounded-xl bg-[var(--color-popover)] px-4 py-3 text-sm font-semibold text-white shadow-lg"
           >
-            <i class="bx bx-info-circle text-base text-[var(--color-accent2)]"></i>
-            <span>{notice}</span>
+            <i class="ph ph-info shrink-0 text-base text-[var(--color-accent)]" aria-hidden="true"></i>
+            <span class="min-w-0 break-words">{notice}</span>
           </div>
         </div>
       {/if}
+      {/key}
       </div>
       {#if ready && !signedOut && $queueSidebarVisible}
         <QueueSidebar />
@@ -282,14 +303,13 @@
   </div>
 
   <!-- Full-window sign-in gate.
-       Covers the entire shell so its top gradient is identical to the app's
-       (a gate starting below the titlebar restarts the gradient and shows a seam
-       at the top). The titlebar sits above it (`z-40`), staying draggable with
+       Covers the entire shell with a solid theme surface, including behind
+       the titlebar. The titlebar sits above it (`z-40`), staying draggable with
        its window controls; on the welcome screen it renders minimal chrome.
        Settings is the only view allowed through, since that is where sign-in
        lives. -->
   {#if signedOut}
-    <div use:washTransition class="cherry-wash cherry-gate absolute inset-0 z-30">
+    <div class="cherry-gate absolute inset-0 z-30">
       <AuthGate title="Welcome to Cherry :3" />
     </div>
   {/if}
@@ -301,13 +321,12 @@
       class="absolute inset-0 z-30 bg-scrim/70 backdrop-blur-md"
       role="presentation"
       onclick={closeSidebarDrawer}
-      in:fade={{ duration: 150 }}
-      out:fade={{ duration: 120 }}
+      transition:fade={{ duration: 220 }}
     ></div>
     <div
       class="absolute inset-0 z-30 shadow-[0_0_60px_rgba(0,0,0,0.6)]"
-      in:fly={{ x: -280, duration: 220 }}
-      out:fly={{ x: -280, duration: 160 }}
+      transition:drawerSlide
+      onoutroend={() => { if (!get(sidebarDrawerOpen)) drawerVisible = false; }}
     >
       <Sidebar forceFull />
     </div>

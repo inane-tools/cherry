@@ -9,7 +9,7 @@ import { authStore } from './auth';
 import { playlistStore, playPlaylist } from './playlists';
 import { openPage } from './navigation';
 import { closeSearch, closeSettings } from './overlays';
-import { trackDisplayArtists, type RepeatMode } from '$lib/core/models';
+import { isPlaylistPin, trackDisplayArtists, type RepeatMode } from '$lib/core/models';
 import { prepareJumpArtwork, type PlaylistShortcut } from './jumpArtwork';
 
 export async function startTray(): Promise<() => void> {
@@ -20,7 +20,7 @@ export async function startTray(): Promise<() => void> {
     if (opening || id.startsWith('playlist:')) {
       const browseId = id.slice(opening ? 14 : 9);
       if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(browseId)) return;
-      const shortcut = [...get(pinnedStore), ...get(settingsStore).recentPlaylists].find((p) => p.browseId === browseId);
+      const shortcut = [...get(pinnedStore).filter(isPlaylistPin), ...get(settingsStore).recentPlaylists].find((p) => p.browseId === browseId);
       if (get(authStore)) {
         const playlist = get(playlistStore).find((p) => p.browseId === browseId) ?? { browseId, title: shortcut?.title ?? 'Playlist', thumbnails: shortcut?.thumbnail ? [{ url: shortcut.thumbnail }] : [] };
         if (opening) { closeSearch(); closeSettings(); openPage({ view: 'playlist', entity: playlist }); }
@@ -41,6 +41,7 @@ export async function startTray(): Promise<() => void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastTray = '';
   let lastJump = '';
+  let lastInputs: unknown[] = [];
   let pending: { state: Record<string, unknown>; pinned: PlaylistShortcut[]; recent: PlaylistShortcut[] } | undefined;
   let sending = false;
   async function flush() {
@@ -68,9 +69,13 @@ export async function startTray(): Promise<() => void> {
     sending = false;
   }
   const unsubscribe = derived([playerStore, repeatMode, shuffleMode, pinnedStore, settingsStore, authStore], (values) => values).subscribe(([player, repeat, shuffle, pins, settings, auth]) => {
+    const inputs = [player.track, player.status, repeat, shuffle, pins, settings.recentPlaylists, !!auth];
+    if (inputs.every((value, index) => Object.is(value, lastInputs[index]))) return;
+    lastInputs = inputs;
     const shortcut = ({ browseId, title, thumbnail = '' }: { browseId: string; title: string; thumbnail?: string }) => ({ browseId, title, thumbnail });
-    const pinned = auth ? pins.map(shortcut) : [];
-    const recent = auth ? settings.recentPlaylists.filter((p) => !pins.some((pin) => pin.browseId === p.browseId)).map(shortcut) : [];
+    const playlistPins = pins.filter(isPlaylistPin);
+    const pinned = auth ? playlistPins.map(shortcut) : [];
+    const recent = auth ? settings.recentPlaylists.filter((p) => !playlistPins.some((pin) => pin.browseId === p.browseId)).map(shortcut) : [];
     pending = {
       state: { title: player.track?.title ?? '', artist: player.track ? trackDisplayArtists(player.track) : '', album: player.track?.album?.name ?? '', hasTrack: !!player.track, playing: player.status === 'playing', shuffle, repeat, signedIn: !!auth, pinned },
       pinned, recent,

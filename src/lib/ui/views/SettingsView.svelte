@@ -1,5 +1,6 @@
 <script lang="ts">
   import Spinner from '$lib/ui/components/Spinner.svelte';
+  import CommunityCredits from '$lib/ui/components/CommunityCredits.svelte';
   import { onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import {
@@ -51,6 +52,7 @@
   // cleared. A build-time import always resolves to a real, versioned URL.
   import logoUrl from '$lib/assets/logo.png';
   import inaneWordmark from '$lib/assets/inane.svg';
+  import githubMark from '$lib/assets/github.svg?raw';
 
   // ── Clear data and cache ────────────────────────────────────────
   let cacheLabel = 'calculating…';
@@ -169,13 +171,13 @@
   $: zoomValue = zoomDraft ?? ($settingsStore.uiZoom ?? 1);
 
   const THEME_OPTIONS: { value: 'system' | 'light' | 'dark'; label: string; icon: string }[] = [
-    { value: 'system', label: 'System', icon: 'bx bx-desktop' },
-    { value: 'light', label: 'Light', icon: 'bx bx-sun' },
-    { value: 'dark', label: 'Dark', icon: 'bx bx-moon' },
+    { value: 'system', label: 'System', icon: 'ph-duotone ph-desktop' },
+    { value: 'light', label: 'Light', icon: 'ph-duotone ph-sun' },
+    { value: 'dark', label: 'Dark', icon: 'ph ph-moon' },
   ];
   const ACCENT_SOURCE_OPTIONS: { value: 'song' | 'custom'; label: string; icon: string }[] = [
-    { value: 'song', label: 'Song Art', icon: 'bx bx-album' },
-    { value: 'custom', label: 'Custom', icon: 'bx bx-color-fill' },
+    { value: 'song', label: 'Song Art', icon: 'ph-duotone ph-vinyl-record' },
+    { value: 'custom', label: 'Custom', icon: 'ph-duotone ph-paint-bucket' },
   ];
   const ACCENT_PRESETS = ['#ff4d5e', '#ff8a5c', '#8b5cf6', '#22c55e', '#0ea5e9', '#f5a524'];
 
@@ -204,12 +206,12 @@
     | 'playerShowQueue'
     | 'playerShowLyrics';
   const PLAYER_BUTTONS: { key: PlayerButtonKey; label: string; icon: string }[] = [
-    { key: 'playerShowPrev', label: 'Previous', icon: 'bx bx-skip-previous' },
-    { key: 'playerShowShuffle', label: 'Shuffle', icon: 'bx bx-shuffle' },
-    { key: 'playerShowRepeat', label: 'Repeat', icon: 'bx bx-repeat' },
-    { key: 'playerShowSleepTimer', label: 'Sleep timer', icon: 'bx bx-moon' },
-    { key: 'playerShowQueue', label: 'Queue', icon: 'bx bx-list-ul' },
-    { key: 'playerShowLyrics', label: 'Lyrics', icon: 'bx bx-captions' },
+    { key: 'playerShowPrev', label: 'Previous', icon: 'ph-skip-back' },
+    { key: 'playerShowShuffle', label: 'Shuffle', icon: 'ph-shuffle' },
+    { key: 'playerShowRepeat', label: 'Repeat', icon: 'ph-repeat' },
+    { key: 'playerShowSleepTimer', label: 'Sleep timer', icon: 'ph-moon' },
+    { key: 'playerShowQueue', label: 'Queue', icon: 'ph-queue' },
+    { key: 'playerShowLyrics', label: 'Lyrics', icon: 'ph-microphone-stage' },
   ];
 
   $: playlistOptions = [
@@ -331,7 +333,7 @@
       const status = await pollYtmStatus();
       if (!status.open && !status.loggedIn) {
         // The user closed the window. Stop polling instead of hammering the
-        // native cookie store for a webview that is gone.
+        // browser cookie store after its login window has closed.
         stopPolling();
         if (phase === 'waiting') {
           phase = 'idle';
@@ -453,7 +455,7 @@
   onDestroy(stopPolling);
 </script>
 
-<div class="mx-auto max-w-3xl pb-6">
+<div class="mx-auto max-w-3xl">
   <header class="mb-6">
     <h1 class="text-[26px] font-extrabold tracking-tight text-white sm:text-[32px]">Settings</h1>
     <p class="mt-1 text-[12px] text-zinc-500">Account, integrations and app data.</p>
@@ -480,13 +482,13 @@
               title="Refresh playlists"
               aria-label="Refresh playlists"
             >
-              <i class="bx bx-refresh text-sm" class:bx-spin={$libraryLoading}></i>
+              <i class="ph ph-arrow-clockwise text-sm" class:animate-spin={$libraryLoading}></i>
             </button>
             <button
               class="flex items-center gap-1.5 rounded-lg bg-rose-500/10 h-8 px-3 text-[11px] text-rose-300 transition-colors hover:bg-rose-500/20"
               onclick={disconnect}
             >
-              <i class="bx bx-log-out text-sm"></i>
+              <i class="ph ph-sign-out text-sm"></i>
               Sign out
             </button>
           </div>
@@ -505,7 +507,7 @@
           disabled={phase === 'starting' || !isDesktop()}
           onclick={loginWithYouTube}
         >
-          <i class="bx bxl-youtube text-base"></i>
+          <i class="ph-fill ph-youtube-logo text-base"></i>
           {phase === 'starting' ? 'Opening…' : 'Sign in with YouTube Music'}
         </button>
         {#if !isDesktop()}
@@ -528,7 +530,7 @@
           class="mt-3 flex items-center gap-1 text-[10px] text-zinc-500 transition-colors hover:text-zinc-300"
           onclick={() => (showPaste = !showPaste)}
         >
-          <i class={showPaste ? 'bx bx-chevron-up' : 'bx bx-chevron-down'}></i>
+          <i class={showPaste ? 'ph ph-caret-up' : 'ph ph-caret-down'}></i>
           Paste a session token instead
         </button>
         {#if showPaste}
@@ -574,7 +576,7 @@
                 </span>
                 <span class="min-w-0 flex-1 truncate">{channel.name}</span>
                 {#if $activeChannelStore?.pageId === channel.pageId}
-                  <i class="bx bx-check text-sm text-[var(--color-accent2)]"></i>
+                  <i class="ph ph-check text-sm text-[var(--color-accent2)]"></i>
                 {/if}
               </button>
             {/each}
@@ -599,12 +601,12 @@
 
       {#if message}
         <p class="mt-3 flex items-start gap-1.5 text-[11px] text-emerald-300">
-          <i class="bx bx-check-circle mt-0.5 shrink-0"></i>{message}
+          <i class="ph-fill ph-check-circle mt-0.5 shrink-0"></i>{message}
         </p>
       {/if}
       {#if error}
         <p class="mt-3 flex items-start gap-1.5 text-[11px] text-rose-300">
-          <i class="bx bx-error-circle mt-0.5 shrink-0"></i>{error}
+          <i class="ph-fill ph-warning-circle mt-0.5 shrink-0"></i>{error}
         </p>
       {/if}
     </SettingsSection>
@@ -765,7 +767,7 @@
                 disabled={lastfmBusy || !lastfmKey.trim() || !lastfmSecret.trim()}
                 onclick={connectLastfm}
               >
-                <i class="bx bx-link-external"></i>
+                <i class="ph ph-arrow-square-out"></i>
                 {lastfmBusy ? 'Working…' : lastfmToken ? 'Restart authorization' : 'Connect Last.fm'}
               </button>
               {#if lastfmToken}
@@ -780,12 +782,12 @@
             </div>
             {#if lastfmMessage}
               <p class="mt-2 flex items-start gap-1.5 text-[11px] text-emerald-300">
-                <i class="bx bx-check-circle mt-0.5 shrink-0"></i>{lastfmMessage}
+                <i class="ph-fill ph-check-circle mt-0.5 shrink-0"></i>{lastfmMessage}
               </p>
             {/if}
             {#if lastfmError}
               <p class="mt-2 flex items-start gap-1.5 text-[11px] text-rose-300">
-                <i class="bx bx-error-circle mt-0.5 shrink-0"></i>{lastfmError}
+                <i class="ph-fill ph-warning-circle mt-0.5 shrink-0"></i>{lastfmError}
               </p>
             {/if}
           {/if}
@@ -898,7 +900,7 @@
         <div>
           <div class="mb-2 text-[12px] font-semibold text-zinc-200">Window controls</div>
           <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-window shrink-0 text-sm text-zinc-500" aria-hidden="true"></i>Show window controls</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-browser shrink-0 text-sm text-zinc-500" aria-hidden="true"></i>Show window controls</span>
             <Toggle
               checked={$settingsStore.windowControls}
               label="Show window controls"
@@ -910,7 +912,7 @@
         <div>
           <div class="mb-2 text-[12px] font-semibold text-zinc-200">Background</div>
           <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-droplet shrink-0 text-sm text-zinc-500"></i>Accent gradients</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-drop shrink-0 text-sm text-zinc-500"></i>Accent gradients</span>
             <Toggle
               checked={$settingsStore.gradientsEnabled}
               label="Background gradients"
@@ -918,7 +920,7 @@
             />
           </label>
           <label class="mt-3 flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-color-fill shrink-0 text-sm text-zinc-500"></i>Tint surfaces with accent</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-paint-bucket shrink-0 text-sm text-zinc-500"></i>Tint surfaces with accent</span>
             <Toggle
               checked={$settingsStore.tintedBackground}
               label="Tinted surfaces"
@@ -930,7 +932,7 @@
         <div>
           <div class="mb-2 text-[12px] font-semibold text-zinc-200">Sidebar</div>
           <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-layout shrink-0 text-sm text-zinc-500"></i>Compact (covers only)</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-layout shrink-0 text-sm text-zinc-500"></i>Compact (covers only)</span>
             <Toggle
               checked={$settingsStore.compactSidebar}
               label="Compact sidebar"
@@ -938,7 +940,7 @@
             />
           </label>
           <label class="mt-3 flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-list-ul shrink-0 text-sm text-zinc-500"></i>Always show queue (when there’s room)</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph ph-queue shrink-0 text-sm text-zinc-500"></i>Always show queue (when there’s room)</span>
             <Toggle
               checked={$settingsStore.queueSidebar}
               label="Always show queue (when there’s room)"
@@ -959,7 +961,7 @@
         <div>
           <div class="mb-2 text-[12px] font-semibold text-zinc-200">Playback</div>
           <label class="mb-3 flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-captions shrink-0 text-sm text-zinc-500"></i>Show lyrics when available</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-fill ph-microphone-stage shrink-0 text-sm text-zinc-500"></i>Show lyrics when available</span>
             <Toggle checked={$settingsStore.lyricsEnabled} label="Show lyrics when available" onchange={(value) => updateSettings({ lyricsEnabled: value })} />
           </label>
           <label class="mb-3 flex items-center justify-between gap-4">
@@ -967,7 +969,7 @@
             <Toggle checked={$settingsStore.lyricsLookupEnabled} label="Prefer LRCLIB lyrics before YouTube Music" onchange={(value) => updateSettings({ lyricsLookupEnabled: value })} />
           </label>
           <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-movie shrink-0 text-sm text-zinc-500"></i>Letterbox videos</span>
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-film-strip shrink-0 text-sm text-zinc-500"></i>Letterbox videos</span>
             <Toggle checked={$settingsStore.videoLetterboxing} label="Show full videos with black letterboxing"
               onchange={(value) => updateSettings({ videoLetterboxing: value })} />
           </label>
@@ -990,7 +992,7 @@
                 onclick={() =>
                   updateSettings({ [button.key]: !$settingsStore[button.key] } as Partial<CherrySettings>)}
               >
-                <i class="{button.icon} text-xl leading-none"></i>
+                <i class="{$settingsStore[button.key] && button.key !== 'playerShowQueue' ? 'ph-fill' : 'ph'} {button.icon} text-xl leading-none"></i>
               </button>
             {/each}
           </div>
@@ -1031,7 +1033,7 @@
           disabled={clearing || clearingCache}
           onclick={clearCacheOnly}
         >
-          <i class="bx bx-reset"></i>
+          <i class="ph ph-arrow-counter-clockwise"></i>
           {clearingCache ? 'Clearing…' : 'Clear cache'}
         </button>
         <button
@@ -1039,7 +1041,7 @@
           disabled={clearing || clearingCache}
           onclick={clearData}
         >
-          <i class="bx bx-trash"></i>
+          <i class="ph ph-trash"></i>
           {clearing ? 'Clearing…' : 'Clear everything'}
         </button>
       </div>
@@ -1054,7 +1056,7 @@
     >
       <div>
         <label class="flex items-center justify-between gap-4 py-3 first:pt-0">
-          <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="bx bx-code shrink-0 text-sm text-zinc-500"></i>Enable developer tools</span>
+          <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph ph-code shrink-0 text-sm text-zinc-500"></i>Enable developer tools</span>
           <Toggle
             checked={$settingsStore.devToolsEnabled}
             label="Developer tools"
@@ -1063,7 +1065,7 @@
         </label>
         <div class="flex items-center justify-between gap-4 py-3 last:pb-0">
           <span class="flex items-center gap-2 text-[12px] text-zinc-300">
-            <i class="bx bx-code-alt shrink-0 text-sm text-zinc-500"></i>Chromium DevTools
+            <i class="ph-duotone ph-code-block shrink-0 text-sm text-zinc-500"></i>Chromium DevTools
             <span class="text-zinc-600">(F12)</span>
           </span>
           <div class="flex gap-2">
@@ -1096,6 +1098,7 @@
         {#each [
           { name: 'electron-updater', use: 'GitHub release updates for Windows and AppImage', license: 'MIT', url: 'https://github.com/electron-userland/electron-builder' },
           { name: 'Electron', use: 'Chromium desktop shell, windowing and OS integration', license: 'MIT', url: 'https://github.com/electron/electron' },
+          { name: 'libsecret', use: 'Linux credential migration (included in Flatpak)', license: 'LGPL-2.1-or-later', url: 'https://gitlab.gnome.org/GNOME/libsecret' },
           { name: 'Svelte', use: 'UI framework', license: 'MIT', url: 'https://github.com/sveltejs/svelte' },
           { name: 'svelte-check', use: 'Svelte diagnostics and type checking', license: 'MIT', url: 'https://github.com/sveltejs/language-tools' },
           { name: 'TypeScript', use: 'frontend type checking', license: 'Apache-2.0', url: 'https://github.com/microsoft/TypeScript' },
@@ -1106,7 +1109,9 @@
           { name: 'youtubei.js', use: 'YouTube / YouTube Music (Innertube) API', license: 'MIT', url: 'https://github.com/LuanRT/YouTube.js' },
           { name: 'hls.js', use: 'live station playback', license: 'Apache-2.0', url: 'https://github.com/video-dev/hls.js' },
           { name: 'dash.js', use: 'adaptive HD music videos', license: 'BSD-3-Clause', url: 'https://github.com/Dash-Industry-Forum/dash.js' },
-          { name: 'Boxicons', use: 'icon set', license: 'CC BY 4.0', url: 'https://github.com/atisawd/boxicons' },
+          { name: 'Lobe Icons', use: 'Contributor brand marks (inline SVG)', license: 'MIT', url: 'https://github.com/lobehub/lobe-icons' },
+          { name: 'Boxicons', use: 'GitHub brand mark (inline SVG)', license: 'MIT', url: 'https://github.com/box-icons/boxicons' },
+          { name: 'Phosphor Icons', use: 'fill, duotone and regular interface icons', license: 'MIT', url: 'https://phosphoricons.com' },
           { name: 'Gabarito', use: 'typeface', license: 'OFL-1.1', url: 'https://github.com/googlefonts/gabarito' },
         ] as dep}
           <li class="flex items-baseline justify-between gap-2 py-1.5">
@@ -1122,41 +1127,7 @@
         {/each}
       </ul>
 
-      <div class="mt-4 border-t border-white/[0.06] pt-3">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-          Contributors
-        </div>
-        <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-400">
-          Audit, tests and player features contributed by
-          <button
-            class="font-semibold text-[var(--color-accent2)] underline decoration-[var(--color-accent2)]/30 underline-offset-2 transition-colors hover:decoration-[var(--color-accent2)]"
-            onclick={() => openExternal('https://github.com/jannuary/cherry')}
-          >
-            jannuary</button
-          > and Claude.
-        </p>
-        <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-400">
-          <span class="font-semibold text-zinc-300">Codex (OpenAI)</span> — code review,
-          playback and sign-out fixes, regression tests, and UI refinements.
-        </p>
-      </div>
-      <div class="mt-4 border-t border-white/[0.06] pt-3">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Lyrics</div>
-      <ul class="mt-1.5 space-y-3 text-[11px] leading-relaxed text-zinc-400">
-        {#each [
-          { name: 'LRCLIB', url: 'https://lrclib.net/', description: 'Community-contributed lyrics and timing. Cherry checks LRCLIB first, then falls back to YouTube Music.' },
-        ] as source}
-          <li>
-            <a class="font-semibold text-zinc-300 transition-colors hover:text-white" href={source.url}
-              onclick={(event) => { event.preventDefault(); openExternal(source.url); }}>{source.name}</a>
-            <p class="mt-0.5">{source.description}</p>
-          </li>
-        {/each}
-      </ul>
-      <p class="mt-3 border-t border-white/[0.06] pt-3 text-[11px] leading-relaxed text-zinc-500">
-        Provider credits are shown alongside the lyrics when supplied.
-      </p>
-      </div>
+      <CommunityCredits {openExternal} />
     </SettingsSection>
 
     <!-- Disclaimer (shown above the Cherry info) -->
@@ -1165,7 +1136,7 @@
     </SettingsSection>
 
     <!-- About -->
-    <section class="rounded-xl bg-gradient-to-br from-[var(--color-accent)]/10 to-transparent px-5 py-4">
+    <section class="rounded-xl bg-gradient-to-b from-[var(--color-accent)]/25 to-[var(--color-accent2)]/15 px-5 py-4">
       <div class="flex items-start gap-3">
         <button type="button" class="shrink-0 cursor-default" aria-label="Cherry" onclick={onLogoTap}>
           <img src={logoUrl} alt="Cherry" class="h-10 w-10 rounded-xl shadow-lg" />
@@ -1181,7 +1152,7 @@
           title="Releases on GitHub"
           onclick={() => openExternal('https://github.com/inane-tools/cherry/releases')}
         >
-          <i class="bx bxl-github text-base"></i>
+          <span class="flex h-4 w-4 items-center justify-center [&>svg]:h-4 [&>svg]:w-4" aria-hidden="true">{@html githubMark}</span>
           Releases
         </button>
       </div>
@@ -1208,7 +1179,7 @@
             aria-label="GitHub repository"
             onclick={() => openExternal('https://github.com/inane-tools/cherry')}
           >
-            <i class="bx bxl-github text-lg"></i>
+            {@html githubMark}
           </button>
           <button
             class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
@@ -1216,7 +1187,7 @@
             aria-label="inane.tools website"
             onclick={() => openExternal('https://inane.tools')}
           >
-            <i class="bx bx-globe text-lg"></i>
+            <i class="ph ph-globe text-lg"></i>
           </button>
         </div>
         <img src={inaneWordmark} alt="inane.tools" class="inane-wordmark h-6 w-auto opacity-80" />

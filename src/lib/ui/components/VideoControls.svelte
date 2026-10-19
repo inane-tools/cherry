@@ -26,9 +26,9 @@
     {:else if $videoPreferred && $playerStore.status !== 'loading'}
       <span class="flex h-9 items-center rounded-full bg-[var(--player-header-background)] px-3 text-xs text-zinc-400 backdrop-blur">No video</span>
     {/if}
-    <button class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--player-header-background)] text-xl backdrop-blur transition-colors hover:bg-[var(--color-surface)] {$videoPreferred ? 'text-[var(--color-accent)]' : 'text-white'}"
+    <button class="cherry-nav-button flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl backdrop-blur transition-colors disabled:cursor-default disabled:opacity-40 {$videoPreferred ? 'text-[var(--color-accent)]' : 'text-white'}"
       disabled={!$playerStore.track} {title} aria-label={title}
       aria-pressed={$videoPreferred} onclick={() => setVideoMode(!$videoPreferred)}>
-      <i class="bx bx-video" aria-hidden="true"></i>
+      <i class="{$videoPreferred ? 'ph-fill' : 'ph'} ph-video" aria-hidden="true"></i>
     </button>
   </div>

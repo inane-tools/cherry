@@ -27,7 +27,7 @@ import { notify } from './contextMenu';
 import { openPage } from './navigation';
 import { errorMessage, invokeStrict } from './platform';
 import { openPlaylistPicker } from './playlistPicker';
-import { openPlaylistStore, openPlaylistTracks, playlistStore, refreshEditedPlaylist } from './playlists';
+import { openPlaylistStore, openPlaylistTracks, playlistStore, refreshEditedPlaylist, recordPlaylistRemoval } from './playlists';
 import { settingsStore, updateSettings } from './settings';
 import { prependSidebarItem } from './folders';
 
@@ -49,16 +49,6 @@ function invalidateLibrary(): void {
 /** Drop the cached header (title/description/art) for one playlist. */
 function invalidateMeta(browseId: string): void {
   cacheClear(`meta:${getActiveChannel()}:${browseId}`);
-}
-
-/**
- * Apply a local edit to the open playlist so the page updates immediately.
- *
- * No-op when a different playlist is open — that page has nothing to change.
- */
-function updateOpenTracks(browseId: string, update: (tracks: Track[]) => Track[]): void {
-  if (get(openPlaylistStore)?.browseId !== browseId) return;
-  openPlaylistTracks.update(update);
 }
 
 // ── Default playlist ───────────────────────────────────────────────
@@ -87,7 +77,21 @@ export async function setDefaultPlaylist(playlist: Playlist | null): Promise<voi
 
 // ── Mutations ──────────────────────────────────────────────────────
 
-export async function addTracksTo(playlist: Playlist, tracks: Track[]): Promise<boolean> {
+const pendingAdds = new Map<string, Promise<boolean>>();
+
+export function addTracksTo(playlist: Playlist, tracks: Track[]): Promise<boolean> {
+  const session = get(authStore);
+  const key = JSON.stringify([authIdentity(session), getActiveChannel(), playlist.browseId, tracks.map(track => track.videoId)]);
+  const pending = pendingAdds.get(key);
+  if (pending) return pending;
+  const operation = addTracksOnce(playlist, tracks).finally(() => {
+    if (pendingAdds.get(key) === operation) pendingAdds.delete(key);
+  });
+  pendingAdds.set(key, operation);
+  return operation;
+}
+
+async function addTracksOnce(playlist: Playlist, tracks: Track[]): Promise<boolean> {
   if (!requireSession()) return false;
   const additions = tracks.filter((t) => t.videoId);
   if (additions.length === 0) return false;
@@ -138,19 +142,33 @@ export async function createNewPlaylist(title: string, tracks: Track[] = []): Pr
   }
 }
 
-export async function removeTrackFrom(playlist: Playlist, track: Track): Promise<void> {
+const pendingRemovals = new Set<string>();
+export async function removeTrackFrom(playlist: Playlist, track: Track, index?: number): Promise<void> {
   if (!requireSession()) return;
+  if (!get(addablePlaylistsStore).some(item => item.browseId === playlist.browseId)) {
+    notify('Only playlists you can edit support removing songs.');
+    return;
+  }
+  const session = get(authStore);
+  const channel = getActiveChannel();
+  const tracks = get(openPlaylistStore)?.browseId === playlist.browseId ? get(openPlaylistTracks) : [];
+  const at = index !== undefined && tracks[index] === track ? index : tracks.indexOf(track);
+  const occurrence = at < 0 ? 0 : tracks.slice(0, at).filter(item => item.videoId === track.videoId).length;
+  const key = JSON.stringify([authIdentity(session), channel, playlist.browseId, track.playlistEntryId ?? [track.videoId, occurrence]]);
+  if (pendingRemovals.has(key)) return;
+  pendingRemovals.add(key);
   try {
-    await removeTrackFromPlaylist(playlist.browseId, track.videoId, get(authStore));
+    await removeTrackFromPlaylist(playlist.browseId, track.videoId, session, { playlistEntryId: track.playlistEntryId, occurrence });
+    if (authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel) return;
     invalidateCollection(playlist.browseId);
-    // Remove the first matching row (playlists may hold duplicates).
-    updateOpenTracks(playlist.browseId, (list) => {
-      const at = list.findIndex((t) => t.videoId === track.videoId);
-      return at < 0 ? list : [...list.slice(0, at), ...list.slice(at + 1)];
-    });
+    invalidateMeta(playlist.browseId);
+    invalidateLibrary();
+    recordPlaylistRemoval(playlist, track);
     notify(`Removed “${track.title}”`);
   } catch (e) {
     notify(errorMessage(e, 'Could not remove the track.'));
+  } finally {
+    pendingRemovals.delete(key);
   }
 }
 
@@ -195,6 +213,7 @@ function applyThumbnails(playlist: Playlist, thumbnails: Thumbnail[]): void {
   playlistStore.update((list) =>
     list.map((p) => (p.browseId === playlist.browseId ? { ...p, thumbnails } : p)),
   );
+  addablePlaylistsStore.update(list => list.map(item => item.browseId === playlist.browseId ? { ...item, thumbnails } : item));
   if (get(openPlaylistStore)?.browseId === playlist.browseId) {
     openPage({ view: 'playlist', entity: { ...playlist, thumbnails } });
   }
@@ -236,7 +255,9 @@ export async function setPlaylistImage(
     const localUrl = `data:${mime};base64,${dataBase64}`;
     applyThumbnails(playlist, [{ url: localUrl }]);
     const previous = bestThumbnail(playlist.thumbnails, 512);
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // A new playlist has no previous cover to compare with. Keep the confirmed
+    // upload preview rather than replacing it with a lagging default thumbnail.
+    for (let attempt = 0; previous && attempt < 3; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
       const meta = await getPlaylistMeta(playlist.browseId, session);
       const next = bestThumbnail(meta?.thumbnails ?? [], 512);

@@ -8,7 +8,10 @@ vi.mock('./addablePlaylists', async () => {
   return { addablePlaylistsStore, removePlaylistLocally: (id: string) => addablePlaylistsStore.update(list => list.filter(p => p.browseId !== id)) };
 });
 vi.mock('./playlists', async () => ({ playlistStore: (await import('svelte/store')).writable([]), homeSectionsStore: (await import('svelte/store')).writable([]) }));
-vi.mock('./pins', async () => ({ pinnedStore: (await import('svelte/store')).writable([]) }));
+vi.mock('./pins', async () => ({ removePin: async () => {
+  const { updateSettings } = await import('./settings');
+  await updateSettings({ pinnedPlaylists: [] });
+} }));
 vi.mock('./playlistLibrary', () => ({ isPlaylistOwned: vi.fn(() => true) }));
 vi.mock('./folders', () => ({ initFolders: vi.fn() }));
 vi.mock('./navigation', () => ({ forgetPlaylistPage: vi.fn() }));

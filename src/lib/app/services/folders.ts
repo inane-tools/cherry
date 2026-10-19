@@ -9,6 +9,7 @@
 import { get, writable } from 'svelte/store';
 import type { PlaylistFolder } from '$lib/core/models';
 import { settingsStore, updateSettings } from './settings';
+import { isPinned } from './pins';
 
 export const foldersStore = writable<PlaylistFolder[]>([]);
 /** Top-level order: playlist ids and folder ids in one list. */
@@ -99,7 +100,7 @@ export async function movePlaylist(
   beforeId: string | null,
   order?: string[],
 ): Promise<void> {
-  if ((get(settingsStore).pinnedPlaylists ?? []).some((pin) => pin.browseId === browseId)) return;
+  if (isPinned(browseId)) return;
   const folders = get(foldersStore).map((f) => ({
     ...f,
     playlistIds: withoutId(f.playlistIds, browseId),

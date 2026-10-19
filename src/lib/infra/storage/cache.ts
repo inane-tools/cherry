@@ -66,6 +66,7 @@ function readPersisted<T>(key: string): T | null {
       return null;
     }
     memory.set(key, { value: parsed.v, expires: parsed.e });
+    pruneMemory();
     return parsed.v;
   } catch {
     return null;
@@ -73,6 +74,10 @@ function readPersisted<T>(key: string): T | null {
 }
 
 function pruneMemory(): void {
+  const time = now();
+  for (const [key, entry] of memory) {
+    if (entry.expires <= time) memory.delete(key);
+  }
   while (memory.size > MEMORY_MAX) {
     const oldest = memory.keys().next().value;
     if (oldest === undefined) break;
@@ -117,7 +122,11 @@ function prunePersisted(): void {
 export function cacheGet<T>(key: string): T | null {
   const hit = memory.get(key);
   if (hit) {
-    if (hit.expires > now()) return hit.value as T;
+    if (hit.expires > now()) {
+      memory.delete(key);
+      memory.set(key, hit);
+      return hit.value as T;
+    }
     memory.delete(key);
   }
   return readPersisted<T>(key);

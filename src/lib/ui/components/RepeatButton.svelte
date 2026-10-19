@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Repeat toggle: off → all → one. The "1" badge marks repeat-one.
+  // Repeat toggle: off → all → one, with a dedicated repeat-one glyph.
   import { cycleRepeat } from '$lib/app/services/player';
   import { repeatMode } from '$lib/app/services/queue';
 
@@ -17,8 +17,5 @@
   aria-label={label}
   aria-pressed={$repeatMode !== 'off'}
 >
-  <i class="bx bx-repeat"></i>
-  {#if $repeatMode === 'one'}
-    <span class="absolute right-1 top-1 text-[8px] font-bold leading-none">1</span>
-  {/if}
+  <i class="{$repeatMode !== 'off' ? 'ph-fill' : 'ph'} {$repeatMode === 'one' ? 'ph-repeat-once' : 'ph-repeat'}"></i>
 </button>

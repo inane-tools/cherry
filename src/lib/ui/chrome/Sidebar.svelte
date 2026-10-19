@@ -4,7 +4,7 @@
   import { thumbnailSources } from '$lib/core/models';
   import { fade, slide, flip } from '$lib/ui/transitions';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
-  import type { Playlist, PlaylistFolder } from '$lib/core/models';
+  import type { Playlist, PlaylistFolder, SidebarPin } from '$lib/core/models';
   import { authStore } from '$lib/app/services/auth';
   import {
     openPlaylist,
@@ -14,9 +14,12 @@
     refreshPlaylistArtwork,
     playlistStore,
   } from '$lib/app/services/playlists';
-  import { back, canGoBack, go, pageStore } from '$lib/app/services/navigation';
+  import { go, pageStore } from '$lib/app/services/navigation';
+  import { searchOpen } from '$lib/app/services/overlays';
   import { openContextMenu } from '$lib/app/services/contextMenu';
-  import { playlistMenu, folderMenu } from '$lib/app/services/menus';
+  import { buildSidebarItems, sidebarPinPreview } from '$lib/core/sidebarItems';
+  import { openSidebarPin } from '$lib/app/services/pinActions';
+  import { playlistMenu, folderMenu, albumMenu, artistMenu, trackMenu } from '$lib/app/services/menus';
   import { openPlaylistPicker } from '$lib/app/services/playlistPicker';
   import { loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import {
@@ -32,6 +35,7 @@
   import { pinnedStore, reorderPin } from '$lib/app/services/pins';
   import { settingsStore, updateSettings } from '$lib/app/services/settings';
   import { closeSidebarDrawer } from '$lib/app/services/layout';
+  import AppMenu from '$lib/ui/components/AppMenu.svelte';
 
   /**
    * Force the full (named) layout even when compact mode is on. The drawer has
@@ -58,11 +62,12 @@
   });
 
   /** The + button opens a small chooser (playlist or folder). */
+  let newMenuOpen = false;
+  let newMenuAnchor: HTMLElement;
   function openNewMenu(event: MouseEvent): void {
-    openContextMenu(event, [
-      { label: 'New playlist', icon: 'bx bx-list-plus', action: () => openPlaylistPicker() },
-      { label: 'New folder', icon: 'bx bx-folder-plus', action: () => openFolderDialog(null) },
-    ]);
+    newMenuAnchor = event.currentTarget as HTMLElement;
+    newMenuOpen = !newMenuOpen;
+    hideTip();
   }
 
   // ── Sidebar contents ────────────────────────────────────────────
@@ -70,65 +75,16 @@
   // from the saved order are appended in the order the library returned them,
   // so a fresh install just shows whatever the API gives us and the user then
   // arranges it however they like.
-  type TopItem =
-    | { id: string; type: 'playlist'; playlist: Playlist }
-    | { id: string; type: 'folder'; folder: PlaylistFolder; items: Playlist[] };
-
   $: playlists = $playlistStore;
-  $: pinnedOrder = $pinnedStore.map((p) => p.browseId);
+  $: pinnedOrder = $pinnedStore.map(pin => pin.browseId);
   $: pinnedIds = new Set(pinnedOrder);
-  $: assignedIds = new Set($foldersStore.flatMap((f) => f.playlistIds));
-  $: folderEntries = $foldersStore.map((f) => ({
-    folder: f,
-    items: f.playlistIds
-      .map((id) => playlists.find((p) => p.browseId === id))
-      .filter((p): p is Playlist => Boolean(p) && !pinnedIds.has(p!.browseId)),
-  }));
-  $: topItems = buildTopItems($sidebarOrderStore, playlists, assignedIds, folderEntries, pinnedOrder);
+  $: topItems = buildSidebarItems($sidebarOrderStore, playlists, $foldersStore, $pinnedStore);
 
-  function buildTopItems(
-    order: string[],
-    list: Playlist[],
-    assigned: Set<string>,
-    folders: { folder: PlaylistFolder; items: Playlist[] }[],
-    pinnedOrder: string[],
-  ): TopItem[] {
-    const pinSet = new Set(pinnedOrder);
-    const topPlaylists = list.filter((p) => !assigned.has(p.browseId) || pinSet.has(p.browseId));
-    const playlistById = new Map(topPlaylists.map((p) => [p.browseId, p]));
-    const folderById = new Map(folders.map((f) => [f.folder.id, f]));
-    const out: TopItem[] = [];
-    const used = new Set<string>();
-
-    const push = (id: string): void => {
-      if (used.has(id)) return;
-      const p = playlistById.get(id);
-      if (p) {
-        out.push({ id, type: 'playlist', playlist: p });
-        used.add(id);
-        return;
-      }
-      const f = folderById.get(id);
-      if (f) {
-        out.push({ id, type: 'folder', folder: f.folder, items: f.items });
-        used.add(id);
-      }
-    };
-
-    for (const id of order) push(id);
-    for (const p of topPlaylists) push(p.browseId);
-    for (const f of folders) push(f.folder.id);
-
-    // Pinned playlists float to the top, in the order they were pinned.
-    const rank = new Map(pinnedOrder.map((id, i) => [id, i]));
-    const pinned: TopItem[] = [];
-    const rest: TopItem[] = [];
-    for (const item of out) {
-      if (item.type === 'playlist' && rank.has(item.id)) pinned.push(item);
-      else rest.push(item);
-    }
-    pinned.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
-    return [...pinned, ...rest];
+  function rowMenu(playlist: Playlist, pin?: SidebarPin) {
+    if (pin?.kind === 'album') return albumMenu(pin.album);
+    if (pin?.kind === 'artist') return artistMenu(pin.artist);
+    if (pin?.kind === 'song') return trackMenu(pin.track);
+    return playlistMenu(playlist, { pin: true });
   }
 
   // ── Drag to reorganise ──────────────────────────────────────────
@@ -236,7 +192,7 @@
     // (nearest item midpoint) rather than the single hovered row, so landing in
     // a gap or on blank space inserts next to the closest item instead of
     // snapping to the bottom.
-    const pinCount = topItems.filter((item) => item.type === 'playlist' && pinnedIds.has(item.id)).length;
+    const pinCount = topItems.filter(item => pinnedIds.has(item.id)).length;
     const index = Math.max(pinCount, topIndexAt(event));
     if (drag.topIndex >= 0 && (index === drag.topIndex || index === drag.topIndex + 1)) {
       drop = null;
@@ -371,34 +327,34 @@
     'flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white';
 </script>
 
-{#snippet row(playlist: Playlist, topIndex: number, folderId: string | null, childIndex: number)}
+{#snippet row(playlist: Playlist, topIndex: number, folderId: string | null, childIndex: number, pin: SidebarPin | undefined = undefined)}
   {#if compact}
     <div class="relative flex justify-center">
       <button
-        class="relative h-10 w-10 cursor-grab select-none overflow-hidden rounded-lg bg-white/5 transition active:cursor-grabbing {(drag?.kind === 'playlist' || drag?.kind === 'pin') && drag?.id === playlist.browseId
+        class="relative h-10 w-10 cursor-grab select-none {pin?.kind === 'artist' ? 'rounded-full' : 'overflow-hidden rounded-lg'} bg-white/5 transition active:cursor-grabbing {(drag?.kind === 'playlist' || drag?.kind === 'pin') && drag?.id === playlist.browseId
           ? 'opacity-40'
           : ''}"
         aria-label={playlist.title}
         draggable="true"
         ondragstart={(e) => startPlaylistDrag(e, playlist.browseId, topIndex, folderId, childIndex)}
         ondragend={endDrag}
-        onclick={() => openPlaylist(playlist)}
-        oncontextmenu={(e) => openContextMenu(e, playlistMenu(playlist, { pin: true }))}
+        onclick={() => pin ? openSidebarPin(pin) : openPlaylist(playlist)}
+        oncontextmenu={(e) => openContextMenu(e, rowMenu(playlist, pin))}
         onmouseenter={(e) => showTip(e, playlist.title, playlist.author ?? '')}
         onmouseleave={hideTip}
       >
         {#if playlist.thumbnails[0]}
-          <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96), onfailure: refreshPlaylistArtwork }} draggable="false" alt="" class="h-full w-full object-cover" loading="lazy" />
+          <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96), onfailure: pin?.kind && pin.kind !== 'playlist' ? undefined : refreshPlaylistArtwork }} draggable="false" alt="" class="h-full w-full object-cover {pin?.kind === 'artist' ? 'rounded-full' : ''}" loading="lazy" />
         {:else}
           <span class="flex h-full w-full items-center justify-center text-[var(--color-accent2)]">
-            <i class="bx bx-music"></i>
+            <i class={pin?.kind === 'artist' ? 'ph-duotone ph-user' : pin?.kind === 'album' ? 'ph-duotone ph-vinyl-record' : 'ph-duotone ph-music-notes'}></i>
           </span>
         {/if}
         {#if pinnedIds.has(playlist.browseId)}
           <span
             class="pointer-events-none absolute bottom-0.5 right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[9px] leading-none text-white"
           >
-            <i class="bx bxs-pin translate-y-[0.5px]"></i>
+            <i class="ph-fill ph-push-pin translate-y-[0.5px]"></i>
           </span>
         {/if}
       </button>
@@ -413,15 +369,15 @@
         draggable="true"
         ondragstart={(e) => startPlaylistDrag(e, playlist.browseId, topIndex, folderId, childIndex)}
         ondragend={endDrag}
-        onclick={() => openPlaylist(playlist)}
-        oncontextmenu={(e) => openContextMenu(e, playlistMenu(playlist, { pin: true }))}
+        onclick={() => pin ? openSidebarPin(pin) : openPlaylist(playlist)}
+        oncontextmenu={(e) => openContextMenu(e, rowMenu(playlist, pin))}
       >
-        <span class="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-white/5">
+        <span class="h-8 w-8 shrink-0 overflow-hidden {pin?.kind === 'artist' ? 'rounded-full' : 'rounded-md'} bg-white/5">
           {#if playlist.thumbnails[0]}
-            <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96), onfailure: refreshPlaylistArtwork }} draggable="false" alt="" class="h-full w-full object-cover" loading="lazy" />
+            <img use:artwork={{ urls: thumbnailSources(playlist.thumbnails, 96), onfailure: pin?.kind && pin.kind !== 'playlist' ? undefined : refreshPlaylistArtwork }} draggable="false" alt="" class="h-full w-full object-cover {pin?.kind === 'artist' ? 'rounded-full' : ''}" loading="lazy" />
           {:else}
             <span class="flex h-full w-full items-center justify-center text-[11px] text-[var(--color-accent2)]">
-              <i class="bx bx-music"></i>
+              <i class={pin?.kind === 'artist' ? 'ph-duotone ph-user' : pin?.kind === 'album' ? 'ph-duotone ph-vinyl-record' : 'ph-duotone ph-music-notes'}></i>
             </span>
           {/if}
         </span>
@@ -432,7 +388,7 @@
           {/if}
         </span>
         {#if pinnedIds.has(playlist.browseId)}
-          <i class="bx bxs-pin shrink-0 text-[11px] text-[var(--color-accent2)]" title="Pinned"></i>
+          <i class="ph-fill ph-push-pin shrink-0 text-[11px] text-[var(--color-accent2)]" title="Pinned"></i>
         {/if}
       </button>
     </div>
@@ -467,22 +423,22 @@
 
 {#snippet folderArtwork(items: Playlist[])}
   {#if items.length > 0}
-    <span class="pointer-events-none relative grid h-full w-full grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden rounded-[inherit] bg-[var(--color-accent)]/25 p-[3px]" aria-hidden="true">
+    <span class="pointer-events-none relative grid h-full w-full grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden rounded-[inherit] bg-[var(--color-accent)]/40 p-[3px]" aria-hidden="true">
       {#each [0, 1, 2, 3] as index}
         <span class="relative min-h-0 min-w-0 overflow-hidden rounded-[5px] bg-[var(--color-art)]">
           {#if items[index]?.thumbnails?.length}
             <img use:artwork={{ urls: thumbnailSources(items[index].thumbnails, 96) }} src={thumbnailSources(items[index].thumbnails, 96)[0]} alt="" draggable="false" class="h-full w-full object-cover" />
           {:else if items[index]}
-            <i class="bx bx-music flex h-full items-center justify-center text-[10px] text-zinc-500"></i>
+            <i class="ph-duotone ph-music-notes flex h-full items-center justify-center text-[10px] text-zinc-500"></i>
           {/if}
         </span>
       {/each}
-      <span class="absolute inset-0 flex items-center justify-center bg-scrim/40 text-[var(--color-accent2)]">
-        <i class="bx bxs-folder"></i>
+      <span class="absolute inset-0 flex items-center justify-center bg-scrim/50 text-[var(--color-accent2)]">
+        <i class="ph-fill ph-folder"></i>
       </span>
     </span>
   {:else}
-    <i class="bx bxs-folder" aria-hidden="true"></i>
+    <i class="ph-fill ph-folder" aria-hidden="true"></i>
   {/if}
 {/snippet}
 
@@ -558,9 +514,9 @@
           </span>
         </span>
         <i
-          class="bx {$collapsedFolders.has(folder.id)
-            ? 'bx-chevron-right'
-            : 'bx-chevron-down'} shrink-0 text-base text-zinc-500"
+          class="{$collapsedFolders.has(folder.id)
+            ? 'ph ph-caret-right'
+            : 'ph ph-caret-down'} shrink-0 text-base text-zinc-500"
         ></i>
       </button>
     </div>
@@ -607,14 +563,13 @@
   {#if compact}
     <div class="relative z-20 flex shrink-0 flex-col items-center gap-2">
       <button
-        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white/[0.06]"
-        aria-label="Back"
-        disabled={!$canGoBack}
-        onclick={back}
-        onmouseenter={(e) => showTip(e, 'Back')}
+        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Search"
+        onclick={() => go('search')}
+        onmouseenter={(e) => showTip(e, 'Search')}
         onmouseleave={hideTip}
       >
-        <i class="bx bx-chevron-left text-3xl"></i>
+        <i class="{$searchOpen ? 'ph-fill' : 'ph'} ph-magnifying-glass"></i>
       </button>
       <button
         class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
@@ -623,7 +578,7 @@
         onmouseenter={(e) => showTip(e, 'Home')}
         onmouseleave={hideTip}
       >
-        <i class="bx bx-home"></i>
+        <i class="{$pageStore.view === 'home' ? 'ph-fill' : 'ph'} ph-house"></i>
       </button>
       <button
         class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
@@ -632,49 +587,38 @@
         onmouseenter={(e) => showTip(e, 'Explore')}
         onmouseleave={hideTip}
       >
-        <i class="bx bx-compass"></i>
-      </button>
-      <button
-        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        aria-label="Search"
-        onclick={() => go('search')}
-        onmouseenter={(e) => showTip(e, 'Search')}
-        onmouseleave={hideTip}
-      >
-        <i class="bx bx-search"></i>
+        <i class="{$pageStore.view === 'explore' ? 'ph-fill' : 'ph'} ph-compass"></i>
       </button>
       <button
         class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
         aria-label="New playlist or folder"
+        aria-haspopup="menu" aria-expanded={newMenuOpen}
         onclick={openNewMenu}
         onmouseenter={(e) => showTip(e, 'New playlist or folder')}
         onmouseleave={hideTip}
       >
-        <i class="bx bx-plus text-2xl"></i>
+        <i class="ph ph-plus text-xl"></i>
       </button>
     </div>
   {:else}
     <div class="relative z-20 flex shrink-0 flex-col gap-0.5 px-2">
-      {#if !forceFull}
-        <button
-          class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
-          aria-label="Back"
-          disabled={!$canGoBack}
-          onclick={back}
-        >
-          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-            <i class="bx bx-chevron-left text-2xl"></i>
-          </span>
-          <span class="truncate">Back</span>
-        </button>
-      {/if}
+      <button
+        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
+        aria-label="Search"
+        onclick={() => go('search')}
+      >
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
+          <i class="{$searchOpen ? 'ph-fill' : 'ph'} ph-magnifying-glass text-xl"></i>
+        </span>
+        <span class="truncate">Search</span>
+      </button>
       <button
         class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
         aria-label="Home"
         onclick={() => go('home')}
       >
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="bx bx-home text-xl"></i>
+          <i class="{$pageStore.view === 'home' ? 'ph-fill' : 'ph'} ph-house text-xl"></i>
         </span>
         <span class="truncate">Home</span>
       </button>
@@ -684,27 +628,18 @@
         onclick={() => go('explore')}
       >
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="bx bx-compass text-xl"></i>
+          <i class="{$pageStore.view === 'explore' ? 'ph-fill' : 'ph'} ph-compass text-xl"></i>
         </span>
         <span class="truncate">Explore</span>
       </button>
       <button
         class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
-        aria-label="Search"
-        onclick={() => go('search')}
-      >
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="bx bx-search text-xl"></i>
-        </span>
-        <span class="truncate">Search</span>
-      </button>
-      <button
-        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
         aria-label="New playlist or folder"
+        aria-haspopup="menu" aria-expanded={newMenuOpen}
         onclick={openNewMenu}
       >
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="bx bx-plus text-2xl"></i>
+          <i class="ph ph-plus text-xl"></i>
         </span>
         <span class="truncate">New</span>
       </button>
@@ -736,9 +671,9 @@
       <p class="mx-2 py-2 text-[11px] leading-relaxed text-zinc-600">
         Sign in with YouTube Music in Settings to load your playlists.
       </p>
-    {:else if $libraryLoading}
+    {:else if $libraryLoading && topItems.length === 0}
       <p class="mx-2 py-2 text-[11px] text-zinc-600">Loading library…</p>
-    {:else if $playlistStore.length === 0}
+    {:else if topItems.length === 0}
       <div class="mx-2 py-2 text-[11px] leading-relaxed text-zinc-600">
         <p>{$libraryLoading ? 'Loading library…' : 'No playlists loaded.'}</p>
         {#if $libraryError}<p class="mt-1 text-rose-300/80">{$libraryError}</p>{/if}
@@ -768,6 +703,8 @@
           {/if}
           {#if item.type === 'folder'}
             {@render folderBlock(item.folder, item.items, i)}
+          {:else if item.type === 'pin'}
+            {@render row(sidebarPinPreview(item.pin), i, null, -1, item.pin)}
           {:else}
             {@render row(item.playlist, i, null, -1)}
           {/if}
@@ -790,6 +727,14 @@
       : 'opacity-100'}"
   ></div>
 </aside>
+
+{#if newMenuOpen}
+  <AppMenu anchor={newMenuAnchor} align="left" label="Create" onclose={() => newMenuOpen = false}
+    items={[
+      { label: 'New playlist', icon: 'ph ph-playlist', action: () => openPlaylistPicker() },
+      { label: 'New folder', icon: 'ph ph-folder-plus', action: () => openFolderDialog(null) },
+    ]} />
+{/if}
 
 {#if tip.show}
   <div

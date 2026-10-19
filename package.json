@@ -5,6 +5,10 @@
   "description": "Cherry — a desktop YouTube Music player",
   "type": "module",
   "scripts": {
+    "icons:generate": "node scripts/icons.mjs",
+    "predev": "npm run icons:generate",
+    "predev:web": "npm run icons:generate",
+    "prebuild": "npm run icons:generate",
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
     "build": "vite build",
@@ -27,10 +31,10 @@
   },
   "devDependencies": {
     "@fontsource-variable/gabarito": "^5.3.0",
+    "@phosphor-icons/web": "^2.1.2",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.1.12",
     "@types/node": "^22.20.3",
-    "boxicons": "^2.1.4",
     "dashjs": "^5.2.1",
     "electron": "44.8.0",
     "electron-builder": "26.15.3",
@@ -64,6 +68,9 @@
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": [
+      "electron/legacy-credentials.ps1"
+    ],
     "win": {
       "target": [
         "nsis"
@@ -80,7 +87,8 @@
       "perMachine": false,
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": false,
+      "menuCategory": "inane",
       "shortcutName": "Cherry",
       "installerHeaderIcon": "build/install-cherry.ico"
     },
@@ -118,6 +126,36 @@
       "base": "org.electronjs.Electron2.BaseApp",
       "baseVersion": "25.08",
       "branch": "stable",
+      "modules": [
+        {
+          "name": "libsecret-migration-tool",
+          "buildsystem": "meson",
+          "config-opts": [
+            "-Dmanpage=false",
+            "-Dcrypto=disabled",
+            "-Dvapi=false",
+            "-Dgtk_doc=false",
+            "-Dintrospection=false",
+            "-Dbash_completion=disabled"
+          ],
+          "cleanup": [
+            "/include",
+            "/lib/pkgconfig",
+            "/share/man",
+            "/share/vala"
+          ],
+          "post-install": [
+            "install -Dm644 COPYING ${FLATPAK_DEST}/share/licenses/cherry/libsecret/COPYING"
+          ],
+          "sources": [
+            {
+              "type": "archive",
+              "url": "https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.7.tar.xz",
+              "sha256": "6b452e4750590a2b5617adc40026f28d2f4903de15f1250e1d1c40bfd68ed55e"
+            }
+          ]
+        }
+      ],
       "finishArgs": [
         "--share=ipc",
         "--socket=wayland",

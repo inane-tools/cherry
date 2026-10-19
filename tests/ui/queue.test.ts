@@ -10,7 +10,7 @@ let component: ReturnType<typeof mount>;
 let frames: FrameRequestCallback[];
 beforeEach(() => {
   frames = [];
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => { frames.push(fn); return frames.length; });
   vi.stubGlobal('cancelAnimationFrame', vi.fn());
   viewport = document.createElement('div'); viewport.style.overflowY = 'auto';

@@ -6,6 +6,7 @@
 
 import { writable } from 'svelte/store';
 import type { Track } from '$lib/core/models';
+import { openPlaylistCreator } from './playlistEditor';
 
 export interface PlaylistPickerState {
   open: boolean;
@@ -18,6 +19,11 @@ const CLOSED: PlaylistPickerState = { open: false, tracks: [] };
 export const playlistPickerStore = writable<PlaylistPickerState>(CLOSED);
 
 export function openPlaylistPicker(tracks: Track[] = []): void {
+  if (tracks.length === 0) {
+    closePlaylistPicker();
+    openPlaylistCreator();
+    return;
+  }
   playlistPickerStore.set({ open: true, tracks });
 }
 

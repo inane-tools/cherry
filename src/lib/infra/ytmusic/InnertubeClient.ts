@@ -28,11 +28,12 @@ import type {
   Track,
 } from '$lib/core/models';
 import { signingCookieHeader, accountIndex, authIdentity } from './authContext';
-import { CherryError } from '$lib/core/errors';
+import { CherryError, isRegionRestricted } from '$lib/core/errors';
 import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
 import { scanHome, scanPageHeader, homeContinuation, scanHomeFilters, isNoiseSegment, type HomeSection, type HomeFilter } from './rawHome';
+import { onlySearchFilter, type SearchFilter } from '$lib/core/searchFilter';
 import { innertubeFetch } from './desktopFetch';
 import { mediaProxyUrl } from './mediaProxy';
 import { installEvaluator } from './evaluator';
@@ -65,7 +66,7 @@ const TTL = {
 } as const;
 
 /**
- * Persistent youtubei.js cache (IndexedDB in the webview).
+ * Persistent youtubei.js cache (IndexedDB in the renderer).
  *
  * The multi-megabyte player JS is reused across restarts. Session config is
  * intentionally refreshed: youtubei.js can retain a previous brand identity
@@ -170,7 +171,7 @@ export async function getInnertube(
         account_index: accountIndex(session),
         retrieve_player: retrievePlayer,
         ...(channel ? { on_behalf_of_user: channel } : {}),
-        // In Electron, direct fetch() to Google is CORS-blocked in the webview;
+        // In Electron, direct fetch() to Google is CORS-blocked in the renderer;
         // relay through the Electron main process. No-op outside Electron.
         fetch: innertubeFetch(),
         cache: getYtCache(Platform),
@@ -328,10 +329,14 @@ async function resolveAudioStream(
         ? await client.getInfo(videoId, { client: playerClient })
         : await client.getInfo(videoId);
     } catch (e) {
+      if (isRegionRestricted(e)) throw new CherryError('region-restricted', 'This song is not available in your region.', e);
       lastError = e;
       continue;
     }
-    if (info.playability_status?.status !== 'OK' || !info.streaming_data) continue;
+    if (info.playability_status?.status !== 'OK' || !info.streaming_data) {
+      if (isRegionRestricted(info.playability_status)) throw new CherryError('region-restricted', 'This song is not available in your region.', info.playability_status);
+      continue;
+    }
     // Live stations often expose a manifest rather than a progressive file.
     if (info.basic_info?.is_live && info.streaming_data.hls_manifest_url) {
       return { track: {}, stream: { url: info.streaming_data.hls_manifest_url, mimeType: 'application/vnd.apple.mpegurl', isLive: true } };
@@ -345,7 +350,7 @@ async function resolveAudioStream(
     // Prefer direct progressive URLs. YouTube frequently returns signed
     // adaptive audio URLs that decipher correctly but are rejected when the
     // HTMLAudioElement requests them. Progressive itag 18 is less fancy but
-    // much more reliable across logged-in WebView2 sessions.
+    // used as the fallback when adaptive audio requests are rejected.
     const progressive = pool
       .filter((f) => PROGRESSIVE_WITH_AUDIO.has(Number(f?.itag)))
       .sort(video ? (a, b) => (b.height ?? 0) - (a.height ?? 0) || byBitrate(a, b) : byBitrate);
@@ -426,7 +431,7 @@ function walkMusicShelves(contents: AnyNode[]): AnyNode[] {
   const items: AnyNode[] = [];
   for (const entry of contents ?? []) {
     if (!entry) continue;
-    if (entry.type === 'ItemSection' || entry.type === 'MusicShelf') {
+    if (entry.type === 'ItemSection' || entry.type === 'MusicShelf' || entry.type === 'MusicShelfContinuation') {
       for (const it of entry.contents ?? []) if (it) items.push(it);
     } else if (entry.type === 'MusicCardShelf') {
       items.push(entry);
@@ -489,17 +494,18 @@ async function expandShelf(search: AnyNode, shelf: AnyNode | undefined): Promise
   }
 }
 
-export async function searchAll(query: string, session?: AuthSession | null): Promise<SearchResults> {
+export async function searchAll(query: string, session?: AuthSession | null, filter: SearchFilter = 'all'): Promise<SearchResults> {
   const q = query.trim();
   if (!q) return { songs: [], albums: [], artists: [], playlists: [] };
   // Search is the most repeated request in the app; cache it briefly.
-  return cached(`search:${q.toLowerCase()}`, TTL.search, () => runSearch(q, session));
+  return cached(`search:${getActiveChannel()}:${sessionKey(session)}:${filter}:${q.toLowerCase()}`, TTL.search, () => runSearch(q, session, filter));
 }
 
-async function runSearch(q: string, session?: AuthSession | null): Promise<SearchResults> {
+async function runSearch(q: string, session: AuthSession | null | undefined, filter: SearchFilter): Promise<SearchResults> {
   const client = await getInnertube(session, { retrievePlayer: false });
   try {
-    const res = await client.music.search(q, { type: 'all' });
+    const types = { all: 'all', songs: 'song', artists: 'artist', albums: 'album', playlists: 'playlist' } as const;
+    const res = await client.music.search(q, { type: types[filter] });
     const songs: Track[] = [];
     const albums: Album[] = [];
     const artists: ArtistRef[] = [];
@@ -580,22 +586,26 @@ async function runSearch(q: string, session?: AuthSession | null): Promise<Searc
     // The first page only holds ~20 rows per shelf. Ask for the next page of
     // each in parallel so a search surfaces more of what YouTube actually has;
     // any shelf without a continuation simply adds nothing.
-    const expanded = await Promise.all([
+    const expanded: AnyNode[][] = filter === 'all' ? await Promise.all([
       expandShelf(res, findShelf(res, (t) => t === 'songs')),
       expandShelf(res, findShelf(res, (t) => t === 'albums')),
       expandShelf(res, findShelf(res, (t) => t === 'artists')),
       expandShelf(res, findShelf(res, (t) => /playlist/.test(t))),
-    ]);
+    ]) : [];
+    if (filter !== 'all' && typeof res.getContinuation === 'function') {
+      const more = await withTimeout(res.getContinuation() as Promise<AnyNode>, 8000);
+      if (more?.contents) expanded.push(walkMusicShelves(Array.isArray(more.contents) ? more.contents : [more.contents]));
+    }
     for (const items of expanded) {
       for (const item of items) pushRow(item);
     }
 
-    return {
+    return onlySearchFilter({
       songs: songs.slice(0, 60),
       albums: albums.slice(0, 30),
       artists: artists.slice(0, 20),
       playlists: playlists.slice(0, 30),
-    };
+    }, filter);
   } catch (e) {
     if (e instanceof CherryError) throw e;
     throw new CherryError('network', 'Search failed. Try again in a moment.', e);
@@ -793,40 +803,20 @@ export async function getHomeSections(session?: AuthSession | null): Promise<Hom
   return (await getHomePage(session)).sections;
 }
 
-export interface HomeFeedPage { sections: HomeSection[]; continuation: string | null; filters?: HomeFilter[] }
+export interface HomeFeedPage { sections: HomeSection[]; continuation: string | null; filters?: HomeFilter[]; header?: import('./rawHome').PageHeader | null }
 
 export async function getHomePage(session?: AuthSession | null, continuation?: string, filter?: HomeFilter | null): Promise<HomeFeedPage> {
   return getBrowsePage('FEmusic_home', session, filter?.params, continuation);
 }
 
 export async function getBrowsePage(browseId: string, session?: AuthSession | null, params?: string, continuation?: string): Promise<HomeFeedPage> {
-  return cached(`${browseId === 'FEmusic_home' ? 'home' : 'browse'}:${getActiveChannel()}:${sessionKey(session)}:${browseId}:${params ?? ''}:${continuation ?? 'first'}`, TTL.home, async () => {
+  return cached(`${browseId === 'FEmusic_home' ? 'home' : 'browse'}:${getActiveChannel()}:shelves-v4:${sessionKey(session)}:${browseId}:${params ?? ''}:${continuation ?? 'first'}`, TTL.home, async () => {
     const client = await getInnertube(session, { retrievePlayer: false });
     const response: AnyNode = await client.actions.execute('/browse', {
       ...(continuation ? { continuation } : { browseId, ...(params ? { params } : {}) }), client: 'YTMUSIC',
     });
-    return { sections: scanHome(response?.data), continuation: homeContinuation(response?.data), filters: scanHomeFilters(response?.data) };
+    return { sections: scanHome(response?.data), continuation: homeContinuation(response?.data), filters: scanHomeFilters(response?.data), header: scanPageHeader(response?.data) };
   }, { shouldCache: (page) => page.sections.length > 0 });
-}
-
-/** Browse a `FEmusic_*` page and return its shelves (used by Explore). */
-async function runBrowseSections(
-  browseId: string,
-  session?: AuthSession | null,
-): Promise<HomeSection[]> {
-  const client = await getInnertube(session, { retrievePlayer: false });
-  const response: AnyNode = await client.actions.execute('/browse', {
-    browseId,
-    client: 'YTMUSIC',
-  });
-  return scanHome(response?.data);
-}
-
-/** Moods & genres / new releases etc. — the YouTube Music "Explore" page. */
-export async function getExploreSections(session?: AuthSession | null): Promise<HomeSection[]> {
-  return cached(`explore:${getActiveChannel()}`, TTL.home, () =>
-    runBrowseSections('FEmusic_explore', session),
-  );
 }
 
 export interface ArtistPage {
@@ -834,6 +824,7 @@ export interface ArtistPage {
   subtitle?: string;
   description?: string;
   thumbnails: Thumbnail[];
+  banner?: Thumbnail[];
   sections: HomeSection[];
 }
 
@@ -841,7 +832,7 @@ export async function getArtistPage(
   browseId: string,
   session?: AuthSession | null,
 ): Promise<ArtistPage> {
-  return cached(`artist:${getActiveChannel()}:${browseId}`, TTL.playlist, async () => {
+  return cached(`artist:${getActiveChannel()}:headers-v2:${browseId}`, TTL.playlist, async () => {
     const client = await getInnertube(session, { retrievePlayer: false });
     const response: AnyNode = await client.actions.execute('/browse', {
       browseId,
@@ -854,6 +845,7 @@ export async function getArtistPage(
       subtitle: header?.subtitle,
       description: header?.description,
       thumbnails: header?.thumbnails ?? [],
+      banner: header?.banner,
       sections: scanHome(raw),
     };
   });
@@ -1155,9 +1147,45 @@ export async function removeTrackFromPlaylist(
   playlistId: string,
   videoId: string,
   session?: AuthSession | null,
+  entry: { playlistEntryId?: string; occurrence?: number } = {},
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
-  await client.playlist.removeVideos(editPlaylistId(playlistId), [videoId]);
+  let setVideoId = entry.playlistEntryId;
+  if (!setVideoId) {
+    // Older disk caches may not contain entry IDs. Resolve exactly one occurrence
+    // from raw Music rows; the library's video-ID removal can remove every copy.
+    let occurrence = Math.max(0, entry.occurrence ?? 0);
+    let continuation: string | undefined;
+    const seen = new Set<string>();
+    for (let page = 0; page < 200; page++) {
+      const response: AnyNode = await client.actions.execute('/browse', {
+        ...(continuation ? { continuation } : { browseId: playlistId.startsWith('VL') ? playlistId : `VL${playlistId}` }),
+        client: 'YTMUSIC',
+      });
+      const scope = deepFind(response.data, 'musicPlaylistShelfRenderer')
+        ?? deepFind(response.data, 'musicPlaylistShelfContinuation')
+        ?? deepFind(response.data, 'appendContinuationItemsAction') ?? response.data;
+      const rows = scope?.contents ?? scope?.continuationItems ?? [];
+      for (const row of rows) {
+        const data = row.musicResponsiveListItemRenderer?.playlistItemData;
+        if (data?.videoId === videoId && occurrence-- === 0) {
+          setVideoId = data.playlistSetVideoId;
+          break;
+        }
+      }
+      if (setVideoId) break;
+      continuation = deepFind(scope, 'nextContinuationData')?.continuation
+        ?? deepFind(scope, 'continuationCommand')?.token;
+      if (!continuation || seen.has(continuation)) break;
+      seen.add(continuation);
+    }
+  }
+  if (!setVideoId) throw new CherryError('internal', 'This playlist entry could not be found. Reopen the playlist and try again.');
+  const result = await client.actions.execute('browse/edit_playlist', {
+    playlistId: editPlaylistId(playlistId),
+    actions: [{ action: 'ACTION_REMOVE_VIDEO', setVideoId }], client: 'YTMUSIC',
+  });
+  assertPlaylistMutation(result, 'remove the song from the playlist');
 }
 
 export async function renamePlaylist(
@@ -1426,6 +1454,7 @@ export async function getSongCredits(
 export interface PlaylistMeta {
   canEdit?: boolean;
   title?: string;
+  author?: string;
   description?: string;
   thumbnails?: Thumbnail[];
 }
@@ -1446,7 +1475,7 @@ export async function getPlaylistMeta(
   // time just to show its description/art, so the description always lagged
   // behind the (already-streamed) track list; now a re-open shows it instantly.
   return cached(
-    `meta:${getActiveChannel()}:${browseId}:permissions-v1:${sessionKey(session)}`,
+    `meta:${getActiveChannel()}:${browseId}:creator-v3:${sessionKey(session)}`,
     TTL.playlist,
     async () => {
       try {
@@ -1460,6 +1489,7 @@ export async function getPlaylistMeta(
         return {
           canEdit: header.canEdit,
           title: header.title,
+          author: header.author,
           description: header.description,
           thumbnails: header.thumbnails,
         };
@@ -1494,14 +1524,19 @@ export async function getHomeFeed(session?: AuthSession | null): Promise<Track[]
   }
 }
 
-// Lyrics and video availability share the same next response for this account.
-const playbackContexts = new Map<string, { expires: number; value: Promise<AnyNode> }>();
-async function playbackContext(videoId: string, session?: AuthSession | null): Promise<AnyNode> {
+// Share the request, retaining only what lyrics/video lookup needs rather than
+// whole recommendation and playlist response trees for the last 32 songs.
+interface PlaybackContext { lyricsId?: string; video: Track | null }
+const playbackContexts = new Map<string, { expires: number; value: Promise<PlaybackContext> }>();
+async function playbackContext(videoId: string, session?: AuthSession | null): Promise<PlaybackContext> {
   const key = `${session?.cookie ?? ''}:${getActiveChannel()}:${videoId}`;
   const cached = playbackContexts.get(key);
   if (cached && cached.expires > Date.now()) return cached.value;
   const value = getInnertube(session).then(client => client.actions.execute('/next', { videoId, client: 'YTMUSIC' }))
-    .then(response => response.data ?? response).catch(error => {
+    .then(response => {
+      const raw = response.data ?? response;
+      return { lyricsId: lyricsBrowseId(raw), video: musicVideoCounterpart(raw, videoId) };
+    }).catch(error => {
       if (playbackContexts.get(key)?.value === value) playbackContexts.delete(key);
       throw error;
     });
@@ -1514,7 +1549,7 @@ async function playbackContext(videoId: string, session?: AuthSession | null): P
 export async function getTrackLyrics(videoId: string, session?: AuthSession | null): Promise<Lyrics | null> {
   const client = await getInnertube(session);
   const next = await playbackContext(videoId, session);
-  const browseId = lyricsBrowseId(next);
+  const browseId = next.lyricsId;
   if (!browseId) return null;
   for (const clientName of ['YTMUSIC_ANDROID', 'YTMUSIC']) {
     try {
@@ -1540,5 +1575,5 @@ export async function getRadioPage(endpoint: RadioEndpoint, session?: AuthSessio
   return { ...parseRadio(raw), endpoint };
 }
 export async function getMusicVideo(videoId: string, session?: AuthSession | null): Promise<Track | null> {
-  return musicVideoCounterpart(await playbackContext(videoId, session), videoId);
+  return (await playbackContext(videoId, session)).video;
 }

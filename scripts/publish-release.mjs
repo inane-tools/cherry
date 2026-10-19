@@ -52,7 +52,9 @@ for (const [metadata, binary] of [['latest.yml', expected[0]], ['latest-linux.ym
 const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
 const section = changelog.split(`## [${pkg.version}]`)[1]?.split('\n## [')[0];
 if (!section || section.split('\n')[0].includes('Unreleased')) throw new Error('Missing dated changelog entry');
-const notes = section.slice(section.indexOf('\n')).trim();
+let notes = section.slice(section.indexOf('\n')).trim();
+try { notes = (await readFile(new URL(`../docs/releases/${pkg.version}.md`, import.meta.url), 'utf8')).trim(); }
+catch (error) { if (error.code !== 'ENOENT') throw error; }
 const notesFile = resolve(tmpdir(), `cherry-release-${process.env.GITHUB_RUN_ID || 'local'}.md`);
 await writeFile(notesFile, `${notes}\n\nWindows: use the NSIS setup executable. Linux: use AppImage or install the Flatpak bundle. Flatpak bundles are updated manually; Windows and AppImage use Cherry’s GitHub updater.\n`);
 console.log(`Verified ${expected.length} assets for ${repo} ${tag}`);

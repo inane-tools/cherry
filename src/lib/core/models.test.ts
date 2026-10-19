@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bestThumbnail, hiResThumbnail, trackDisplayArtists } from './models';
+import { bestThumbnail, hiResThumbnail, trackDisplayArtists, thumbnailSources, expandedArtworkSources } from './models';
 
 describe('bestThumbnail', () => {
   const thumbs = [
@@ -26,6 +26,13 @@ describe('bestThumbnail', () => {
 });
 
 describe('hiResThumbnail', () => {
+  it('requests display-sized Google row artwork but keeps expanded artwork high resolution', () => {
+    const thumbnails = [{ url: 'https://lh3.googleusercontent.com/art=w544-h544-l90-rj', width: 544, height: 544 }];
+    expect(thumbnailSources(thumbnails, 96)[0]).toBe('https://lh3.googleusercontent.com/art=w96-h96-l90-rj');
+    expect(thumbnailSources(thumbnails, 96)[1]).toBe(thumbnails[0].url);
+    expect(expandedArtworkSources(thumbnails, 1080)[0]).toBe('https://lh3.googleusercontent.com/art=w1080-h1080-l90-rj');
+    expect(thumbnailSources([{ url: 'https://example.com/art=w544-h544' }], 96)[0]).toBe('https://example.com/art=w544-h544');
+  });
   it('upgrades ytimg video thumbnails to maxresdefault, keeping the query', () => {
     expect(hiResThumbnail('https://i.ytimg.com/vi/abc123/hqdefault.jpg?sqp=x')).toBe(
       'https://i.ytimg.com/vi/abc123/maxresdefault.jpg?sqp=x',

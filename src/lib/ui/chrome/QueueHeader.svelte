@@ -14,7 +14,7 @@
       title="Clear queue"
       onclick={clearQueue}
     >
-      <i class="bx bx-trash text-lg"></i>
+      <i class="ph ph-trash text-lg"></i>
     </button>
   {/if}
   {#if onClose}
@@ -23,7 +23,7 @@
     aria-label="Close queue"
     onclick={onClose}
   >
-    <i class="bx bx-x text-xl"></i>
+    <i class="ph ph-x text-xl"></i>
   </button>
   {/if}
 </header>

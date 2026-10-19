@@ -1,8 +1,20 @@
-# Electron port
+# Electron desktop host
 
 Main: electron/main.mjs. Sandboxed preload: electron/preload.cjs. Renderer
 adapters: src/lib/desktop. Pure request/path/IPC policy: electron/policy.mjs.
 The source contains no Tauri package imports or Rust build requirements.
+
+UI icons use `@phosphor-icons/web`, bundled locally. Use fill for primary
+playback controls and active navigation/toggles, regular for inactive toggles, saved/pinned states and
+secondary actions and small chevrons/actions, and duotone for artwork
+placeholders and appearance controls. Examples: `ph-fill ph-play`,
+`ph ph-bookmark-simple`, `ph ph-caret-down`, `ph-duotone ph-music-notes`.
+Keep dynamic icons as full class strings so their names are visible to the
+style generator. `npm run icons:generate` refreshes `src/lib/ui/icons.css`;
+dev/build scripts run it automatically. Only used glyph selectors and three
+WOFF2 files ship, without external requests or fallback font formats. Windows
+caption buttons retain their native Segoe glyphs. The inane footer keeps the
+original GitHub and X brand marks as inline SVGs; it does not load Boxicons fonts.
 
 The main window only accepts IPC from its main frame at cherry://app (or the
 fixed development origin). Preload forwards payloads without exposing ipcRenderer.
@@ -20,11 +32,11 @@ Local test checklist:
   Queue/Lyrics, enable video, change quality and check playback continuity.
 - Check captions, window controls, native dragging/double-click, UI zoom,
   media keys, Media Session and tray controls. Closing must exit.
-- Clear data, restart, and confirm the experimental profile alone is reset.
+- Clear data, restart, and confirm the Electron profile alone is reset.
 - Repeat the animation comparison on Linux hardware/VM with acceleration on;
-  Electron does not enable Cherry's WebKitGTK animation workaround.
+  shared transitions use Chromium's native animations on every platform.
 - Compare packaged builds and resource usage, rather than Vite dev overhead.
-- Review all remaining ports before considering releases or automatic updates.
+- Test the installed updater across versions before removing the preview feed.
 
 GitHub Actions runs typecheck, Vitest and Node tests on Windows and Linux, builds
 NSIS/AppImage/Flatpak, and smoke-tests the packaged Windows app. Release jobs
@@ -145,3 +157,22 @@ Installed video and queue follow-up:
   distant rows. UI tests mount 10,000 tracks and exercise scrolling/reordering.
 - `npm test` includes the Svelte UI suite in `tests/ui`; `npm run test:ui` runs it
   separately. The normal service tests retain their existing isolated config.
+
+Resource maintenance:
+
+- Cache parsed lyrics endpoints and video metadata, not full recommendation
+  response trees. Preserve request sharing and account/channel isolation.
+- Enforce the 48-entry memory cache limit on both disk reads and writes, discard
+  expired entries first, and keep recently accessed entries. Persisted playlist
+  data remains available after memory eviction.
+- Healthy artwork needs no global recovery listeners. Failed images share one
+  set, removed again after recovery or teardown. Theme extraction releases its
+  decoded image and canvas before awaiting artwork presentation.
+- Playback position/volume ticks must not recreate thumbnail candidates or
+  schedule tray/Jump List work. Preserve media buffering, hardware acceleration,
+  artwork resolution and the current/next-track preload behavior.
+- To compare RAM, use the same packaged version/profile and workload after
+  warm-up: play a long queue, browse several large playlists, alternate video,
+  Art/Queue/Lyrics and settings, then return to the same view. Compare all Cherry
+  processes and retained renderer heap after settling; do not compare a Vite
+  session with a packaged app or force garbage collection during playback.

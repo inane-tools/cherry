@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fade } from '$lib/ui/transitions';
   import { artwork } from '$lib/ui/actions/artwork';
   import { thumbnailSources } from '$lib/core/models';
   import { get } from 'svelte/store';
@@ -17,12 +18,13 @@
   import { openAlbum, openArtist } from '$lib/app/services/catalog';
   import { openPlaylist } from '$lib/app/services/playlists';
   import { openContextMenu } from '$lib/app/services/contextMenu';
-  import { playlistMenu } from '$lib/app/services/menus';
+  import { playlistMenu, albumMenu, artistMenu } from '$lib/app/services/menus';
   import { parseYouTubeLink, resolveParsedLink } from '$lib/app/services/openLink';
   import { searchAll } from '$lib/infra/ytmusic/InnertubeClient';
   import TrackRow from '$lib/ui/components/TrackRow.svelte';
   import TrackListSkeleton from '$lib/ui/components/TrackListSkeleton.svelte';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
+  import { onlySearchFilter, parseSearchFilter, SEARCH_FILTERS, withSearchFilter, type SearchFilter } from '$lib/core/searchFilter';
 
   export let compact = false;
   export let onClose: () => void = () => {};
@@ -40,6 +42,7 @@
     else choices[Math.min(choices.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)))].focus();
   }
   let q = get(searchQuery);
+  $: query = parseSearchFilter(q);
   $: results = $searchResultsStore;
   let loading = false;
   let error: string | null = null;
@@ -53,7 +56,7 @@
   });
 
   async function run(query: string, immediate = false) {
-    const text = query.trim();
+    const { text, filter } = parseSearchFilter(query);
     clearTimeout(debounce);
     const id = ++seq;
     if (!text) {
@@ -82,7 +85,7 @@
       loading = true;
       error = null;
       try {
-        const res = link ? await resolveParsedLink(link) : await searchAll(text, get(authStore));
+        const res = link ? onlySearchFilter(await resolveParsedLink(link), filter) : await searchAll(text, get(authStore), filter);
         if (id !== seq) return; // a newer search already started
         searchResultsStore.set(res);
         if (
@@ -124,7 +127,8 @@
   });
 
   // Typing in this view refines live.
-  function onType() {
+  function onType(event: Event) {
+    q = (event.currentTarget as HTMLInputElement).value;
     // Shared only for the current overlay session; closing clears it.
     searchQuery.set(q);
     const text = q;
@@ -135,6 +139,14 @@
     if (text === lastTyped) return;
     lastTyped = text;
     void run(text);
+  }
+
+  function selectFilter(filter: SearchFilter) {
+    q = withSearchFilter(q, filter);
+    searchQuery.set(q); lastTyped = q;
+    void run(q, true);
+    if (resultPanel) resultPanel.scrollTop = 0;
+    searchInput.focus();
   }
 
   function play(list: Track[], i: number) {
@@ -158,7 +170,7 @@
   $: albums = results?.albums ?? [];
   $: artists = results?.artists ?? [];
   $: playlists = results?.playlists ?? [];
-  $: pastedLink = !!parseYouTubeLink(q.trim());
+  $: pastedLink = !!parseYouTubeLink(query.text);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -167,15 +179,15 @@
     <!-- App overlays a full-window AuthGate when signed out; nothing to render. -->
   {:else}
   <form
-    class={compact ? 'flex shrink-0 items-center gap-3 rounded-2xl bg-[var(--color-popover)] px-5 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : 'flex items-center gap-2'}
+    class={compact ? 'flex shrink-0 items-center gap-3 rounded-full bg-[var(--color-popover)] px-5 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : 'flex items-center gap-2'}
     onsubmit={(e) => {
       e.preventDefault();
       requestSearch(q);
     }}
   >
-    {#if compact}<i class="bx bx-search shrink-0 text-2xl text-zinc-500" aria-hidden="true"></i>{/if}
+    {#if compact}<i class="ph ph-magnifying-glass shrink-0 text-2xl text-zinc-500" aria-hidden="true"></i>{/if}
     <div
-      class={compact ? 'flex min-w-0 flex-1 items-center gap-3' : 'flex h-10 min-w-0 flex-1 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 transition-colors focus-within:border-[var(--color-accent)]/60'}
+      class={compact ? 'flex min-w-0 flex-1 items-center gap-3' : 'flex h-10 min-w-0 flex-1 items-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-3 transition-colors focus-within:border-[var(--color-accent)]/60'}
     >
       <input
         bind:value={q}
@@ -198,7 +210,7 @@
             searchInput.focus();
           }}
         >
-          <i class="bx bx-x"></i>
+          <i class="ph ph-x"></i>
         </button>
       {/if}
     </div>
@@ -207,17 +219,26 @@
     {:else}
     <button
       type="submit"
-      class="cherry-btn-scrim flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)] text-lg text-white transition-colors hover:bg-[var(--color-accent2)]"
+      class="cherry-btn-scrim flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)] text-lg text-white transition-colors hover:bg-[var(--color-accent2)]"
       title="Search"
       aria-label="Search"
     >
-      <i class="bx bx-search"></i>
+      <i class="ph ph-magnifying-glass"></i>
     </button>
     {/if}
   </form>
 
-  {#if !compact || loading || error || results}
-  <div bind:this={resultPanel} use:overlayScrollbar class={compact ? 'cherry-overlay-scroll min-h-0 overflow-y-auto rounded-2xl bg-[var(--color-popover)] px-4 pb-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : ''}>
+  {#if !compact || q.trim() || loading || error || results}
+  <div bind:this={resultPanel} use:overlayScrollbar class={compact ? 'cherry-overlay-scroll min-h-0 overflow-y-auto rounded-[2rem] bg-[var(--color-popover)] px-4 pb-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : ''}>
+  {#if q.trim() && !pastedLink}
+    <div class="flex flex-wrap gap-2 pb-1 pt-4" role="group" aria-label="Search filters">
+      {#each SEARCH_FILTERS as filter}
+        <button type="button" aria-pressed={query.filter === filter.value}
+          class="rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors {query.filter === filter.value ? 'bg-white text-black' : 'cherry-nav-button text-zinc-300'}"
+          onclick={() => selectFilter(filter.value)}>{filter.label}</button>
+      {/each}
+    </div>
+  {/if}
   {#if loading}
     <div class={compact ? 'pt-4' : 'mt-8'}>
       <TrackListSkeleton rows={6} showHeader={false} />
@@ -225,6 +246,7 @@
   {:else if error}
     <p class="mt-4 text-[12px] text-zinc-500">{error}</p>
   {:else if results}
+    <div in:fade={{ duration: 160 }}>
     {#if songs.length > 0}
       <h2 class="mb-2 text-white {compact ? 'mt-4 text-[12px] font-semibold' : 'mt-8 text-[17px] font-bold tracking-tight sm:text-[19px]'}">
         {pastedLink ? 'Pasted link' : 'Songs'}
@@ -245,11 +267,12 @@
           <button
             class="flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-[var(--color-elevated)] py-1 pl-1 pr-3 text-[12px] text-zinc-300 transition-colors hover:border-[var(--color-accent)]/50 hover:bg-white/5 hover:text-white"
             onclick={() => openArtist(artist)}
+            oncontextmenu={(event) => openContextMenu(event, artistMenu(artist))}
           >
             <!-- Fallback sits underneath: if the avatar URL expires the image
                  hides itself and the icon shows through. -->
             <span class="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 text-zinc-500">
-              <i class="bx bx-user text-sm"></i>
+              <i class="ph-duotone ph-user text-sm"></i>
               {#if avatar}
                 <img
                   src={avatar}
@@ -276,6 +299,7 @@
             class="group flex flex-col gap-2 rounded-lg p-2 text-left transition-colors hover:bg-white/5"
             title={album.title}
             onclick={() => openAlbum(album)}
+            oncontextmenu={(event) => openContextMenu(event, albumMenu(album))}
           >
             <div class="aspect-square w-full overflow-hidden rounded-lg bg-white/5">
               {#if albumCover(album)}
@@ -286,7 +310,7 @@
                   loading="lazy"
                 />
               {:else}
-                <div class="flex h-full w-full items-center justify-center text-zinc-600"><i class="bx bx-album text-2xl"></i></div>
+                <div class="flex h-full w-full items-center justify-center text-zinc-600"><i class="ph-duotone ph-vinyl-record text-2xl"></i></div>
               {/if}
             </div>
             <div class="min-w-0">
@@ -310,7 +334,7 @@
             onclick={() => openPlaylist(playlist)}
             oncontextmenu={(e) => openContextMenu(e, playlistMenu(playlist))}
           >
-            {#if pastedLink}<span class="w-6 shrink-0 text-center text-xs text-zinc-600"><i class="bx bx-list-ul text-base" aria-hidden="true"></i></span>{/if}
+            {#if pastedLink}<span class="w-6 shrink-0 text-center text-xs text-zinc-600"><i class="ph ph-queue text-base" aria-hidden="true"></i></span>{/if}
             <div class="overflow-hidden bg-white/5 {pastedLink ? 'h-10 w-10 shrink-0 rounded-md' : 'aspect-square w-full rounded-lg'}">
               {#if playlistCover(playlist)}
                 <img
@@ -320,7 +344,7 @@
                   loading="lazy"
                 />
               {:else}
-                <div class="flex h-full w-full items-center justify-center text-zinc-600"><i class="bx bx-music text-2xl"></i></div>
+                <div class="flex h-full w-full items-center justify-center text-zinc-600"><i class="ph-duotone ph-music-notes text-2xl"></i></div>
               {/if}
             </div>
             <div class="min-w-0 {pastedLink ? 'flex-1' : ''}">
@@ -336,6 +360,7 @@
     {/if}
 
 
+    </div>
   {/if}
   </div>
   {/if}

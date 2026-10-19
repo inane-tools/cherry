@@ -12,6 +12,6 @@
 {#if $settingsStore.playerShowLyrics}
 <button class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl disabled:cursor-default disabled:text-zinc-600 {lyricsAvailable && $settingsStore.lyricsEnabled ? 'text-[var(--color-accent)]' : 'text-zinc-400 enabled:hover:text-white'}"
   disabled={!canToggle} title={lyricsTitle} aria-label={lyricsTitle} aria-pressed={!!$settingsStore.lyricsEnabled} onclick={toggleLyrics}>
-  <i class="bx bx-captions" aria-hidden="true"></i>
+  <i class="{$settingsStore.lyricsEnabled ? 'ph-fill' : 'ph'} ph-microphone-stage" aria-hidden="true"></i>
 </button>
 {/if}
