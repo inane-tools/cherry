@@ -118,6 +118,9 @@ jobs:
         run: flatpak install --user --noninteractive -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.electronjs.Electron2.BaseApp//25.08
       - name: Build AppImage and Flatpak
         run: npm run dist:linux
+        env:
+          # The bundler otherwise hides flatpak-builder's actual error output.
+          DEBUG: '@malept/flatpak-bundler'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cherry-linux-x64
