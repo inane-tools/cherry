@@ -131,6 +131,7 @@
           "name": "libsecret-migration-tool",
           "buildsystem": "meson",
           "config-opts": [
+            "--libdir=lib",
             "-Dmanpage=false",
             "-Dcrypto=disabled",
             "-Dvapi=false",
@@ -145,7 +146,7 @@
             "/share/vala"
           ],
           "post-install": [
-            "install -Dm644 COPYING ${FLATPAK_DEST}/share/licenses/cherry/libsecret/COPYING"
+            "install -Dm644 /run/build/libsecret-migration-tool/COPYING ${FLATPAK_DEST}/share/licenses/cherry/libsecret/COPYING"
           ],
           "sources": [
             {
