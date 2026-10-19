@@ -140,3 +140,7 @@ both Electron YAML feeds; Tauri releases are skipped. No personal access token
 is shared between repositories. Keep cherry-electron public and keep its bridge
 workflow enabled while preview installations still need updates. The withdrawn
 1.7.1 release remains a draft there; do not republish it as the 2.0 release.
+
+The compatibility feed tags its own existing history and copies the canonical
+release assets with size/checksum verification. Source history and release tags
+remain authoritative in cherry. This keeps bridge permissions at contents:write.

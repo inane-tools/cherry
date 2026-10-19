@@ -85,14 +85,22 @@ async function copyRelease(source, destination, release, latestTag, compatibilit
   const commit = api(`repos/${source}/commits/${encodeURIComponent(tag)}`).sha;
   let destinationCommit = api(`repos/${destination}/commits/${encodeURIComponent(tag)}`, true);
   if (!destinationCommit) {
-    execFileSync('git', ['fetch', '--no-tags', `https://github.com/${source}.git`, `refs/tags/${tag}`], { stdio: 'inherit' });
-    const origin = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
-    if (origin.replace(/\.git$/, '') !== `https://github.com/${destination}`) throw Error('Checkout origin does not match destination');
-    // GITHUB_TOKEN pushes do not trigger a tag build. This only copies history.
-    execFileSync('git', ['push', 'origin', `FETCH_HEAD:refs/tags/${tag}`], { stdio: 'inherit' });
+    if (bridge) {
+      // A compatibility feed only mirrors verified assets. Tag its existing
+      // history so the token needs contents:write, not workflow-import rights.
+      const branch = api(`repos/${destination}`).default_branch;
+      const target = api(`repos/${destination}/commits/${encodeURIComponent(branch)}`).sha;
+      gh(['api', '--method', 'POST', `repos/${destination}/git/refs`, '-f', `ref=refs/tags/${tag}`, '-f', `sha=${target}`]);
+    } else {
+      execFileSync('git', ['fetch', '--no-tags', `https://github.com/${source}.git`, `refs/tags/${tag}`], { stdio: 'inherit' });
+      const origin = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
+      if (origin.replace(/\.git$/, '') !== `https://github.com/${destination}`) throw Error('Checkout origin does not match destination');
+      // GITHUB_TOKEN pushes do not trigger a tag build. This only copies history.
+      execFileSync('git', ['push', 'origin', `FETCH_HEAD:refs/tags/${tag}`], { stdio: 'inherit' });
+    }
     destinationCommit = api(`repos/${destination}/commits/${encodeURIComponent(tag)}`);
   }
-  if (destinationCommit.sha !== commit) throw Error('Destination tag points at different code: ' + tag);
+  if (!bridge && destinationCommit.sha !== commit) throw Error('Destination tag points at different code: ' + tag);
   const folder = await mkdtemp(join(tmpdir(), 'cherry-release-copy-'));
   try {
     if (assets.length) gh(['release', 'download', tag, '--repo', source, '--dir', folder]);
