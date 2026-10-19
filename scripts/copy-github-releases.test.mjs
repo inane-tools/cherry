@@ -4,7 +4,15 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateCopy, assetName, validateTauriManifest, verifyAsset } from './copy-github-releases.mjs';
+import { validateCopy, assetName, validateTauriManifest, verifyAsset, isMissingGitHubResource } from './copy-github-releases.mjs';
+
+test('missing destination tags can return 422 without hiding other API failures', () => {
+  assert.equal(isMissingGitHubResource('gh: Not Found (HTTP 404)'), true);
+  assert.equal(isMissingGitHubResource('gh: No commit found for SHA: v2.0.0 (HTTP 422)'), true);
+  assert.equal(isMissingGitHubResource('gh: Validation Failed (HTTP 422)'), false);
+  assert.equal(isMissingGitHubResource('gh: Bad credentials (HTTP 401)'), false);
+  assert.equal(isMissingGitHubResource('gh: API rate limit exceeded (HTTP 403)'), false);
+});
 
 test('release copying is restricted to the three migration repositories and valid tags', () => {
   validateCopy('inane-tools/cherry', 'inane-tools/cherry-tauri', 'all');

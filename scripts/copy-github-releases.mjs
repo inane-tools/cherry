@@ -39,10 +39,14 @@ export async function verifyAsset(file, asset) {
   if (asset.digest && asset.digest !== digest) throw Error('Release asset checksum mismatch: ' + asset.name);
   return digest;
 }
+export function isMissingGitHubResource(stderr) {
+  return /HTTP 404|Not Found/.test(stderr) ||
+    (/HTTP 422/.test(stderr) && /No commit found for SHA:/.test(stderr));
+}
 function gh(args, missing = false) {
   const result = spawnSync('gh', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60 * 1000 });
   if (result.status !== 0) {
-    if (missing && /HTTP 404|Not Found/.test(result.stderr || '')) return null;
+    if (missing && isMissingGitHubResource(result.stderr || '')) return null;
     throw Error(result.stderr || result.error?.message || 'GitHub CLI failed');
   }
   return result.stdout;
