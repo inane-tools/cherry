@@ -103,8 +103,7 @@ faster to open. It also refreshes navigation, menus, the compact player and
 collection headers, adds profile pages and filtered search, and separates pins
 by channel. Existing Tauri installations require a manual installation;
 the welcome screen can import preferences, pins, folders, YouTube Music sign-in
-and Last.fm credentials. Installed Electron 1.7.1 previews can update to 2.0
-through the compatibility feed; later updates use this repository directly.
+and Last.fm credentials. Electron updates use this repository directly.
 
 **v1.7.0 (Fukagawa)** adds lyrics, music videos and station playback, with
 smoother transitions, improved artwork handling and a calmer startup.
@@ -206,11 +205,8 @@ Downloads are checked against the published SHA-512 checksums. Windows installer
 are currently unsigned. Flatpak installs link to the latest bundle for manual
 installation; development builds do not self-update.
 
-New Electron builds use the `inane-tools/cherry` feed. Installed 1.7.1 previews
-still use `cherry-electron`, which is kept as a compatibility bridge: it mirrors
-future public Electron releases once an hour, or on manual dispatch, without
-rebuilding them. After installing a canonical release, subsequent checks use
-`cherry` directly.
+Electron builds use the `inane-tools/cherry` feed. The temporary preview-update
+bridge was retired after the 1.7.1 → 2.0 update was verified.
 
 Tauri uses a different, signed update format. Its final manifest remains pinned
 to 1.7.0 so existing Tauri installations receive Tauri-compatible metadata.

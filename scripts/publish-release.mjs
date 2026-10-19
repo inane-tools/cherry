@@ -7,7 +7,7 @@ import { basename, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { releaseCodename } from '../src/lib/app/services/release.ts';
-import { loadTauriCompatibility } from './copy-github-releases.mjs';
+import { loadTauriCompatibility } from './tauri-compatibility.mjs';
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 // Use the same YAML parser dependency as the updater whose feed is being verified.

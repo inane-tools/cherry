@@ -209,12 +209,12 @@ Check your imported data before optionally uninstalling the old version.
 - GitHub-based updates for Windows and AppImage use explicit download and
   install actions, progress in the accent color and the existing topbar badge.
   Windows/AppImage use inane-tools/cherry; Flatpak bundles update manually.
-  Electron 1.7.1 previews can reach 2.0 through the cherry-electron bridge, then
-  use the canonical feed. Legacy Tauri update metadata stays pinned to 1.7.0.
+  The Electron 1.7.1 → 2.0 transition was verified through a temporary bridge;
+  that bridge is now retired. Legacy Tauri update metadata stays pinned to 1.7.0.
 
 ## [1.7.1] — 2026-10-17
 
-Fukagawa. Withdrawn Electron preview retained as a draft for updater testing.
+Fukagawa. Withdrawn Electron preview.
 The Electron changes are included in the 2.0.0 notes above.
 
 ## [1.7.0] — 2026-10-16

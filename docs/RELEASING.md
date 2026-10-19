@@ -12,9 +12,9 @@ Uninstall keeps app data.
 
 The 2.0 shortcut is **inane → Cherry** in the Start menu (`menuCategory: inane`).
 Desktop shortcut creation is disabled to avoid overwriting the legacy Tauri
-shortcut. Keep the Electron app ID and profile name unchanged so 1.7.1 preview
-updates still find their installation and credentials. Test both coexistence
-with Tauri and an upgrade from Electron 1.7.1 before releasing 2.0.
+shortcut. Keep the Electron app ID and profile name unchanged so updates still
+find their installation and credentials. Test coexistence with Tauri and
+upgrades from the previous Electron release.
 
 `install-cherry.png` is the installer artwork. `npm run dist:win` converts it to
 `build/install-cherry.ico` for the setup executable and progress window; the
@@ -95,7 +95,7 @@ that JSON; Electron clients use the YAML feeds.
 Artifacts are generated locally with `--publish never`; publication is explicit.
 Draft releases are invisible to the normal updater until published.
 
-Test 1.7.1 -> 2.0.0 from installed NSIS and real AppImage builds:
+Test the previous Electron release -> candidate from installed NSIS and real AppImage builds:
 check, download, disconnect/retry, restart/install, verify version and preserved
 settings/queue/login. The updater checks at startup and every four hours but
 never downloads automatically or installs on ordinary quit. A downloaded
@@ -124,23 +124,7 @@ write access; no personal token or updater secret is required. A failed build
 leaves publication blocked. Linux integration still needs hardware testing;
 packaging success alone does not verify keyring, tray or Flatpak permissions.
 
-The same installed version will not offer itself as an update: test 1.7.1 with
-a subsequent higher version. On a future repository rename, change build.publish
+The same installed version will not offer itself as an update: test using an
+older installed release. On a future repository rename, change build.publish
 and links, publish a transition release, and keep the old repository name unused
 so GitHub's redirect remains valid.
-
-
-## Preview update bridge
-
-Installed Electron 1.7.1 previews still read the cherry-electron feed. Its
-Update bridge workflow mirrors the newest public Electron release from cherry
-once an hour, or immediately when manually dispatched. It verifies asset sizes
-and checksums and copies files without building. The source release must contain
-both Electron YAML feeds; Tauri releases are skipped. No personal access token
-is shared between repositories. Keep cherry-electron public and keep its bridge
-workflow enabled while preview installations still need updates. The withdrawn
-1.7.1 release remains a draft there; do not republish it as the 2.0 release.
-
-The compatibility feed tags its own existing history and copies the canonical
-release assets with size/checksum verification. Source history and release tags
-remain authoritative in cherry. This keeps bridge permissions at contents:write.

@@ -1,7 +1,6 @@
 # Cherry's Electron transition
 
-**2.0.0 Furano** replaces the Tauri host with Electron. Electron 1.7.1 remains
-a withdrawn preview retained for updater testing.
+**2.0.0 Furano** replaces the Tauri host with Electron.
 
 ## Repositories
 
@@ -10,15 +9,10 @@ a withdrawn preview retained for updater testing.
   Electron, and future Electron packages use this repository for updates.
 - `inane-tools/cherry-tauri` preserves the Tauri source, branches, tags and
   historical release assets. Its original build workflows are disabled.
-- `inane-tools/cherry-electron` remains a compatibility update feed for already
-  installed previews. Its old installer workflow is disabled; Update bridge
-  mirrors future public Electron releases from cherry once an hour or on manual
-  dispatch. Releases are copied byte-for-byte, not rebuilt. The 1.7.1 release is
-  a draft, preserving its original assets for testing.
 
 No repository names were swapped. New Electron source/release links point at
 cherry. Keep the Electron app ID `tools.inane.cherry.electron` and profile name
-`cherry-electron`: changing them would split existing testers' installations,
+`cherry-electron`: changing them would split existing installations,
 settings and encrypted secrets. Repository names do not determine app identity.
 
 ## Existing users and updater formats
@@ -41,10 +35,9 @@ from `build/tauri-latest.json`, version 1.7.0, with signed binary URLs in
 cherry-tauri. Electron consumes `latest.yml` and `latest-linux.yml` instead.
 Never rewrite the Tauri JSON to offer an Electron package as a Tauri update.
 
-Installed Electron 1.7.1 previews can receive a future public 2.0 update through
-the cherry-electron bridge. That update installs normally and its packaged
-`app-update.yml` switches subsequent checks to cherry. Development pushes run
-checks only; explicit manual runs and release tags are required to build installers.
+The Electron 1.7.1 → 2.0 updater transition was verified and its temporary bridge
+has been retired. Installed 2.0 builds check cherry directly. Development pushes
+run checks only; explicit manual runs and release tags build installers.
 
 ## Importing Tauri data
 

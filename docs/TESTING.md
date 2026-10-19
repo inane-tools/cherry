@@ -30,12 +30,12 @@ helper test compiles its P/Invoke code and checks struct layout with
 `-ValidateOnly`; it never calls Credential Manager. UI tests check disclaimer
 gating, preview-before-import, account opt-out, duplicate clicks and restart.
 
-Before releasing 2.0, manually test migration using disposable Tauri profiles on
+For migration changes, manually test using disposable Tauri profiles on
 Windows and Linux (including Flatpak). Confirm restored pins, folders, theme,
 YouTube account/brand channel and Last.fm scrobbling after restart. Check missing
 or locked keyrings and expired Google cookies. Verify the Start menu retains
-the legacy shortcut while adding `inane/Cherry`, including an Electron 1.7.1
-upgrade. No 2.0 installers have been built for the initial migrator work.
+the legacy shortcut while adding `inane/Cherry`. Also verify that an ordinary
+Electron update preserves settings, queue and credentials.
 
 The current electron-builder dependency tree reports moderate development-only
 logger advisories through sprintf-js, for which no patched version is published.
