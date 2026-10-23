@@ -1,6 +1,6 @@
 {
   "name": "cherry",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "description": "Cherry — a desktop YouTube Music player",
   "type": "module",
@@ -24,7 +24,10 @@
     "dist:appimage": "npm run build && electron-builder --linux AppImage --x64 --publish never",
     "dist:flatpak": "npm run build && electron-builder --linux flatpak --x64 --publish never",
     "installer:icon": "node scripts/installer-icon.mjs",
-    "test:ui": "vitest run --config vitest.ui.config.ts"
+    "test:ui": "vitest run --config vitest.ui.config.ts",
+    "pack:mac": "npm run build && electron-builder --mac --dir --publish never --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false",
+    "dist:mac": "npm run dmg:icon && npm run build && electron-builder --mac dmg zip --arm64 --x64 --publish never --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false",
+    "dmg:icon": "node scripts/dmg-icon.mjs"
   },
   "dependencies": {
     "electron-updater": "6.8.9"
@@ -181,6 +184,19 @@
           "/share/metainfo/tools.inane.cherry.electron.metainfo.xml"
         ]
       ]
+    },
+    "dmg": {
+      "icon": "release/.installer-icon/install-cherry.icns"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "electron/assets/icon.png",
+      "category": "public.app-category.music",
+      "artifactName": "Cherry-${version}-mac-${arch}.${ext}",
+      "executableName": "Cherry"
     }
   },
   "homepage": "https://inane.tools"

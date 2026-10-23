@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getCurrentWindow } from '$lib/desktop/window';
   import { onMount, tick } from 'svelte';
-  import { isDesktop } from '$lib/app/services/platform';
+  import { isDesktop, isMacDesktop } from '$lib/app/services/platform';
   import { settingsStore } from '$lib/app/services/settings';
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
@@ -88,19 +88,23 @@
    */
   export let minimal = false;
   export let scrolled = false;
+  export let showBackdrop = true;
   /** Narrow layout: show the hamburger that opens the sidebar drawer. */
   export let narrow = false;
   export let drawerVisible = false;
   export let onMenu: () => void = () => {};
 
   let windows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
+  let macos = isMacDesktop();
   let maximized = false;
   onMount(() => {
     let disposed = false;
     let stop = () => {};
     void (async () => {
       if (!isDesktop() || disposed) return;
-      windows = await window.cherryDesktop?.invoke<string>('desktop_platform') === 'windows';
+      const platform = await window.cherryDesktop?.invoke<string>('desktop_platform');
+      windows = platform === 'windows';
+      macos = platform === 'macos';
       const win = getCurrentWindow();
       maximized = await win.isMaximized();
       const unlisten = await win.onResized(() => { void win.isMaximized().then(value => { if (!disposed) maximized = value; }); });
@@ -140,14 +144,15 @@
 <!-- Navigation sits below modal backdrops; account/window controls stay above. -->
 <header
   data-desktop-drag-region
+  class:macos
   class="absolute inset-x-0 top-0 flex h-12 items-center gap-2 pl-2"
 >
-  {#if !minimal && scrolled}
+  {#if !minimal && scrolled && showBackdrop}
     <div class="cherry-topbar-backdrop" aria-hidden="true" transition:fade={{ duration: 160 }}></div>
   {/if}
   <!-- Navigation and page identity stay together in both sidebar layouts. -->
   {#if !minimal}
-    <div class="relative flex min-w-0 flex-1 items-center gap-2 {narrow && drawerVisible && !$settingsOpen && !$searchOpen ? 'z-40' : 'z-20'}">
+    <div class="cherry-topbar-navigation relative flex min-w-0 flex-1 items-center gap-2 {narrow && drawerVisible && !$settingsOpen && !$searchOpen ? 'z-40' : 'z-20'}">
       <button
         class="cherry-nav-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg leading-none text-white transition-colors disabled:cursor-default disabled:opacity-40"
         title="Back" aria-label="Back" disabled={!$canGoBack} onclick={back}
@@ -162,7 +167,7 @@
           <i class="ph ph-list block leading-none" aria-hidden="true"></i>
         </button>
       {/if}
-      <div class="flex min-w-0 flex-1 items-center gap-2" aria-label="Current page">
+      <div class="cherry-topbar-identity flex min-w-0 flex-1 items-center gap-2" aria-label="Current page">
         {#if $pageStore.view === 'home' || $pageStore.view === 'explore' || ($pageStore.view === 'browse' && $pageStore.entity.kind !== 'profile')}
           <img src={logoUrl} alt="" draggable="false" class="h-8 w-8 shrink-0" />
         {:else if headingArtwork.length}
@@ -183,7 +188,7 @@
   {/if}
 
   <!-- Right: account + native window controls. -->
-  <div class="relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls ? '' : 'pr-3'}">
+  <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls || macos ? '' : 'pr-3'}">
     {#if !minimal}
       {#if $updateStore.phase === 'available' || $updateStore.phase === 'ready'}
         <button
@@ -216,7 +221,7 @@
       </button>
     {/if}
 
-    {#if isDesktop() && $settingsStore.windowControls}
+    {#if isDesktop() && !macos && $settingsStore.windowControls}
       <!-- Native Windows caption buttons: Segoe system glyphs
            (E921 minimise, E922 maximise, E923 restore, E8BB close).
            `z-40` keeps them clickable above the sign-in gate, which covers the
@@ -260,3 +265,14 @@
       { label: 'Quit Cherry', icon: 'ph ph-sign-out', disabled: !isDesktop(), action: close },
     ]} />
 {/if}
+
+<style>
+  header.macos {
+    padding-left: var(--mac-titlebar-inset);
+    padding-right: 16px;
+    gap: 16px;
+  }
+  header.macos .cherry-topbar-navigation { gap: 12px; }
+  header.macos .cherry-topbar-identity { gap: 10px; }
+  header.macos .cherry-topbar-actions { gap: 12px; }
+</style>

@@ -38,10 +38,11 @@ Local test checklist:
 - Compare packaged builds and resource usage, rather than Vite dev overhead.
 - Test the installed updater across versions before removing the preview feed.
 
-GitHub Actions runs typecheck, Vitest and Node tests on Windows and Linux, builds
-NSIS/AppImage/Flatpak, and smoke-tests the packaged Windows app. Release jobs
-validate updater assets before publication. macOS is deferred. GitHub updates
-use electron-updater with opt-in download/install.
+GitHub Actions runs typecheck, Vitest and Node tests on Windows, Linux and macOS,
+builds NSIS/AppImage/Flatpak and Apple Silicon/Intel DMGs, and smoke-tests the
+packaged Windows and macOS apps. Release jobs validate updater assets and require
+both DMGs before publication. macOS uses manual updates; see [MACOS.md](MACOS.md).
+Windows and AppImage use electron-updater with opt-in download/install.
 See RELEASING.md and MIGRATION.md before publishing or changing the feed.
 Do not reuse the Tauri updater key or feed.
 

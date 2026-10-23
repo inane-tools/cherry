@@ -21,7 +21,8 @@
   import { startShortcuts } from '$lib/app/services/shortcuts';
   import { openDevTools } from '$lib/app/services/devtools';
   import { startAppearance } from '$lib/app/services/appearance';
-  import { startZoom } from '$lib/app/services/zoom';
+  import { isMacDesktop } from '$lib/app/services/platform';
+  import { renderedZoom, startZoom } from '$lib/app/services/zoom';
   import {
     narrowLayout,
     sidebarDrawerOpen,
@@ -80,6 +81,7 @@
   // the sign-in button lives). When signed out these show a full-window gate
   // instead of partial content.
   $: signedOut = ready && !$authStore;
+  $: macInlineSidebar = isMacDesktop() && ready && !signedOut && !$narrowLayout;
   $: bannerPage = ['playlist', 'album', 'artist'].includes($pageStore.view)
     || ($pageStore.view === 'browse' && $pageStore.entity.kind === 'profile');
 
@@ -223,9 +225,15 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions : only prevents the native menu -->
-<div use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} oncontextmenu={suppressNativeContextMenu}>
+<div use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} class:macos={isMacDesktop()}
+  data-sidebar-layout={ready && !signedOut && !$narrowLayout ? ($settingsStore.compactSidebar ? 'compact' : 'expanded') : 'none'}
+  style:--cherry-ui-scale={$renderedZoom}
+  oncontextmenu={suppressNativeContextMenu}>
   {#if !launched}
     <div class="absolute inset-0 z-[35] bg-[var(--color-surface)]" out:fade={{ duration: 300 }} aria-hidden="true"></div>
+  {/if}
+  {#if macInlineSidebar}
+    <div class="cherry-topbar-backdrop cherry-topbar-backdrop-window" aria-hidden="true" transition:fade={{ duration: 160 }}></div>
   {/if}
   <div class="flex min-h-0 flex-1">
     <!-- Playlist rail: full window height, never covered by the top bar or player.
@@ -240,7 +248,7 @@
       <div data-page-backdrop-host class="pointer-events-none absolute inset-0 isolate overflow-hidden" aria-hidden="true"></div>
       <!-- On the welcome screen only the native window controls remain; the bar
            itself stays draggable. -->
-      <Titlebar minimal={signedOut} scrolled={pageScrolled} narrow={$narrowLayout} {drawerVisible} onMenu={toggleSidebarDrawer} />
+      <Titlebar minimal={signedOut} scrolled={pageScrolled} showBackdrop={!macInlineSidebar} narrow={$narrowLayout} {drawerVisible} onMenu={toggleSidebarDrawer} />
       <div class="flex min-h-0 flex-1">
       <div class="relative flex min-w-0 flex-1 flex-col">
       <main

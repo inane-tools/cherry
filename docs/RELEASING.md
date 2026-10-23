@@ -3,7 +3,7 @@
 ## Windows
 
 Run `npm ci`, `npm run typecheck`, `npm test`, `npm run test:smoke`, then
-`npm run dist:win`. The output is `release/Cherry-Setup-2.0.0-x64.exe`.
+`npm run dist:win`. The output is `release/Cherry-Setup-2.0.2-x64.exe`.
 The one-click NSIS installer immediately shows a small progress window, installs
 for the current Windows account in its default location, then launches Cherry.
 There is no destination picker, wizard or completion page. NSIS handles
@@ -42,8 +42,8 @@ npm test
 npm run dist:linux
 ```
 
-Outputs: `release/Cherry-2.0.0-x86_64.AppImage` and
-`release/Cherry-2.0.0-x86_64.flatpak`.
+Outputs: `release/Cherry-2.0.2-x86_64.AppImage` and
+`release/Cherry-2.0.2-x86_64.flatpak`.
 
 The Flatpak builds libsecret 0.21.7 with its `secret-tool` executable retained
 under `/app/bin`. Electron2.BaseApp includes the library but removes that tool;
@@ -52,9 +52,9 @@ The module uses the same pinned source and checksum as the 25.08 base, and ships
 its license. AppImage uses the system `/usr/bin/secret-tool` instead.
 
 ```sh
-chmod +x release/Cherry-2.0.0-x86_64.AppImage
-./release/Cherry-2.0.0-x86_64.AppImage
-flatpak install --user release/Cherry-2.0.0-x86_64.flatpak
+chmod +x release/Cherry-2.0.2-x86_64.AppImage
+./release/Cherry-2.0.2-x86_64.AppImage
+flatpak install --user release/Cherry-2.0.2-x86_64.flatpak
 flatpak run tools.inane.cherry.electron
 ```
 
@@ -62,12 +62,20 @@ Flatpak uses the Electron BaseApp/Zypak wrapper, Wayland/X11, GPU, audio,
 network, notifications, keyring and Discord socket permissions. It does not
 request general home-directory access. Verify login persistence, cover uploads,
 media controls, Discord and tray behavior on KDE/GNOME and Steam Deck; the
-sandbox can change integration availability. macOS is deliberately excluded.
+sandbox can change integration availability.
 
 The generated Flatpak is a standalone bundle, not a Flathub submission or hosted
 update repository. New GitHub bundles must be installed manually. Automatic
 Flatpak updates need a published Flatpak repository (or Flathub); the in-app
 updater never overwrites a Flatpak installation.
+
+## macOS
+
+See [MACOS.md](MACOS.md) for local Apple Silicon/Intel builds, native integration
+checks and future Developer ID signing/notarization. Release tags and manual
+runs build ad-hoc signed, non-notarized DMGs on matching Apple Silicon and Intel
+runners. Both DMGs are published on GitHub; macOS updates remain manual. ZIP
+packages are built locally and in CI but are not published as updater assets.
 
 ## GitHub updates
 
@@ -79,11 +87,13 @@ Never embed a GitHub token in the runtime. A public release repository is needed
 for ordinary users; private repositories require user-side authentication and
 are not a public distribution solution.
 
-For release v2.0.0 upload these files to the same GitHub release:
+For release v2.0.2 upload these files to the same GitHub release:
 
 - Windows NSIS `.exe`, its `.exe.blockmap`, and `latest.yml`.
 - Linux `.AppImage`, its blockmap if generated, and `latest-linux.yml`.
 - The `.flatpak` bundle for manual installation.
+- `Cherry-<version>-mac-arm64.dmg` and `Cherry-<version>-mac-x64.dmg` for
+  manual macOS installation. No `latest-mac.yml` is published.
 
 Keep filenames unchanged: the YAML names the files and their SHA-512 checksums.
 Retain previous releases' assets for differential updates. Do not upload `.nsis.7z`,
@@ -107,9 +117,10 @@ Linux filenames use `x86_64`; Windows filenames use `x64`.
 ## Automated builds and publication
 
 `.github/workflows/desktop-builds.yml` checks types and runs the full test suite
-on Windows and Linux. Development pushes and pull requests run checks only.
+on Windows, Linux and macOS. Development pushes and pull requests run checks only.
 Installer builds run only for an explicit manual run or a release tag, produce
-NSIS/AppImage/Flatpak, and smoke-test the packaged Windows application.
+NSIS/AppImage/Flatpak and Apple Silicon/Intel DMGs, and smoke-test the packaged
+Windows and macOS applications.
 Documentation-only pushes skip checks.
 
 To publish a new version, update package.json/lockfile, the changelog and Flatpak
@@ -117,7 +128,7 @@ metainfo, commit and push, then push the matching `vX.Y.Z` tag. Alternatively,
 run Desktop builds on main with **Publish this version** enabled. The release
 job checks versions, required files, sizes and updater SHA-512 hashes, uploads
 all assets to a draft, then publishes it as the latest release. It refuses to
-replace an already-public release. It never builds MSI, DEB, RPM or macOS.
+replace an already-public release. Both macOS DMGs are required. It does not build MSI, DEB or RPM.
 
 The workflow uses Node 24 and pinned official Actions. Only the release job has
 write access; no personal token or updater secret is required. A failed build

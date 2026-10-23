@@ -493,3 +493,45 @@ html.light .win-caption > button:last-child:hover { color: #fff; }
 @media (prefers-reduced-motion: no-preference) {
   .cherry-loading-skeleton { animation: cherry-loading-pulse 1.8s ease-in-out infinite; }
 }
+
+/* Native controls occupy window coordinates; the content header starts after
+   the inline rail. Account for both that rail and renderer zoom. */
+.cherry-shell.macos {
+  --cherry-chrome-background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  --mac-controls-width: calc(78px / var(--cherry-ui-scale, 1));
+  --mac-titlebar-inset: calc(var(--mac-controls-width) + 16px);
+}
+.cherry-shell.macos[data-sidebar-layout="expanded"] { --mac-titlebar-inset: 16px; }
+.cherry-shell.macos[data-sidebar-layout="compact"] {
+  --mac-titlebar-inset: max(16px, calc(var(--mac-controls-width) + 16px - 56px));
+}
+.cherry-shell.macos .cherry-sidebar { padding-top: 56px; }
+.cherry-shell.macos .cherry-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 48px;
+  -webkit-app-region: drag;
+}
+
+/* macOS uses the same material for the topbar and both inline sidebar modes.
+   The rail begins below the shared strip, with 8px before its first button. */
+.cherry-shell.macos .cherry-topbar-backdrop-window {
+  bottom: auto;
+  height: 48px;
+}
+.cherry-shell.macos .cherry-sidebar {
+  isolation: isolate;
+  background: transparent;
+  backdrop-filter: none;
+}
+.cherry-shell.macos .cherry-sidebar::after {
+  content: '';
+  position: absolute;
+  inset: 48px 0 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--cherry-chrome-background);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}

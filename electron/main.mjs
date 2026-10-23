@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme, dialog } from 'electron';
+import { macMenuTemplate, windowChrome, macTrafficLightPosition } from './macos.mjs';
 import { installTextMenu } from './text-menu.mjs';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -191,6 +192,8 @@ function openLogin() {
 }
 function updateTray(state) {
   updateTaskbar(window, state);
+  // macOS uses the main application's Dock entry, without a menu-bar tray.
+  if (process.platform === 'darwin') return;
   const action = id => () => send('tray://action', id);
   if (!tray) {
     tray = new Tray(nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 20, height: 20 }));
@@ -208,6 +211,7 @@ function updateTray(state) {
 }
 const commands = {
   ...(smoke ? {
+    'smoke:traffic-lights': () => window.getWindowButtonPosition(),
     'smoke:zoom': () => window.webContents.getZoomFactor(),
     'smoke:dispatch': ({ action }) => send('tray://action', action),
     'smoke:second-instance': ({ legacy = false }) => promisify(execFile)(process.execPath, [...(!app.isPackaged ? [app.getAppPath()] : []), '--smoke-test', ...(legacy ? ['--open-playlist', 'VLSMOKE'] : ['--open-playlist=VLSMOKE'])], { windowsHide: true, timeout: 10000 }),
@@ -223,9 +227,9 @@ const commands = {
   'window:is-maximized': () => window.isMaximized(),
   'window:is-fullscreen': () => window.isFullScreen(),
   'window:title': ({ title }) => window.setTitle(String(title).slice(0, 300)),
-  set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); },
+  set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); if (process.platform === 'darwin') window.setWindowButtonPosition(macTrafficLightPosition(scale)); },
   'settings:get': ({ key }) => { if (key !== 'settings') throw new Error('Unknown settings key'); return settings; },
-  'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; await atomic('settings.json', JSON.stringify(settings)); }); },
+  'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; if (process.platform === 'darwin') window.setWindowButtonVisibility(settings.windowControls !== false); await atomic('settings.json', JSON.stringify(settings)); }); },
   'app:relaunch': () => {
     if (migratingData && !migration.committed) throw new Error('Wait for the import to finish before restarting.');
     app.relaunch(); app.quit();
@@ -345,8 +349,18 @@ async function main() {
     } catch { return new Response('Media request failed', { status: 502, headers: cors }); }
   });
   window = new BrowserWindow({ title: 'Cherry', width: 1280, height: 850, minWidth: 460, minHeight: 540,
-    frame: false, show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
+    ...windowChrome(process.platform), show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !smoke } });
+  if (process.platform === 'darwin') {
+    window.setWindowButtonVisibility(settings.windowControls !== false);
+    window.on('leave-full-screen', () => window.setWindowButtonPosition(macTrafficLightPosition(window.webContents.getZoomFactor())));
+    Menu.setApplicationMenu(Menu.buildFromTemplate(macMenuTemplate()));
+    app.on('activate', () => {
+      if (!window || window.isDestroyed()) return;
+      if (window.isMinimized()) window.restore();
+      window.show(); window.focus();
+    });
+  }
   installTextMenu(window, Menu);
   if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
   ipcMain.handle('desktop:invoke', async (event, command, args = {}) => {
@@ -390,6 +404,11 @@ async function main() {
     loginAttempt = true;
     loginContext = { accountIndex: 2, selectedChannelId: 'smoke-brand' };
     const smokeArtwork = nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 64, height: 64 }).toPNG().toString('base64');
+    if (process.platform === 'darwin') {
+      if (!Menu.getApplicationMenu()?.getMenuItemById('mac-edit-menu')) throw new Error('macOS application menu missing');
+      updateTray({});
+      if (tray) throw new Error('macOS must not create a tray');
+    }
     if (process.platform === 'win32' && updateTaskbar(window, { hasTrack: true, playing: true }) !== true) throw new Error('Native taskbar toolbar rejected enabled buttons');
     const { testMediaTransport } = await import('./media-transport.smoke.mjs');
     await testMediaTransport((url, options) => net.fetch(url, options));
@@ -430,6 +449,26 @@ async function main() {
       const platform = await bridge.invoke('desktop_platform');
       const updateState = await bridge.invoke('updater_state');
       if (updateState.environment !== 'development' || (await bridge.invoke('updater_check')).phase !== 'idle') throw Error('Smoke profile attempted real updates');
+      if (platform === 'macos') {
+        const header = document.querySelector('header.macos');
+        if (!header) throw Error('macOS topbar missing');
+        const shell = document.querySelector('.cherry-shell');
+        const previousScale = shell.style.getPropertyValue('--cherry-ui-scale');
+        try {
+          for (const scale of [0.55, 1.1, 2.2]) {
+            shell.style.setProperty('--cherry-ui-scale', scale);
+            await bridge.invoke('set_window_zoom', { scale });
+            const bounds = header.getBoundingClientRect();
+            const position = await bridge.invoke('smoke:traffic-lights');
+            if (Math.abs(position.y + 7 - bounds.height * scale / 2) > 1) throw Error('macOS traffic lights are not centered at zoom ' + scale);
+            if (bounds.left + parseFloat(getComputedStyle(header).paddingLeft) < 78 / scale) throw Error('Native traffic-light space missing at zoom ' + scale);
+          }
+        } finally {
+          shell.style.setProperty('--cherry-ui-scale', previousScale);
+          await bridge.invoke('set_window_zoom', { scale: 1.1 });
+        }
+        if (header.querySelector('button[aria-label=Minimize]')) throw Error('Duplicate macOS window controls');
+      }
       if (platform === 'windows') {
         const caption = document.querySelector('.win-caption');
         if (!caption || caption.querySelectorAll('.win-glyph').length !== 3) throw Error('Windows Segoe captions missing');
@@ -542,7 +581,11 @@ async function main() {
     app.quit();
   }
 }
-if (!app.requestSingleInstanceLock({ playlistId: playlistArgument(process.argv) })) app.quit();
+if (!app.requestSingleInstanceLock({ playlistId: playlistArgument(process.argv) })) {
+  // A relaunch only focuses the owner; don't leave a second Dock tile while exiting.
+  if (process.platform === 'darwin') app.dock.hide();
+  app.quit();
+}
 else {
   app.on('second-instance', (_event, argv, _directory, extra) => {
     playlistLaunch.receive(typeof extra?.playlistId === 'string' ? ['--open-playlist', extra.playlistId] : argv); if (!smoke) { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); } });

@@ -26,6 +26,8 @@ const expected = [
   `Cherry-${pkg.version}-x86_64.AppImage`,
   'latest-linux.yml',
   `Cherry-${pkg.version}-x86_64.flatpak`,
+  `Cherry-${pkg.version}-mac-arm64.dmg`,
+  `Cherry-${pkg.version}-mac-x64.dmg`,
 ];
 // Existing Tauri clients still request latest.json from the canonical repository.
 // Keep them on their final signed Tauri release while Electron uses latest*.yml.
@@ -56,7 +58,7 @@ let notes = section.slice(section.indexOf('\n')).trim();
 try { notes = (await readFile(new URL(`../docs/releases/${pkg.version}.md`, import.meta.url), 'utf8')).trim(); }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
 const notesFile = resolve(tmpdir(), `cherry-release-${process.env.GITHUB_RUN_ID || 'local'}.md`);
-await writeFile(notesFile, `${notes}\n\nWindows: use the NSIS setup executable. Linux: use AppImage or install the Flatpak bundle. Flatpak bundles are updated manually; Windows and AppImage use Cherry’s GitHub updater.\n`);
+await writeFile(notesFile, `${notes}\n\nWindows: use the NSIS setup executable. Linux: use AppImage or install the Flatpak bundle. macOS: use the arm64 DMG for Apple Silicon or x64 DMG for Intel, then drag Cherry into Applications. macOS builds are ad-hoc signed and are not notarized; Gatekeeper may require approval in System Settings → Privacy & Security. macOS and Flatpak updates are manual; Windows and AppImage use Cherry’s GitHub updater.\n`);
 console.log(`Verified ${expected.length} assets for ${repo} ${tag}`);
 if (process.argv.includes('--check')) process.exit(0);
 if (!process.env.GH_TOKEN || !process.env.GITHUB_SHA) throw new Error('Publication requires GitHub Actions release credentials and commit');

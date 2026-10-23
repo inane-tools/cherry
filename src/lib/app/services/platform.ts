@@ -1,5 +1,6 @@
 import { invoke } from '$lib/desktop/core';
 export function isDesktop(): boolean { return typeof window !== 'undefined' && !!window.cherryDesktop; }
+export function isMacDesktop(): boolean { return isDesktop() && /Macintosh|Mac OS X/.test(navigator.userAgent); }
 export async function invokeSafe<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
   if (!isDesktop()) return null;
   try { return await invoke<T>(command, args); } catch { return null; }
