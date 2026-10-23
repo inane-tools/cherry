@@ -33,7 +33,7 @@ import { openPlaylistEditor } from './playlistEditor';
 import { openPlaylistPicker } from './playlistPicker';
 import { openSongCredits } from './songCredits';
 import { queueTracks, queueCollection } from './queueActions';
-import { openArtist } from './catalog';
+import { openArtist, openTrackAlbum } from './catalog';
 
 async function copy(label: string, url: string): Promise<void> {
   const ok = await copyText(url);
@@ -77,7 +77,7 @@ export function trackMenu(
     items.push({ label: 'Start mix', icon: 'ph-fill ph-play-circle', customIcon: 'mix', action: () => playRadio({ videoId: track.videoId }) });
     items.push({
       label: preferred ? `Add to “${preferred.title}”` : 'Add to playlist…',
-      icon: preferred ? 'ph ph-playlist' : 'ph ph-list-plus',
+      icon: 'ph ph-playlist',
       playlistArtwork: preferred?.thumbnails,
       quick: true,
       action: () => void saveTrack(track),
@@ -85,13 +85,18 @@ export function trackMenu(
     if (preferred) {
       items.push({
         label: 'Add to another playlist…',
-        icon: 'ph ph-list-plus',
+        icon: 'ph ph-playlist',
         action: () => openPlaylistPicker([track]),
       });
     }
   }
 
   items.push(
+    {
+      label: 'Go to album',
+      icon: 'ph ph-vinyl-record',
+      action: () => openTrackAlbum(track),
+    },
     {
       label: 'Song credits',
       icon: 'ph ph-info',
@@ -244,7 +249,9 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
 export function albumMenu(album: Album): ContextMenuItem[] {
   const pinned = isPinned(album.browseId);
   return [{ label: 'Add to queue', icon: 'ph ph-list-plus', disabled: !get(authStore), action: () => queueCollection(album) },
-    { label: pinned ? 'Unpin album' : 'Pin album', icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin', disabled: !get(authStore), action: () => toggleAlbumPin(album) }];
+    { label: pinned ? 'Unpin album' : 'Pin album', icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin', disabled: !get(authStore), action: () => toggleAlbumPin(album) },
+    { label: 'Copy music link', brandIcon: 'youtube-music', separatorBefore: true,
+      action: () => copy('YouTube Music link', `https://music.youtube.com/browse/${encodeURIComponent(album.browseId)}`) }];
 }
 
 export function artistMenu(artist: ArtistRef): ContextMenuItem[] {

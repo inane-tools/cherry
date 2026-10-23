@@ -4,6 +4,12 @@
 export type VideoId = string;
 export type BrowseId = string;
 
+/** YouTube's rating-backed collections cannot be edited as normal playlists. */
+export function isLikedPlaylist(browseId: string): boolean {
+  const id = browseId.startsWith('VL') ? browseId.slice(2) : browseId;
+  return id === 'LM' || id === 'LL';
+}
+
 export interface ArtistRef {
   name: string;
   browseId?: BrowseId;

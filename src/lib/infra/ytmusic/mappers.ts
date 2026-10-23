@@ -12,6 +12,7 @@
 //   music shelves. Kept as fallback for up-next/home feeds.
 
 import type { Album, ArtistRef, Playlist, Thumbnail, Track } from '$lib/core/models';
+import { albumFromRuns, artistsFromRuns } from './musicByline';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNode = any;
@@ -58,27 +59,24 @@ function artistsOf(node: AnyNode): ArtistRef[] {
   const raw: AnyNode[] =
     node?.artists ?? node?.authors ?? node?.subtitle_artists ?? [];
   if (Array.isArray(raw) && raw.length > 0) {
-    return raw
+    const artists = raw
       .map((a) => ({
         name: String(a?.name ?? a?.text ?? ''),
         browseId: a?.channel_id ?? a?.browse_id ?? a?.browseId ?? a?.id,
       }))
-      .filter((a) => a.name);
-  }
-  // Fallback: artist names buried in flex-column runs ("Artist • Album • 3:34").
-  const cols: AnyNode[] = [...(node?.flex_columns ?? []), ...(node?.fixed_columns ?? [])];
-  for (const col of cols.slice(1, 3)) {
-    const runs: AnyNode[] = col?.title?.runs ?? [];
-    const names = runs
-      .filter((r) => r?.endpoint?.name === 'browseEndpoint' && r?.text && !/^\s*•\s*$/.test(r.text))
-      .map((r) => String(r.text));
-    if (names.length > 0) {
-      return names.map((name) => ({ name }));
-    }
+      .filter((a) => a.name && !a.browseId?.startsWith('MPR'));
+    if (artists.length) return artists;
   }
   const single = node?.artist ?? node?.author;
   if (typeof single === 'string' && single) return [{ name: single }];
   if (single?.name) return [{ name: String(single.name) }];
+  // Fallback: artist names buried in flex-column runs ("Artist • Album • 3:34").
+  const cols: AnyNode[] = [...(node?.flex_columns ?? []), ...(node?.fixed_columns ?? [])];
+  for (const col of cols.slice(1, 3)) {
+    const runs: AnyNode[] = col?.title?.runs ?? [];
+    const artists = artistsFromRuns(runs);
+    if (artists.length) return artists;
+  }
   return [];
 }
 
@@ -230,7 +228,7 @@ export function mapTrack(node: AnyNode): Track | null {
     artists: artistsOf(node),
     album: albumNode && (albumNode.name ?? albumNode.text)
       ? { name: String(albumNode.name ?? albumNode.text), browseId: albumNode.browse_id ?? albumNode.id }
-      : undefined,
+      : albumFromRuns((node.flex_columns ?? []).slice(1).flatMap((col: AnyNode) => col?.title?.runs ?? [])),
     durationSeconds: trackDuration(node),
     thumbnails: thumbs(node),
     isExplicit: isExplicit(node),
@@ -260,7 +258,7 @@ export function mapCardShelf(card: AnyNode): Track | null {
     videoId: String(videoId),
     title: String(title),
     artists,
-    album: parts.length > 2 && !/views|plays/i.test(parts[2]) ? { name: parts[2] } : undefined,
+    album: albumFromRuns(runs) ?? (parts.length > 2 && !/views|plays/i.test(parts[2]) ? { name: parts[2] } : undefined),
     durationSeconds,
     thumbnails: thumbs(card),
   };

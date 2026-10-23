@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 
 describe('mapTrack', () => {
+  it('keeps the unlinked composer instead of replacing it with the linked album (FjztDd3a8MU)', () => {
+    const albumRun = { text: 'NieR:Automata Ver1.1a Original Soundtrack', endpoint: {
+      name: 'browseEndpoint', payload: { browseId: 'MPREb_W02rOERpy4r',
+        browseEndpointContextSupportedConfigs: { browseEndpointMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_ALBUM' } } },
+    } };
+    const row = { id: 'FjztDd3a8MU', item_type: 'song', title: '虚ロナル献身 - Hollow Devotion', artists: [],
+      flex_columns: [{ title: { text: '虚ロナル献身 - Hollow Devotion' } }, { title: { runs: [
+        { text: 'Kuniyuki Takahashi' }, { text: ' • ' }, albumRun, { text: ' • ' }, { text: '2:25' },
+      ] } }] };
+    expect(mapTrack(row)).toMatchObject({ artists: [{ name: 'Kuniyuki Takahashi' }],
+      album: { name: albumRun.text, browseId: 'MPREb_W02rOERpy4r' } });
+    expect(mapTrack({ ...row, flex_columns: [{}, { title: { runs: [albumRun] } }] })?.artists).toEqual([]);
+  });
   it('keeps playlist occurrence IDs from raw and parsed Music rows', () => {
     const song = { id: 'same', title: 'Song', item_type: 'song' };
     expect(mapTrack({ ...song, playlistItemData: { playlistSetVideoId: 'raw-entry' } })?.playlistEntryId).toBe('raw-entry');

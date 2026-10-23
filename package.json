@@ -1,6 +1,6 @@
 {
   "name": "cherry",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Cherry — a desktop YouTube Music player",
   "type": "module",
@@ -36,10 +36,12 @@
     "@tailwindcss/vite": "^4.1.12",
     "@types/node": "^22.20.3",
     "dashjs": "^5.2.1",
+    "dompurify": "3.4.17",
     "electron": "44.8.0",
     "electron-builder": "26.15.3",
     "hls.js": "^1.7.3",
     "jsdom": "^30.1.2",
+    "marked": "18.1.1",
     "svelte": "^5.57.0",
     "svelte-check": "^4.3.1",
     "tailwindcss": "^4.1.12",
@@ -165,14 +167,13 @@
         "--share=network",
         "--device=dri",
         "--talk-name=org.freedesktop.Notifications",
-        "--own-name=org.mpris.MediaPlayer2.cherry",
+        "--own-name=org.mpris.MediaPlayer2.chromium.*",
         "--filesystem=xdg-run/discord-ipc-0",
         "--filesystem=xdg-run/app/com.discordapp.Discord:ro",
         "--talk-name=org.freedesktop.secrets",
         "--talk-name=org.kde.kwalletd5",
         "--talk-name=org.kde.kwalletd6",
-        "--talk-name=org.kde.StatusNotifierWatcher",
-        "--own-name=org.mpris.MediaPlayer2.cherry.*"
+        "--talk-name=org.kde.StatusNotifierWatcher"
       ],
       "files": [
         [

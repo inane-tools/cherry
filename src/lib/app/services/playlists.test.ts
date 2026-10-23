@@ -283,6 +283,23 @@ it('refreshes an edited open playlist without clearing its content or reloading 
   expect(get(service.playlistStore)[1]).toEqual(playlist('OTHER'));
   expect(api.getLibraryPlaylists).not.toHaveBeenCalled();
 });
+it('reconciles liked songs without optimistic duplicates or inflated counts', async () => {
+  const track: Track = { videoId: 'liked', title: 'Liked', artists: [], thumbnails: [] };
+  const target = { ...playlist('VLLM'), trackCount: 1 };
+  service.playlistStore.set([target]);
+  service.openPlaylistStore.set(target); service.openPlaylistTracks.set([track]);
+  const response = deferred<Track[]>();
+  vi.mocked(api.streamCollectionTracks).mockReturnValueOnce(response.promise);
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce(null);
+  const refresh = service.refreshEditedPlaylist(target, [track, track]);
+  await settle();
+  expect(get(service.openPlaylistTracks)).toEqual([track]);
+  expect(get(service.playlistStore)[0].trackCount).toBe(1);
+  response.resolve([track]); await refresh;
+  expect(get(service.openPlaylistTracks)).toEqual([track]);
+  expect(get(service.playlistStore)[0].trackCount).toBe(1);
+});
+
 it('refreshes only the changed playlist header when another playlist is open', async () => {
   const target = { ...playlist('TARGET'), trackCount: 2 };
   service.playlistStore.set([target]);

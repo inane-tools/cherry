@@ -8,7 +8,7 @@ import { CherryError } from '$lib/core/errors';
 interface Pending {
   videoId: string;
   refresh: boolean;
-  resolve: (url: string) => void;
+  resolve: (url: string, dashManifest?: string) => void;
   reject: (e: unknown) => void;
 }
 const pending: Pending[] = [];
@@ -24,8 +24,8 @@ vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
         pending.push({
           videoId,
           refresh: Boolean(options.refresh),
-          resolve: (url) =>
-            resolve({ track: { durationSeconds: 200 }, stream: { url, mimeType: 'audio/mp4' } }),
+          resolve: (url, dashManifest) =>
+            resolve({ track: { durationSeconds: 200 }, stream: { url, mimeType: 'audio/mp4', ...(dashManifest ? { dashManifest } : {}) } }),
           reject,
         });
       }),
@@ -34,6 +34,9 @@ vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
 vi.mock('./theme', () => ({
   applyArtworkTheme: vi.fn(() => Promise.resolve()),
   resetArtworkTheme: vi.fn(),
+}));
+vi.mock('./adaptiveVideo', () => ({
+  attachAdaptiveVideo: vi.fn(async () => ({ destroy: vi.fn(), ready: Promise.resolve() })),
 }));
 
 const { authStore } = await import('./auth');
@@ -487,6 +490,80 @@ it('drops the outgoing source if its replacement fails, so retry cannot play the
 
 
 describe('track handoff isolation', () => {
+  it('retires the outgoing DASH attachment without losing cleanup of the replacement', async () => {
+    const { attachAdaptiveVideo } = await import('./adaptiveVideo');
+    player.videoPreferred.set(true);
+    const first = player.playTracks([track('first'), track('second')]);
+    await flush(); pending[0].resolve('https://media/first', '<MPD/>'); await first;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    const oldAdaptive = await vi.mocked(attachAdaptiveVideo).mock.results.at(-1)!.value;
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('playing'));
+    const next = player.next(); await flush(); pending[1].resolve('https://media/second', '<MPD/>'); await next;
+    const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    const newAdaptive = await vi.mocked(attachAdaptiveVideo).mock.results.at(-1)!.value;
+    expect(oldAdaptive.destroy).not.toHaveBeenCalled();
+    current.dispatchEvent(new Event('playing'));
+    expect(oldAdaptive.destroy).toHaveBeenCalledTimes(1);
+    expect(newAdaptive.destroy).not.toHaveBeenCalled();
+    await player.stopPlayback();
+    expect(newAdaptive.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('retains the outgoing source until audio/video actually starts (video=%s)', async (video) => {
+    player.videoPreferred.set(video);
+    const first = player.playTracks([track('first'), track('second')]);
+    await flush(); pending[0].resolve('https://media/first'); await first;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('playing'));
+    const next = player.next(); await flush();
+    pending[1].resolve('https://media/second'); await next;
+    const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    expect(current).not.toBe(old);
+    expect(old.getAttribute('src')).toBe('https://media/first');
+    // play() alone can precede buffering; only playing establishes the handoff.
+    current.dispatchEvent(new Event('play'));
+    expect(old.hasAttribute('src')).toBe(true);
+    current.dispatchEvent(new Event('playing'));
+    expect(old.hasAttribute('src')).toBe(false);
+    expect(current.getAttribute('src')).toBe('https://media/second');
+    await player.stopPlayback();
+  });
+
+  it('keeps the last started source through rapid skips, then releases it on Stop', async () => {
+    const first = player.playTracks([track('a'), track('b'), track('c')]);
+    await flush(); pending[0].resolve('https://media/a'); await first;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('playing'));
+    const second = player.next(); await flush(); pending[1].resolve('https://media/b'); await second;
+    const unstarted = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    const third = player.next(); await flush(); pending[2].resolve('https://media/c'); await third;
+    expect(old.hasAttribute('src')).toBe(true);
+    expect(unstarted.hasAttribute('src')).toBe(false);
+    // Late events from the discarded player cannot retire the active session.
+    unstarted.dispatchEvent(new Event('playing'));
+    expect(old.hasAttribute('src')).toBe(true);
+    await player.stopPlayback();
+    expect(old.hasAttribute('src')).toBe(false);
+  });
+
+  it('releases the retained source after a failed replacement instead of leaking its buffer', async () => {
+    const first = player.playTracks([track('first'), track('second')]);
+    await flush(); pending[0].resolve('https://media/first'); await first;
+    const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    old.dispatchEvent(new Event('play'));
+    old.dispatchEvent(new Event('playing'));
+    playImpl = () => Promise.reject(new Error('decode failed'));
+    const next = player.next(); await flush(); pending[1].resolve('https://media/second'); await flush();
+    expect(old.hasAttribute('src')).toBe(true);
+    pending[2].reject(new Error('offline')); await next;
+    expect(get(player.playerStore).status).toBe('error');
+    expect(old.hasAttribute('src')).toBe(false);
+    await player.stopPlayback();
+  });
+
   it('ignores late end/error/metadata events from the outgoing track while the next song loads', async () => {
     const first = player.playTracks([track('handoff-a'), track('handoff-b'), track('handoff-c')]);
     await flush(); pending[0].resolve('https://media/a'); await first;

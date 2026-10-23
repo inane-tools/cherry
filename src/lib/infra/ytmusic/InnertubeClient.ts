@@ -28,6 +28,7 @@ import type {
   Track,
 } from '$lib/core/models';
 import { signingCookieHeader, accountIndex, authIdentity } from './authContext';
+import { isLikedPlaylist } from '$lib/core/models';
 import { CherryError, isRegionRestricted } from '$lib/core/errors';
 import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
@@ -37,7 +38,7 @@ import { onlySearchFilter, type SearchFilter } from '$lib/core/searchFilter';
 import { innertubeFetch } from './desktopFetch';
 import { mediaProxyUrl } from './mediaProxy';
 import { installEvaluator } from './evaluator';
-import { lyricsBrowseId, parseLyrics, parseRadio, musicVideoCounterpart, findPlaybackNode } from './rawPlayback';
+import { lyricsBrowseId, parseLyrics, parseRadio, musicVideoCounterpart, findPlaybackNode, panelTrack } from './rawPlayback';
 import type { Lyrics, RadioEndpoint } from '$lib/core/models';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -926,9 +927,10 @@ export async function getAlbumPage(
     const filled = tracks.map((track) => {
       const withArt =
         art.length > 0 && track.thumbnails.length === 0 ? { ...track, thumbnails: art } : track;
-      return withArt.artists.length === 0 && artist
-        ? { ...withArt, artists: [artist] }
-        : withArt;
+      return { ...withArt,
+        ...(withArt.artists.length === 0 && artist ? { artists: [artist] } : {}),
+        album: { name: header?.title ?? '', browseId },
+      };
     });
 
     return {
@@ -1140,6 +1142,14 @@ export async function addTracksToPlaylist(
 ): Promise<void> {
   if (videoIds.length === 0) return;
   const client = await getInnertube(session, { retrievePlayer: false });
+  if (isLikedPlaylist(playlistId)) {
+    // Liked collections are populated by ratings, not playlist/edit actions.
+    for (const videoId of new Set(videoIds.filter(Boolean))) {
+      const result = await client.actions.execute('like/like', { target: { videoId }, client: 'YTMUSIC' });
+      assertPlaylistMutation(result, 'like the song');
+    }
+    return;
+  }
   await client.playlist.addVideos(editPlaylistId(playlistId), videoIds);
 }
 
@@ -1150,6 +1160,11 @@ export async function removeTrackFromPlaylist(
   entry: { playlistEntryId?: string; occurrence?: number } = {},
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
+  if (isLikedPlaylist(playlistId)) {
+    const result = await client.actions.execute('like/removelike', { target: { videoId }, client: 'YTMUSIC' });
+    assertPlaylistMutation(result, 'remove the song from liked songs');
+    return;
+  }
   let setVideoId = entry.playlistEntryId;
   if (!setVideoId) {
     // Older disk caches may not contain entry IDs. Resolve exactly one occurrence
@@ -1317,21 +1332,42 @@ export async function getTrack(
   );
 }
 
+/** Resolve the exact song's album only when navigation needs missing metadata. */
+export async function getTrackAlbum(videoId: string, session?: AuthSession | null): Promise<Track['album']> {
+  return cached(`track-album:${getActiveChannel()}:${videoId}`, TTL.playlist, async () => {
+    const client = await getInnertube(session, { retrievePlayer: false });
+    const response = await client.actions.execute('next', { videoId, client: 'YTMUSIC', isAudioOnly: true });
+    const node = findPlaybackNode(response?.data ?? response, n => n.playlistPanelVideoRenderer?.videoId === videoId);
+    return panelTrack(node?.playlistPanelVideoRenderer)?.album;
+  }, { shouldCache: value => !!value?.browseId });
+}
+
 /** One credits group, e.g. `{ title: 'Written by', entries: ['…'] }`. */
 export interface CreditSection {
   title: string;
   entries: string[];
 }
 
-function textFromRuns(node: AnyNode): string {
+function textFromRuns(node: AnyNode, separateNames = false): string {
   if (!node) return '';
-  if (typeof node === 'string') return node;
-  if (typeof node.simpleText === 'string') return node.simpleText;
+  const format = (text: string): string => {
+    if (!separateNames) return text;
+    // Credits use newline runs between contributors. HTML collapses those
+    // into spaces, so turn the provider's boundaries into visible separators.
+    return text.split(/\r\n?|\n|\u2028|\u2029/).map(part => part.trim()).filter(Boolean)
+      .reduce((joined, part) => joined ? joined + (/[,;]$/.test(joined) ? ' ' : ', ') + part : part, '');
+  };
+  if (typeof node === 'string') return format(node);
+  if (typeof node.simpleText === 'string') return format(node.simpleText);
   if (Array.isArray(node.runs)) {
-    return node.runs
-      .map((r: AnyNode) => String(r?.text ?? ''))
-      .join('')
-      .trim();
+    return format(node.runs.reduce((text: string, run: AnyNode) => {
+      const part = String(run?.text ?? '');
+      // Some credits list adjacent names without supplying separator runs.
+      // Preserve explicit whitespace/punctuation and formatted text fragments.
+      const comma = separateNames && /[\p{L}\p{N})]$/u.test(text) && /^[\p{L}\p{N}(]/u.test(part);
+      const space = separateNames && /[,;]$/.test(text) && /^[\p{L}\p{N}(]/u.test(part);
+      return text + (comma ? ', ' : space ? ' ' : '') + part;
+    }, '').trim());
   }
   return '';
 }
@@ -1397,7 +1433,7 @@ function parseCreditSections(raw: AnyNode): CreditSection[] | null {
           n.forEach(collect);
           return;
         }
-        const text = textFromRuns(n.subtitle);
+        const text = textFromRuns(n.subtitle, true);
         if (text) entries.push(text);
         for (const [k, v] of Object.entries(n)) if (k !== 'subtitle') collect(v);
       };

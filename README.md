@@ -15,7 +15,7 @@ with **Electron + Chromium**, **Svelte 5**, **TypeScript** and **Tailwind v4**.
 
 ## Platform status
 
-**Cherry 2.0.0 (Furano)** uses Electron and Chromium on Windows and Linux,
+**Cherry 2.0.1 (Furano)** uses Electron and Chromium on Windows and Linux,
 keeping Cherry's custom frontend. Chromium replaces the WebKitGTK host on Linux;
 Steam Deck testing no longer showed the rendering glitches seen in the Tauri
 version. Performance can still vary with hardware and virtual machines.
@@ -126,15 +126,15 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Download
 
-**[v2.0.0 Furano](https://github.com/inane-tools/cherry/releases/tag/v2.0.0)**:
+**[v2.0.1 Furano](https://github.com/inane-tools/cherry/releases/tag/v2.0.1)**:
 
-- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v2.0.0/Cherry-Setup-2.0.0-x64.exe).
-- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v2.0.0/Cherry-2.0.0-x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v2.0.0/Cherry-2.0.0-x86_64.AppImage).
+- **Windows x64:** [NSIS installer](https://github.com/inane-tools/cherry/releases/download/v2.0.1/Cherry-Setup-2.0.1-x64.exe).
+- **Linux x86_64:** [Flatpak](https://github.com/inane-tools/cherry/releases/download/v2.0.1/Cherry-2.0.1-x86_64.flatpak) or [AppImage](https://github.com/inane-tools/cherry/releases/download/v2.0.1/Cherry-2.0.1-x86_64.AppImage).
 
-Install the Flatpak with `flatpak install --user Cherry-2.0.0-x86_64.flatpak`,
+Install the Flatpak with `flatpak install --user Cherry-2.0.1-x86_64.flatpak`,
 then run `flatpak run tools.inane.cherry.electron`. This is a self-distributed
 bundle; Cherry is not listed on Flathub. For AppImage, run
-`chmod +x Cherry-2.0.0-x86_64.AppImage` before opening it.
+`chmod +x Cherry-2.0.1-x86_64.AppImage` before opening it.
 
 After installing 2.0, accept the welcome-screen disclaimer and choose **Migrate
 from 1.x** to preview and import your old data. **Keep 1.x installed until this

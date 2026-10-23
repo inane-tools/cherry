@@ -1,6 +1,7 @@
 import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import { get, writable } from 'svelte/store';
 import type { AccountProfile, Playlist, Track } from '$lib/core/models';
+import { isLikedPlaylist } from '$lib/core/models';
 import { getActiveChannel, getHomePage, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
 import { withHomeProfile } from '$lib/core/listenAgain';
 import type { HomeSection, HomeFilter } from '$lib/infra/ytmusic/rawHome';
@@ -410,10 +411,12 @@ export async function refreshEditedPlaylist(playlist: Playlist, addedTracks: Tra
   for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
   cacheClear(`library:${channel}:`);
   const current = get(playlistStore).find(item => item.browseId === playlist.browseId) ?? playlist;
-  if (current.trackCount !== undefined) patchPlaylist(playlist.browseId, { trackCount: current.trackCount + addedTracks.length });
+  // Liking is idempotent: the selected songs may already belong to this list.
+  const liked = isLikedPlaylist(playlist.browseId);
+  if (!liked && current.trackCount !== undefined) patchPlaylist(playlist.browseId, { trackCount: current.trackCount + addedTracks.length });
   try {
     if (get(openPlaylistStore)?.browseId === playlist.browseId) {
-      openPlaylistTracks.update(tracks => [...tracks, ...addedTracks.map(({ playlistEntryId: _sourceEntry, ...track }) => track)]);
+      if (!liked) openPlaylistTracks.update(tracks => [...tracks, ...addedTracks.map(({ playlistEntryId: _sourceEntry, ...track }) => track)]);
       await loadOpenPlaylist(get(openPlaylistStore)!, { preserveContent: true });
     } else {
       const meta = await getPlaylistMeta(playlist.browseId, session);

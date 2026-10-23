@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ReleaseNotes from './ReleaseNotes.svelte';
   import { updateStore, initializeUpdates, checkUpdates, downloadUpdate, installUpdate } from '$lib/app/services/updates';
   onMount(() => { void initializeUpdates().catch(() => {}); });
   $: supported = ['windows', 'appimage'].includes($updateStore.environment);
   $: busy = ['checking', 'downloading', 'installing'].includes($updateStore.phase);
   $: percent = $updateStore.total ? Math.min(100, Math.round($updateStore.received / $updateStore.total * 100)) : null;
+  let notesOpen = false;
 </script>
 
 <div id="cherry-updates" class="mt-4">
@@ -39,8 +41,11 @@
     <progress class="update-progress mt-3" aria-label="Update download" max="100" value={percent ?? undefined}></progress>
   {/if}
   {#if $updateStore.error}<p class="mt-3 break-words text-xs text-red-400" role="alert">{$updateStore.error}</p>{/if}
-  {#if $updateStore.notes && ['available', 'ready'].includes($updateStore.phase)}
-    <details class="mt-3 text-xs text-zinc-400"><summary class="cursor-pointer">Release notes</summary><p class="mt-2 whitespace-pre-wrap">{$updateStore.notes}</p></details>
+  {#if $updateStore.notes}
+    <details class="mt-3 text-xs text-zinc-400" ontoggle={(event) => notesOpen = event.currentTarget.open}>
+      <summary class="cursor-pointer">Release notes</summary>
+      {#if notesOpen}<ReleaseNotes notes={$updateStore.notes} />{/if}
+    </details>
   {/if}
 </div>
 

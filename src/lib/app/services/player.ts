@@ -32,7 +32,26 @@ export const playerStore = writable<PlaybackState>({
 });
 
 let audio: HTMLMediaElement | null = null;
-let clearHls = () => {};
+let cleanupStream = () => {};
+function clearHls(): void {
+  const cleanup = cleanupStream;
+  cleanupStream = () => {};
+  cleanup();
+}
+const startedMedia = new WeakSet<HTMLMediaElement>();
+let outgoingMedia: { media: HTMLMediaElement; cleanup: () => void } | null = null;
+function disposeMedia(media: HTMLMediaElement, cleanup: () => void): void {
+  cleanup();
+  media.pause();
+  media.removeAttribute('src');
+  media.load();
+  media.remove();
+}
+function releaseOutgoingMedia(): void {
+  const outgoing = outgoingMedia;
+  outgoingMedia = null;
+  if (outgoing) disposeMedia(outgoing.media, outgoing.cleanup);
+}
 export const videoMode = writable(false);
 /** User preference survives tracks that temporarily have no music video. */
 export const videoPreferred = writable(false);
@@ -72,12 +91,27 @@ export async function setVideoMode(enabled: boolean, autoplay?: boolean): Promis
 }
 
 function replaceMedia(video: boolean, fresh = false): HTMLMediaElement {
-  if (!fresh && get(videoMode) === video && audio) return audio;
+  if (!fresh && get(videoMode) === video && audio) {
+    clearHls();
+    return audio;
+  }
   clearBuffering();
-  clearHls();
+  const cleanup = cleanupStream;
+  cleanupStream = () => {};
   const previous = audio;
   audio = null;
-  if (previous) { previous.pause(); previous.removeAttribute('src'); previous.load(); previous.remove(); }
+  if (previous) {
+    previous.pause();
+    previous.remove();
+    // Chromium drops audio focus when its last registered media player is
+    // destroyed. Keep one paused source until the replacement is playing,
+    // including its DASH/HLS attachment. Rapid skips discard unstarted sources
+    // instead of accumulating buffers or replacing the last active session.
+    if (startedMedia.has(previous)) {
+      releaseOutgoingMedia();
+      outgoingMedia = { media: previous, cleanup };
+    } else disposeMedia(previous, cleanup);
+  } else cleanup();
   videoReady.set(false);
   videoResolution.set(null);
   videoMode.set(video);
@@ -131,6 +165,7 @@ function schedulePauseClear(): void {
     pauseClearTimer = null;
     if (get(playerStore).status !== 'paused') return;
     statusSuppressed = true;
+    releaseOutgoingMedia();
     void invokeSafe('media_cleared');
     void refreshDiscord();
   }, PAUSE_CLEAR_MS);
@@ -180,7 +215,11 @@ function ensureAudio(): HTMLMediaElement {
       }
     });
     listen('emptied', () => videoReady.set(false));
-    listen('playing', clearBuffering);
+    listen('playing', () => {
+      startedMedia.add(media);
+      clearBuffering();
+      releaseOutgoingMedia();
+    });
     const waiting = () => {
       if (get(playerStore).status !== 'playing' || bufferingTimer) return;
       playbackBuffering.set(true);
@@ -490,6 +529,7 @@ export function seekTo(seconds: number): void {
 // Used when the queue is exhausted or emptied so nothing lingers.
 export async function stopPlayback(): Promise<void> {
   clearBuffering();
+  releaseOutgoingMedia();
   clearHls();
   // A stream resolving after Stop must not reattach its source and autoplay.
   loadGeneration++;
@@ -784,7 +824,6 @@ async function loadCurrent(autoplay: boolean, refreshStream = false, restricted 
     const { track, stream } = await playbackDeadline(getAudioStream(videoId, session, { refresh, ...(playVideo ? { video: true } : {}) }), 30000, 'The stream request took too long.');
     if (stale()) return;
     playerStore.update(p => ({ ...p, isLive: stream.isLive === true }));
-    clearHls();
     // Never attach a new queue entry to the old track's media clock. A stale
     // ended/metadata event or DASH fallback must not seek/skip the next song.
     el = replaceMedia(playVideo, refresh || mediaQueueId !== item.queueId);
@@ -792,7 +831,7 @@ async function loadCurrent(autoplay: boolean, refreshStream = false, restricted 
     if (stream.dashManifest && get(videoMode)) {
       const adaptive = await attachAdaptiveVideo(el, stream.dashManifest, mediaProxyUrl(new URL(stream.url)).href, stale);
       if (stale()) { adaptive.destroy(); await adaptive.ready; return; }
-      clearHls = () => { adaptive.destroy(); clearHls = () => {}; };
+      cleanupStream = () => adaptive.destroy();
       await playbackDeadline(adaptive.ready, 45000, 'The video stream took too long to load.');
       if (stale()) return;
     } else if (/mpegurl/i.test(stream.mimeType) && !el.canPlayType(stream.mimeType)) {
@@ -802,7 +841,7 @@ async function loadCurrent(autoplay: boolean, refreshStream = false, restricted 
       const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('The live station took too long to load.')), 20000);
-        clearHls = () => { clearTimeout(timer); hls.destroy(); clearHls = () => {}; reject(new DOMException('Playback changed', 'AbortError')); };
+        cleanupStream = () => { clearTimeout(timer); hls.destroy(); reject(new DOMException('Playback changed', 'AbortError')); };
         hls.on(Hls.Events.MANIFEST_PARSED, () => { clearTimeout(timer); resolve(); });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal || stale()) return;
@@ -899,9 +938,10 @@ async function loadCurrent(autoplay: boolean, refreshStream = false, restricted 
 // ── OS integration ──────────────────────────────────────────────
 
 async function pushMediaState(): Promise<void> {
+  const st = get(playerStore);
+  if (!st.track || st.status === 'error') releaseOutgoingMedia();
   // A long pause already cleared the status; don't re-advertise it.
   if (statusSuppressed) return;
-  const st = get(playerStore);
   const t = st.track;
   if (!t) {
     await invokeSafe('media_cleared');

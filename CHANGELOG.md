@@ -4,6 +4,36 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] — 2026-10-23
+
+Furano.
+
+### Changed
+
+- Added the inane.tools Bluesky profile to Settings, with aligned social icons.
+- Song context menus include Go to album, resolving missing album links on demand.
+- Last.fm's scrobbling threshold is a slider with 1% steps from 1–100%, including
+  25%. It uses the zoom slider's styling and saves on release; the default stays 50%.
+- Add-to-playlist actions use the playlist icon so they differ from Add to queue.
+
+### Fixed
+
+- Update release notes render Markdown and HTML with readable headings, lists,
+  links and code, instead of displaying the markup as text.
+- Album navigation headers use the fetched album's artist and metadata rather
+  than retaining the artist of the song used to open it.
+- Unlinked composer names on soundtrack songs no longer get replaced by linked
+  album names; raw mix/video metadata keeps artist, album and year separate.
+- Keep the outgoing media session alive until the next song/video starts, so
+  Windows media controls do not disappear during the source handoff.
+- Allow Chromium's actual MPRIS service name through the Flatpak sandbox so
+  GNOME and KDE can discover Cherry's playback controls.
+- Missing commas between credited names, including YouTube's newline-separated
+  contributors, while preserving existing punctuation.
+- Album context menus now include Copy music link; artist link actions remain available.
+- Adding songs to Liked Songs uses song ratings instead of the playlist-edit
+  endpoint that returned HTTP 400. Removing a liked song clears its rating.
+
 ## [2.0.0] — 2026-10-19
 
 Furano. The Electron transition; installing from Tauri remains a manual switch.

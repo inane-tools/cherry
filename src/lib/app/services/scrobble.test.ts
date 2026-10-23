@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlaybackState, Track } from '$lib/core/models';
+import { get } from 'svelte/store';
+import { settingsStore } from './settings';
 
 const sent: { track: string; timestamp: number }[] = [];
 let accept: (track: string) => boolean | Promise<boolean> = () => true;
@@ -49,6 +51,19 @@ beforeEach(() => {
 });
 
 describe('scrobble threshold', () => {
+  it('accepts a custom 25 percent threshold and still scrobbles only once', async () => {
+    const settings = get(settingsStore);
+    settingsStore.set({ ...settings, lastfmScrobblePercent: 25 });
+    try {
+      __test.onState(state(0));
+      listen(24); await settle();
+      expect(sent).toHaveLength(0);
+      listen(1, 24); await settle();
+      expect(sent).toHaveLength(1);
+      listen(50, 25); await settle();
+      expect(sent).toHaveLength(1);
+    } finally { settingsStore.set(settings); }
+  });
   it('scrobbles once half the track has been heard, and only once', async () => {
     __test.onState(state(0));
     listen(49);

@@ -1,10 +1,11 @@
 import { expect, it, vi } from 'vitest';
 import { writable } from 'svelte/store';
-const mocks = vi.hoisted(() => ({ tracks: vi.fn(), collection: vi.fn(), owned: vi.fn(() => false) }));
+const mocks = vi.hoisted(() => ({ tracks: vi.fn(), collection: vi.fn(), owned: vi.fn(() => false), copy: vi.fn(async () => true) }));
+vi.mock('./links', async importOriginal => ({ ...await importOriginal<typeof import('./links')>(), copyText: mocks.copy }));
 vi.mock('./radio', () => ({ playRadio: vi.fn() }));
 vi.mock('./player', () => ({ playTracks: vi.fn() }));
 vi.mock('./playlists', () => ({ playPlaylist: vi.fn() }));
-vi.mock('./catalog', () => ({ openArtist: vi.fn() }));
+vi.mock('./catalog', () => ({ openArtist: vi.fn(), openTrackAlbum: vi.fn() }));
 vi.mock('./pins', () => ({ isPinned: () => false, togglePin: vi.fn(), toggleAlbumPin: vi.fn(), toggleArtistPin: vi.fn(), toggleTrackPin: vi.fn() }));
 vi.mock('./auth', () => ({ authStore: writable({ kind: 'cookie', cookie: 'SID=fixture', savedAt: 0 }) }));
 vi.mock('./playlistEdit', () => ({ getDefaultPlaylist: () => null, removeTrackFrom: vi.fn(), saveTrack: vi.fn(), setDefaultPlaylist: vi.fn() }));
@@ -18,7 +19,15 @@ vi.mock('./songCredits', () => ({ openSongCredits: vi.fn() }));
 vi.mock('./queueActions', () => ({ queueTracks: mocks.tracks, queueCollection: mocks.collection }));
 import { trackMenu, playlistMenu, albumMenu, folderMenu, artistMenu, stationMenu } from './menus';
 import { toggleAlbumPin, toggleArtistPin, toggleTrackPin } from './pins';
-import { openArtist } from './catalog';
+import { openArtist, openTrackAlbum } from './catalog';
+
+it('offers album navigation for songs, including rows whose album needs resolving', async () => {
+  const song = { videoId: 'song', title: 'Song', artists: [], thumbnails: [] };
+  const action = trackMenu(song).find(item => item.label === 'Go to album')!;
+  expect(action.icon).toBe('ph ph-vinyl-record');
+  await action.action();
+  expect(openTrackAlbum).toHaveBeenCalledWith(song);
+});
 
 it('offers pinning from album, artist and song context menus', async () => {
   const album = { browseId: 'MPRalbum', title: 'Album', artists: [], thumbnails: [] };
@@ -90,7 +99,18 @@ it('opens artists and plays stations from their exact endpoints without exposing
 it('marks common shortcuts and uses the music brand and list-plus icons for their actions', () => {
   const menu = trackMenu({ videoId: 'song', title: 'Song', artists: [], thumbnails: [] });
   expect(menu.filter(item => item.quick).map(item => item.label)).toEqual(['Play', 'Add to queue', 'Pin song', 'Add to playlist…']);
-  expect(menu.find(item => item.label === 'Add to playlist…')?.icon).toBe('ph ph-list-plus');
+  expect(menu.find(item => item.label === 'Add to playlist…')?.icon).toBe('ph ph-playlist');
+  expect(menu.find(item => item.label === 'Add to queue')?.icon).toBe('ph ph-list-plus');
   expect(menu.find(item => item.label === 'Copy music link')?.brandIcon).toBe('youtube-music');
   expect(menu.find(item => item.label === 'Copy video link')?.icon).toBe('ph-fill ph-youtube-logo');
+});
+
+it('copies album and artist music links from their browse IDs', async () => {
+  const album = { browseId: 'MPREalbum', title: 'Album', artists: [], thumbnails: [] };
+  await albumMenu(album).find(item => item.label === 'Copy music link')!.action();
+  expect(mocks.copy).toHaveBeenLastCalledWith('https://music.youtube.com/browse/MPREalbum');
+  await artistMenu({ name: 'Artist', browseId: 'UCartist' }).find(item => item.label === 'Copy music link')!.action();
+  expect(mocks.copy).toHaveBeenLastCalledWith('https://music.youtube.com/channel/UCartist');
+  await artistMenu({ name: 'Artist', browseId: 'MPLAartist' }).find(item => item.label === 'Copy music link')!.action();
+  expect(mocks.copy).toHaveBeenLastCalledWith('https://music.youtube.com/browse/MPLAartist');
 });

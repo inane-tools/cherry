@@ -53,6 +53,7 @@
   import logoUrl from '$lib/assets/logo.png';
   import inaneWordmark from '$lib/assets/inane.svg';
   import githubMark from '$lib/assets/github.svg?raw';
+  import blueskyMark from '$lib/assets/bluesky.svg?raw';
 
   // ── Clear data and cache ────────────────────────────────────────
   let cacheLabel = 'calculating…';
@@ -169,6 +170,16 @@
   // slider handle never fights the asynchronous settings write.
   let zoomDraft: number | null = null;
   $: zoomValue = zoomDraft ?? ($settingsStore.uiZoom ?? 1);
+  let scrobbleDraft: number | null = null;
+  $: scrobblePercent = scrobbleDraft ?? ($settingsStore.lastfmScrobblePercent ?? 50);
+  const SCROBBLE_STEPS = [1, ...Array.from({ length: 20 }, (_, i) => (i + 1) * 5)];
+
+  async function commitScrobblePercent(): Promise<void> {
+    const value = scrobbleDraft;
+    if (value === null) return;
+    await updateSettings({ lastfmScrobblePercent: value });
+    if (scrobbleDraft === value) scrobbleDraft = null;
+  }
 
   const THEME_OPTIONS: { value: 'system' | 'light' | 'dark'; label: string; icon: string }[] = [
     { value: 'system', label: 'System', icon: 'ph-duotone ph-desktop' },
@@ -185,11 +196,6 @@
     { value: 'details', label: 'Song title' },
     { value: 'state', label: 'Artist' },
     { value: 'name', label: 'App name' },
-  ];
-  const LASTFM_SCROBBLE_OPTIONS = [
-    { value: '50', label: '50% — recommended' },
-    { value: '75', label: '75%' },
-    { value: '90', label: '90%' },
   ];
   const LASTFM_MIN_OPTIONS = [
     { value: '0', label: 'No minimum' },
@@ -719,14 +725,25 @@
                   onchange={(value) => updateSettings({ lastfmNowPlaying: value })}
                 />
               </label>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-[12px] text-zinc-300">Scrobble after</span>
-                <Dropdown
-                  value={String($settingsStore.lastfmScrobblePercent ?? 50)}
-                  options={LASTFM_SCROBBLE_OPTIONS}
-                  onchange={(v) => updateSettings({ lastfmScrobblePercent: Number(v) })}
-                  ariaLabel="Scrobble after"
+              <div>
+                <div class="mb-2 flex items-center justify-between gap-4">
+                  <span class="text-[12px] text-zinc-300">Scrobble after</span>
+                  <span class="text-[11px] tabular-nums text-zinc-500">{scrobblePercent}%</span>
+                </div>
+                <input
+                  type="range" min="1" max="100" step="1" value={scrobblePercent}
+                  style="--fill: {((scrobblePercent - 1) / 99) * 100}%"
+                  class="cherry-range cherry-range-always w-full" aria-label="Scrobble after"
+                  aria-valuetext={`${scrobblePercent}%`}
+                  oninput={(event) => scrobbleDraft = Number(event.currentTarget.value)}
+                  onchange={commitScrobblePercent}
                 />
+                <div class="pointer-events-none relative mx-[6px] mt-1.5 h-1.5">
+                  {#each SCROBBLE_STEPS as step (step)}
+                    <span class="absolute h-1.5 w-px rounded-full {step === scrobblePercent ? 'bg-[var(--color-accent2)]' : 'bg-white/15'}"
+                      style:left={`${((step - 1) / 99) * 100}%`}></span>
+                  {/each}
+                </div>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-[12px] text-zinc-300">Skip tracks under</span>
@@ -1109,8 +1126,11 @@
           { name: 'youtubei.js', use: 'YouTube / YouTube Music (Innertube) API', license: 'MIT', url: 'https://github.com/LuanRT/YouTube.js' },
           { name: 'hls.js', use: 'live station playback', license: 'Apache-2.0', url: 'https://github.com/video-dev/hls.js' },
           { name: 'dash.js', use: 'adaptive HD music videos', license: 'BSD-3-Clause', url: 'https://github.com/Dash-Industry-Forum/dash.js' },
+          { name: 'Marked', use: 'Markdown release notes', license: 'MIT', url: 'https://github.com/markedjs/marked' },
+          { name: 'DOMPurify', use: 'safe HTML release notes', license: 'Apache-2.0 OR MPL-2.0', url: 'https://github.com/cure53/DOMPurify' },
           { name: 'Lobe Icons', use: 'Contributor brand marks (inline SVG)', license: 'MIT', url: 'https://github.com/lobehub/lobe-icons' },
           { name: 'Boxicons', use: 'GitHub brand mark (inline SVG)', license: 'MIT', url: 'https://github.com/box-icons/boxicons' },
+          { name: 'Bluesky', use: 'Bluesky brand mark (inline SVG)', license: 'MIT', url: 'https://github.com/bluesky-social/social-app' },
           { name: 'Phosphor Icons', use: 'fill, duotone and regular interface icons', license: 'MIT', url: 'https://phosphoricons.com' },
           { name: 'Gabarito', use: 'typeface', license: 'OFL-1.1', url: 'https://github.com/googlefonts/gabarito' },
         ] as dep}
@@ -1163,11 +1183,19 @@
         <div class="flex items-center gap-1.5">
           <button
             class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+            title="@inane.tools on Bluesky"
+            aria-label="Bluesky"
+            onclick={() => openExternal('https://bsky.app/profile/inane.tools')}
+          >
+            <span class="flex h-4 w-4 items-center justify-center [&>svg]:block [&>svg]:h-full [&>svg]:w-full" aria-hidden="true">{@html blueskyMark}</span>
+          </button>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
             title="@inanetools on X"
             aria-label="X (Twitter)"
             onclick={() => openExternal('https://x.com/inanetools')}
           >
-            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+            <svg viewBox="0 0 24 24" class="block h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
               <path
                 d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"
               />
@@ -1175,19 +1203,19 @@
           </button>
           <button
             class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
-            title="GitHub repository"
-            aria-label="GitHub repository"
-            onclick={() => openExternal('https://github.com/inane-tools/cherry')}
-          >
-            {@html githubMark}
-          </button>
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
             title="inane.tools"
             aria-label="inane.tools website"
             onclick={() => openExternal('https://inane.tools')}
           >
-            <i class="ph ph-globe text-lg"></i>
+            <i class="ph ph-globe flex h-[18px] w-[18px] items-center justify-center text-[18px] leading-none" aria-hidden="true"></i>
+          </button>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+            title="GitHub repository"
+            aria-label="GitHub repository"
+            onclick={() => openExternal('https://github.com/inane-tools/cherry')}
+          >
+            <span class="flex h-[18px] w-[18px] items-center justify-center [&>svg]:block [&>svg]:h-full [&>svg]:w-full" aria-hidden="true">{@html githubMark}</span>
           </button>
         </div>
         <img src={inaneWordmark} alt="inane.tools" class="inane-wordmark h-6 w-auto opacity-80" />

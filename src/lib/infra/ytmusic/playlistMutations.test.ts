@@ -1,10 +1,36 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const execute = vi.hoisted(() => vi.fn());
-vi.mock('youtubei.js', () => ({ Platform: { shim: {} }, Innertube: { create: async () => ({ actions: { execute } }) } }));
+const addVideos = vi.hoisted(() => vi.fn());
+vi.mock('youtubei.js', () => ({ Platform: { shim: {} }, Innertube: { create: async () => ({ actions: { execute }, playlist: { addVideos } }) } }));
 vi.mock('./evaluator', () => ({ installEvaluator: () => {} }));
-import { addPlaylistToLibrary, removePlaylistFromLibrary, removeTrackFromPlaylist, deleteOwnedPlaylist, resetInnertubeClient, getHomePage } from './InnertubeClient';
+import { addPlaylistToLibrary, removePlaylistFromLibrary, addTracksToPlaylist, removeTrackFromPlaylist, deleteOwnedPlaylist, resetInnertubeClient, getHomePage } from './InnertubeClient';
 const session = { kind: 'cookie' as const, cookie: 'test-session', savedAt: 0 };
-beforeEach(() => { resetInnertubeClient(); execute.mockReset().mockResolvedValue({ success: true, status_code: 200, data: {} }); });
+beforeEach(() => { resetInnertubeClient(); addVideos.mockReset().mockResolvedValue({ success: true }); execute.mockReset().mockResolvedValue({ success: true, status_code: 200, data: {} }); });
+
+it.each(['VLLM', 'LM', 'VLLL', 'LL'])('adds to %s through song likes, once per distinct video', async playlistId => {
+  await addTracksToPlaylist(playlistId, ['song-a', 'song-b', 'song-a'], session);
+  expect(execute.mock.calls).toEqual([
+    ['like/like', { target: { videoId: 'song-a' }, client: 'YTMUSIC' }],
+    ['like/like', { target: { videoId: 'song-b' }, client: 'YTMUSIC' }],
+  ]);
+  expect(addVideos).not.toHaveBeenCalled();
+});
+
+it('keeps normal playlist adds and intentional duplicates intact', async () => {
+  await addTracksToPlaylist('VLPL123', ['song', 'song'], session);
+  expect(addVideos).toHaveBeenCalledWith('PL123', ['song', 'song']);
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it('reports rejected likes rather than treating them as successful playlist edits', async () => {
+  execute.mockResolvedValueOnce({ success: false, status_code: 400, data: {} });
+  await expect(addTracksToPlaylist('VLLM', ['song'], session)).rejects.toThrow('could not like');
+});
+
+it('removes liked songs by clearing their rating without looking up playlist entries', async () => {
+  await removeTrackFromPlaylist('VLLM', 'song', session);
+  expect(execute).toHaveBeenCalledExactlyOnceWith('like/removelike', { target: { videoId: 'song' }, client: 'YTMUSIC' });
+});
 
 it('sends a structured playlist target for save and remove', async () => {
   await addPlaylistToLibrary('VLPL123', session);

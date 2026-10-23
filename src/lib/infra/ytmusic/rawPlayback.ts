@@ -1,4 +1,5 @@
 import type { Lyrics, Track } from '$lib/core/models';
+import { albumFromRuns, artistsFromRuns } from './musicByline';
 
 type Json = any;
 /** Bounded walk: API data must not recurse forever or repeat shared nodes. */
@@ -43,11 +44,10 @@ export function panelTrack(node: Json): Track | null {
   const title = text(node?.title);
   if (!videoId || !title || node.unplayableText) return null;
   const runs = node.longBylineText?.runs ?? node.shortBylineText?.runs ?? [];
-  const artists = runs.filter((run: Json) => run.navigationEndpoint?.browseEndpoint?.browseId?.startsWith('UC'))
-    .map((run: Json) => ({ name: run.text, browseId: run.navigationEndpoint.browseEndpoint.browseId }));
+  const artists = artistsFromRuns(node.shortBylineText?.runs ?? runs);
   const duration = text(node.lengthText).split(':').reduce((total: number, value: string) => total * 60 + Number(value), 0);
   const kind = node.navigationEndpoint?.watchEndpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType;
-  return { videoId, title, artists: artists.length ? artists : text(node.longBylineText) ? [{ name: text(node.longBylineText) }] : [],
+  return { videoId, title, artists, album: albumFromRuns(runs),
     thumbnails: node.thumbnail?.thumbnails ?? [], durationSeconds: duration || undefined,
     isMusicVideo: kind === 'MUSIC_VIDEO_TYPE_OMV' || kind === 'MUSIC_VIDEO_TYPE_UGC' };
 }

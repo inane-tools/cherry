@@ -1,6 +1,17 @@
 import { expect, it } from 'vitest';
-import { parseLyrics, lyricsBrowseId, parseRadio, musicVideoCounterpart } from './rawPlayback';
+import { parseLyrics, lyricsBrowseId, parseRadio, musicVideoCounterpart, panelTrack } from './rawPlayback';
 const video = (videoId: string, kind = 'MUSIC_VIDEO_TYPE_ATV') => ({ videoId, title: { simpleText: videoId }, thumbnail: { thumbnails: [] }, lengthText: { simpleText: '3:20' }, navigationEndpoint: { watchEndpoint: { watchEndpointMusicSupportedConfigs: { watchEndpointMusicConfig: { musicVideoType: kind } } } } });
+
+it('keeps soundtrack composers separate from album/year metadata in raw queues', () => {
+  const byline = { runs: [{ text: 'Kuniyuki Takahashi' }, { text: ' • ' }, {
+    text: 'NieR:Automata Ver1.1a Original Soundtrack', navigationEndpoint: { browseEndpoint: { browseId: 'MPREb_W02rOERpy4r' } },
+  }, { text: ' • ' }, { text: '2023' }] };
+  const row = { ...video('FjztDd3a8MU'), longBylineText: byline };
+  expect(panelTrack(row)).toMatchObject({ artists: [{ name: 'Kuniyuki Takahashi' }],
+    album: { name: 'NieR:Automata Ver1.1a Original Soundtrack', browseId: 'MPREb_W02rOERpy4r' } });
+  expect(panelTrack({ ...row, shortBylineText: { runs: [{ text: 'Kuniyuki Takahashi' }] } })?.artists)
+    .toEqual([{ name: 'Kuniyuki Takahashi' }]);
+});
 
 it('parses real timestamp units and source attribution without fabricating sync', () => {
   const data = { timedLyricsData: [{ lyricLine: 'First', cueRange: { startTimeMilliseconds: '1230', endTimeMilliseconds: '5000' } }], sourceMessage: 'Provider' };
