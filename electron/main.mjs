@@ -449,26 +449,6 @@ async function main() {
       const platform = await bridge.invoke('desktop_platform');
       const updateState = await bridge.invoke('updater_state');
       if (updateState.environment !== 'development' || (await bridge.invoke('updater_check')).phase !== 'idle') throw Error('Smoke profile attempted real updates');
-      if (platform === 'macos') {
-        const header = document.querySelector('header.macos');
-        if (!header) throw Error('macOS topbar missing');
-        const shell = document.querySelector('.cherry-shell');
-        const previousScale = shell.style.getPropertyValue('--cherry-ui-scale');
-        try {
-          for (const scale of [0.55, 1.1, 2.2]) {
-            shell.style.setProperty('--cherry-ui-scale', scale);
-            await bridge.invoke('set_window_zoom', { scale });
-            const bounds = header.getBoundingClientRect();
-            const position = await bridge.invoke('smoke:traffic-lights');
-            if (Math.abs(position.y + 7 - bounds.height * scale / 2) > 1) throw Error('macOS traffic lights are not centered at zoom ' + scale);
-            if (bounds.left + parseFloat(getComputedStyle(header).paddingLeft) < 78 / scale) throw Error('Native traffic-light space missing at zoom ' + scale);
-          }
-        } finally {
-          shell.style.setProperty('--cherry-ui-scale', previousScale);
-          await bridge.invoke('set_window_zoom', { scale: 1.1 });
-        }
-        if (header.querySelector('button[aria-label=Minimize]')) throw Error('Duplicate macOS window controls');
-      }
       if (platform === 'windows') {
         const caption = document.querySelector('.win-caption');
         if (!caption || caption.querySelectorAll('.win-glyph').length !== 3) throw Error('Windows Segoe captions missing');
@@ -533,6 +513,45 @@ async function main() {
       checkbox.click(); await new Promise(resolve => setTimeout(resolve, 0));
       const settingsButton = [...document.querySelectorAll('.cherry-gate button')].find(button => button.textContent.trim() === 'Settings');
       settingsButton?.click(); await new Promise(resolve => setTimeout(resolve, 50));
+      if (platform === 'macos') {
+        const header = document.querySelector('header.macos');
+        if (!header) throw Error('macOS topbar missing');
+        const shell = document.querySelector('.cherry-shell');
+        // Drive the same state as a user. Mutating Svelte-owned inline styles
+        // races with resize renders when Chromium applies the native zoom.
+        const zoom = document.querySelector('input[aria-label="UI zoom"]');
+        if (!zoom) throw Error('UI zoom control missing');
+        const previousZoom = zoom.value;
+        const appearance = [...document.querySelectorAll('h2')].find(node => node.textContent === 'Appearance')?.closest('section');
+        appearance?.querySelector('[role="button"]').click();
+        try {
+          for (const value of [0.5, 1, 2]) {
+            const scale = value * 1.1;
+            zoom.value = value;
+            zoom.dispatchEvent(new Event('input', { bubbles: true }));
+            let measured;
+            let aligned = false;
+            for (let attempt = 0; attempt < 50; attempt++) {
+              const nativeZoom = await bridge.invoke('smoke:zoom');
+              const position = await bridge.invoke('smoke:traffic-lights');
+              const bounds = header.getBoundingClientRect();
+              const padding = parseFloat(getComputedStyle(header).paddingLeft);
+              measured = { scale, nativeZoom, position, left: bounds.left, height: bounds.height, padding,
+                cssScale: getComputedStyle(shell).getPropertyValue('--cherry-ui-scale'), sidebar: shell.dataset.sidebarLayout };
+              aligned = Math.abs(nativeZoom - scale) < .001
+                && Math.abs(position.y + 7 - bounds.height * scale / 2) <= 1
+                && bounds.left + padding >= 78 / scale - .5;
+              if (aligned) break;
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            if (!aligned) throw Error('macOS window controls/layout did not align: ' + JSON.stringify(measured));
+          }
+        } finally {
+          zoom.value = previousZoom;
+          zoom.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (header.querySelector('button[aria-label=Minimize]')) throw Error('Duplicate macOS window controls');
+      }
       const heading = [...document.querySelectorAll('h2')].find(node => node.textContent === 'Integrations');
       const integrations = heading?.closest('section');
       if (!integrations) throw Error('Integrations settings missing');

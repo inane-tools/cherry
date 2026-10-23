@@ -160,10 +160,17 @@ jobs:
       - name: Build ad-hoc macOS packages
         run: npm run dmg:icon && npm run build && npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false
       - name: Smoke test packaged application
+        timeout-minutes: 2
         run: |
           set -o pipefail
-          "release/mac${{ matrix.arch == 'arm64' && '-arm64' || '' }}/Cherry.app/Contents/MacOS/Cherry" --smoke-test | tee "$RUNNER_TEMP/cherry-smoke.log"
+          "release/mac${{ matrix.arch == 'arm64' && '-arm64' || '' }}/Cherry.app/Contents/MacOS/Cherry" --smoke-test 2>&1 | tee "$RUNNER_TEMP/cherry-smoke.log"
           grep -q ELECTRON_SMOKE_PASS "$RUNNER_TEMP/cherry-smoke.log"
+      - name: Upload failed macOS smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-smoke-diagnostics-${{ matrix.arch }}
+          path: ${{ runner.temp }}/cherry-smoke.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cherry-macos-${{ matrix.arch }}
