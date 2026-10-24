@@ -111,10 +111,13 @@ export async function selectChannel(pageId: string): Promise<void> {
   const id = ++generation;
   inflight = null;
   const profile = getStore(channelsStore).find((c) => c.pageId === pageId) ?? null;
+  if (!profile) throw new Error('That channel is no longer available. Refresh your account channels and try again.');
+  // Apply identity synchronously: no previous-brand controls or requests should
+  // remain active while the settings write is waiting on disk/keychain.
+  applyChannel(profile);
+  initialized = true;
   await updateSettings({ channelPageId: pageId });
   if (id !== generation) return;
-  applyChannel(profile);
-  initialized = Boolean(profile);
 }
 
 /** Re-read the profile for the active channel (used after login). */

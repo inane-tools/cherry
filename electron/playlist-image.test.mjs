@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createPlaylistImageUpload, uploadAuthorization } from './playlist-image.mjs';
 const bytes = Buffer.from([255, 216, 255, 1, 2, 3]);
-const args = { cookie: 'SID=test; __Secure-3PAPISID=signing', dataBase64: bytes.toString('base64'), mime: 'image/jpeg', accountIndex: 2, channelId: 'brand-page' };
+const args = { cookie: 'SID=test; __Secure-3PAPISID=signing', dataBase64: bytes.toString('base64'), mime: 'image/jpeg', accountIndex: 2, channelId: 'brand-page', playlistId: 'VLPLtest', clientVersion: '1.test', visitorData: 'test-visitor' };
 test('signs playlist uploads against the Music origin and supports secure cookies', () => {
   const hash = createHash('sha1').update('1000 signing https://music.youtube.com').digest('hex');
   assert.equal(uploadAuthorization(args.cookie, 1000), 'SAPISIDHASH 1000_' + hash);
@@ -19,9 +19,29 @@ test('uploads the bytes and finalizes with the selected account and brand identi
   assert.deepEqual(requests[1].options.body, bytes);
   for (const { options } of requests) {
     assert.equal(options.headers['x-goog-authuser'], '2'); assert.equal(options.headers['x-goog-pageid'], 'brand-page');
+    assert.equal(options.headers.referer, 'https://music.youtube.com/playlist?list=PLtest');
+    assert.equal(options.headers['x-youtube-client-name'], '67');
+    assert.equal(options.headers['x-youtube-client-version'], '1.test');
+    assert.equal(options.headers['x-goog-visitor-id'], 'test-visitor');
     assert.equal(options.redirect, 'error'); assert.equal(options.headers.origin, 'https://music.youtube.com');
   }
   assert.equal(requests[1].options.headers['x-goog-upload-command'], 'upload, finalize');
+});
+test('uploads PNG bytes unchanged and accepts the JSON security prefix', async () => {
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
+  let count = 0;
+  const upload = createPlaylistImageUpload({ fetchImpl: async (_url, options) => {
+    if (++count === 1) return new Response('', { headers: { 'x-goog-upload-url': 'https://music.youtube.com/playlist_image_upload/session' } });
+    assert.deepEqual(options.body, png);
+    return new Response(")]}'\n" + JSON.stringify({ encryptedBlobId: 'png-blob' }));
+  } });
+  assert.equal(await upload({ ...args, mime: 'image/png', dataBase64: png.toString('base64') }), 'png-blob');
+});
+test('rejects WebP without converting or transmitting it', async () => {
+  let sent = false;
+  const upload = createPlaylistImageUpload({ fetchImpl: () => { sent = true; } });
+  await assert.rejects(upload({ ...args, mime: 'image/webp' }), /Invalid playlist image/);
+  assert.equal(sent, false);
 });
 test('refuses a session URL outside the upload hosts before sending credentials or bytes', async () => {
   let requests = 0;

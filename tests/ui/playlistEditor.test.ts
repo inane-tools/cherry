@@ -10,6 +10,7 @@ import EditPlaylistDialog from '../../src/lib/ui/components/EditPlaylistDialog.s
 import PlaylistPickerDialog from '../../src/lib/ui/components/PlaylistPickerDialog.svelte';
 import { openPlaylistCreator, openPlaylistEditor, closePlaylistEditor, playlistEditorStore } from '../../src/lib/app/services/playlistEditor';
 import { openPlaylistPicker, closePlaylistPicker, playlistPickerStore } from '../../src/lib/app/services/playlistPicker';
+import { activeChannelStore } from '../../src/lib/app/services/channelProfile';
 const NativeURL = URL;
 const revoke = vi.fn();
 let target: HTMLDivElement;
@@ -29,6 +30,7 @@ async function image() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  activeChannelStore.set(null);
   vi.stubGlobal('matchMedia', () => ({ matches: true }));
   vi.stubGlobal('URL', class extends NativeURL { static createObjectURL() { return 'blob:cover-preview'; } static revokeObjectURL(url: string) { revoke(url); } });
   vi.stubGlobal('FileReader', class { result = 'data:image/png;base64,aW1hZ2U='; onload?: () => void; readAsDataURL() { queueMicrotask(() => this.onload?.()); } });
@@ -36,6 +38,24 @@ beforeEach(() => {
   closePlaylistEditor(); closePlaylistPicker();
   target = document.createElement('div'); document.body.append(target);
   editor = mount(EditPlaylistDialog, { target }); picker = mount(PlaylistPickerDialog, { target });
+});
+
+it('shows the upload error inside the dialog and preserves the draft for retry', async () => {
+  api.image.mockImplementationOnce(async (_playlist, _bytes, _mime, onError) => { onError('YouTube refused the cover (HTTP 403).'); return false; });
+  openPlaylistCreator(); await tick();
+  input('input:not([type="file"])', 'Keep my draft'); await image();
+  button('Create').click();
+  await vi.waitFor(() => expect(target.querySelector('[role="alert"]')?.textContent).toContain('HTTP 403'));
+  expect(get(playlistEditorStore).open).toBe(true);
+  expect(button('Save').disabled).toBe(false);
+});
+
+it('closes the previous brand editor and picker as soon as the channel changes', async () => {
+  openPlaylistCreator(); openPlaylistPicker([song]); await tick();
+  activeChannelStore.set({ name: 'Other brand', pageId: 'other' }); await tick();
+  expect(get(playlistEditorStore).open).toBe(false);
+  expect(get(playlistPickerStore).open).toBe(false);
+  expect(api.create).not.toHaveBeenCalled();
 });
 afterEach(async () => {
   closePlaylistEditor(); closePlaylistPicker(); await unmount(editor); await unmount(picker); target.remove(); vi.unstubAllGlobals();
@@ -52,7 +72,7 @@ it('creates from the shared edit layout with description, artwork and selected s
   expect(api.create).toHaveBeenCalledExactlyOnceWith('New playlist', [song]);
   finish('VLcreated');
   await vi.waitFor(() => expect(get(playlistEditorStore).open).toBe(false));
-  expect(api.image).toHaveBeenCalledWith(expect.objectContaining({ browseId: 'VLcreated' }), 'aW1hZ2U=', 'image/png');
+  expect(api.image).toHaveBeenCalledWith(expect.objectContaining({ browseId: 'VLcreated' }), 'aW1hZ2U=', 'image/png', expect.any(Function));
   expect(api.update).toHaveBeenCalledWith(expect.objectContaining({ browseId: 'VLcreated' }), 'New playlist', 'My description');
   expect(api.meta).not.toHaveBeenCalled();
   expect(revoke).toHaveBeenCalledWith('blob:cover-preview');

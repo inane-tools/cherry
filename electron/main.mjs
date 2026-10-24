@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme, dialog } from 'electron';
-import { macMenuTemplate, windowChrome, macTrafficLightPosition } from './macos.mjs';
+import { macMenuTemplate, windowChrome, installMacWindowControls } from './macos.mjs';
 import { installTextMenu } from './text-menu.mjs';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -40,6 +40,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'cherry-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 let window;
+let macWindowControls;
 let login;
 let tray;
 let settings = {};
@@ -227,9 +228,9 @@ const commands = {
   'window:is-maximized': () => window.isMaximized(),
   'window:is-fullscreen': () => window.isFullScreen(),
   'window:title': ({ title }) => window.setTitle(String(title).slice(0, 300)),
-  set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); if (process.platform === 'darwin') window.setWindowButtonPosition(macTrafficLightPosition(scale)); },
+  set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); macWindowControls?.refresh(); },
   'settings:get': ({ key }) => { if (key !== 'settings') throw new Error('Unknown settings key'); return settings; },
-  'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; if (process.platform === 'darwin') window.setWindowButtonVisibility(settings.windowControls !== false); await atomic('settings.json', JSON.stringify(settings)); }); },
+  'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; macWindowControls?.setVisible(settings.windowControls !== false); await atomic('settings.json', JSON.stringify(settings)); }); },
   'app:relaunch': () => {
     if (migratingData && !migration.committed) throw new Error('Wait for the import to finish before restarting.');
     app.relaunch(); app.quit();
@@ -352,8 +353,8 @@ async function main() {
     ...windowChrome(process.platform), show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !smoke } });
   if (process.platform === 'darwin') {
-    window.setWindowButtonVisibility(settings.windowControls !== false);
-    window.on('leave-full-screen', () => window.setWindowButtonPosition(macTrafficLightPosition(window.webContents.getZoomFactor())));
+    macWindowControls = installMacWindowControls(window);
+    macWindowControls.setVisible(settings.windowControls !== false);
     Menu.setApplicationMenu(Menu.buildFromTemplate(macMenuTemplate()));
     app.on('activate', () => {
       if (!window || window.isDestroyed()) return;

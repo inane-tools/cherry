@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import { fly, fade } from '$lib/ui/transitions';
   import type { Playlist } from '$lib/core/models';
@@ -15,6 +16,8 @@
 
   let query = '';
   let busy = false;
+  let opening = state;
+  $: if (state !== opening) { opening = state; busy = false; }
 
   // Only playlists the user can actually write to are offered.
   $: playlists = $addablePlaylistsStore;
@@ -28,8 +31,10 @@
 
   async function pick(playlist: Playlist): Promise<void> {
     if (busy) return;
+    const request = state;
     busy = true;
     const ok = await addTracksTo(playlist, state.tracks);
+    if (get(playlistPickerStore) !== request) return;
     busy = false;
     if (ok) closePlaylistPicker();
   }

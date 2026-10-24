@@ -5,6 +5,7 @@
 
 import { writable } from 'svelte/store';
 import type { Playlist, Track } from '$lib/core/models';
+import { playlistAccountRevision } from './playlistAccount';
 
 export interface PlaylistEditorState {
   open: boolean;
@@ -27,3 +28,5 @@ export function openPlaylistCreator(tracks: Track[] = []): void {
 export function closePlaylistEditor(): void {
   playlistEditorStore.set(CLOSED);
 }
+
+playlistAccountRevision.subscribe(closePlaylistEditor);

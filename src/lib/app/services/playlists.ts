@@ -12,6 +12,8 @@ import { openPage, pageStore } from './navigation';
 import { enqueue } from './queue';
 import { playTracks, playTracksShuffled } from './player';
 import { rememberPlaylist } from './playlistShortcuts';
+import { playlistAccountRevision } from './playlistAccount';
+import { activeChannelStore } from './channelProfile';
 
 export const playlistStore = writable<Playlist[]>([]);
 export const homeSectionsStore = writable<HomeSection[]>([]);
@@ -40,6 +42,51 @@ let homeProfile: AccountProfile | null = null;
 const homeTokens = new Set<string>();
 let generation = 0;
 let lastArtworkRefresh = -Infinity;
+let reloadSequence = 0;
+let libraryEdits = new Map<string, { playlist: Playlist; patch: Partial<Playlist> }>();
+let libraryRemovals = new Set<string>();
+// A brand switch must not discard confirmed writes while YouTube's reads lag.
+// Keep each channel's last visible library isolated within the signed-in session.
+const channelLibraries = new Map<string, {
+  playlists: Playlist[];
+  edits: typeof libraryEdits;
+  removals: typeof libraryRemovals;
+}>();
+let libraryIdentity = '';
+let libraryChannel = '';
+
+/** Preserve server-confirmed writes until library reads catch up. */
+export function recordLibraryPlaylist(playlist: Playlist, patch: Partial<Playlist> = { title: playlist.title }): void {
+  libraryRemovals.delete(playlist.browseId);
+  const previous = libraryEdits.get(playlist.browseId);
+  libraryEdits.set(playlist.browseId, { playlist, patch: { ...previous?.patch, ...patch } });
+  if (!get(playlistStore).some(item => item.browseId === playlist.browseId)) {
+    playlistStore.update(list => [{ ...playlist, ...patch }, ...list]);
+  }
+  patchPlaylist(playlist.browseId, patch);
+}
+
+export function recordLibraryRemoval(browseId: string): void {
+  libraryEdits.delete(browseId);
+  libraryRemovals.add(browseId);
+  playlistStore.update(list => list.filter(item => item.browseId !== browseId));
+}
+
+function reconcileLibrary(list: Playlist[], complete = true): Playlist[] {
+  const ids = new Set(list.map(item => item.browseId));
+  const merged = list.filter(item => !libraryRemovals.has(item.browseId)).map(item => {
+    const edit = libraryEdits.get(item.browseId);
+    if (!edit) return item;
+    if (Object.entries(edit.patch).every(([key, value]) => JSON.stringify(item[key as keyof Playlist]) === JSON.stringify(value))) {
+      libraryEdits.delete(item.browseId);
+      return item;
+    }
+    return { ...item, ...edit.patch };
+  });
+  for (const [id, edit] of libraryEdits) if (!ids.has(id)) merged.unshift({ ...edit.playlist, ...edit.patch });
+  if (complete) for (const id of libraryRemovals) if (!ids.has(id)) libraryRemovals.delete(id);
+  return merged;
+}
 
 /** Recover stale artwork URLs without resetting the channel or current page. */
 export function refreshPlaylistArtwork(): void {
@@ -94,10 +141,13 @@ export function loadLibrary(): Promise<void> {
       await initChannel();
       if (stale()) return;
       channel = getActiveChannel();
-      const playlists = await getLibraryPlaylists(session);
+      const playlists = await getLibraryPlaylists(session, partial => {
+        if (!stale()) playlistStore.set(reconcileLibrary(partial, false));
+      });
       if (stale()) return;
-      playlistStore.set(playlists);
-      if (playlists.length === 0) {
+      const reconciled = reconcileLibrary(playlists);
+      playlistStore.set(reconciled);
+      if (reconciled.length === 0) {
         libraryError.set('No playlists found for this channel.');
       }
     } catch (e) {
@@ -217,13 +267,17 @@ export function selectHomeFilter(filter: HomeFilter | null): Promise<void> {
  * signed-out state and the rail stayed empty.
  */
 export async function reloadAll(): Promise<void> {
-  const id = invalidateLoads();
+  const request = ++reloadSequence;
+  const session = authIdentity(get(authStore));
+  invalidateLoads();
   cacheClear('channels:');
   cacheClear('probe:');
-  cacheClear('library:');
-  cacheClear('home:');
   await initChannel(true);
-  if (id !== generation) return;
+  // Discovering/applying a brand invalidates old reads itself. That expected
+  // transition must not cancel the refresh that established the new brand.
+  if (request !== reloadSequence || authIdentity(get(authStore)) !== session) return;
+  cacheClear(`library:${getActiveChannel()}:`);
+  cacheClear(`home:${getActiveChannel()}:`);
   await Promise.all([loadHome(), loadLibrary()]);
 }
 
@@ -244,6 +298,7 @@ export async function refreshLibrary(): Promise<void> {
 export function openPlaylist(playlist: Playlist): void {
   const known = get(playlistStore).find(item => item.browseId === playlist.browseId);
   if (known) playlist = { ...known, ...playlist, author: playlist.author || known.author };
+  playlist = { ...playlist, ...libraryEdits.get(playlist.browseId)?.patch };
   rememberPlaylist(playlist);
   openPage({ view: 'playlist', entity: playlist });
 }
@@ -303,6 +358,7 @@ function visibleOpenTracks(tracks: Track[]): Track[] {
 
 /** Load the tracks for the playlist currently on screen. */
 export async function loadOpenPlaylist(playlist: Playlist, options: { preserveContent?: boolean } = {}): Promise<void> {
+  playlist = { ...playlist, ...libraryEdits.get(playlist.browseId)?.patch };
   const preserve = options.preserveContent && get(openPlaylistStore)?.browseId === playlist.browseId;
   const id = ++openSeq;
   removedOpenTracks = new Set();
@@ -378,6 +434,8 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
 
 /** Update one playlist without navigating or reloading unrelated lists. */
 function patchPlaylist(browseId: string, patch: Partial<Playlist>): void {
+  // Header requests can lag behind the same confirmed edits as library reads.
+  patch = { ...patch, ...libraryEdits.get(browseId)?.patch };
   playlistStore.update(list => list.map(item => item.browseId === browseId ? { ...item, ...patch } : item));
   openPlaylistStore.update(item => item?.browseId === browseId ? { ...item, ...patch } : item);
   pageStore.update(page => page.view === 'playlist' && page.entity.browseId === browseId ? { ...page, entity: { ...page.entity, ...patch } } : page);
@@ -432,13 +490,21 @@ export async function refreshEditedPlaylist(playlist: Playlist, addedTracks: Tra
 }
 
 // Clear account-owned UI immediately, including sessions restored at startup.
-let lastCookie: string | null = null;
-authStore.subscribe((session) => {
-  const cookie = authIdentity(session);
-  if (cookie === lastCookie) return;
-  lastCookie = cookie;
+playlistAccountRevision.subscribe(() => {
+  const identity = authIdentity(get(authStore));
+  const channel = get(activeChannelStore)?.pageId ?? '';
+  if (identity !== libraryIdentity) {
+    channelLibraries.clear();
+  } else if (identity) {
+    channelLibraries.set(libraryChannel, { playlists: get(playlistStore), edits: libraryEdits, removals: libraryRemovals });
+  }
+  const restored = identity ? channelLibraries.get(channel) : undefined;
+  libraryIdentity = identity;
+  libraryChannel = channel;
+  libraryEdits = restored?.edits ?? new Map();
+  libraryRemovals = restored?.removals ?? new Set();
   invalidateLoads();
-  playlistStore.set([]);
+  playlistStore.set(restored?.playlists ?? []);
   homeSectionsStore.set([]);
   libraryError.set(null);
   openPlaylistStore.set(null);

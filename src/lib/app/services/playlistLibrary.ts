@@ -9,15 +9,14 @@ import { get } from 'svelte/store';
 import type { Playlist } from '$lib/core/models';
 import {
   addPlaylistToLibrary,
-  getActiveChannel,
   removePlaylistFromLibrary,
 } from '$lib/infra/ytmusic/InnertubeClient';
 import { cacheClear } from '$lib/infra/storage/cache';
 import { addablePlaylistsStore } from './addablePlaylists';
-import { authStore } from './auth';
 import { notify } from './contextMenu';
-import { playlistStore } from './playlists';
+import { playlistStore, recordLibraryPlaylist, recordLibraryRemoval } from './playlists';
 import { prependSidebarItem } from './folders';
+import { capturePlaylistAccount } from './playlistAccount';
 
 /** True when the user created (or can edit) the playlist. */
 export function isPlaylistOwned(browseId: string): boolean {
@@ -39,23 +38,24 @@ export function isPlaylistSaved(browseId: string): boolean {
 }
 
 export async function savePlaylist(playlist: Playlist): Promise<boolean> {
-  const session = get(authStore);
+  const { session, channel, current } = capturePlaylistAccount();
   if (!session) {
     notify('Sign in with YouTube Music to save playlists.');
     return false;
   }
   try {
     await addPlaylistToLibrary(playlist.browseId, session);
+    cacheClear(`library:${channel}:`);
+    if (!current()) return false;
     // Optimistic: show it in the rail right away; the next library refresh
     // fills in real metadata.
-    playlistStore.update((list) =>
-      list.some((p) => p.browseId === playlist.browseId) ? list : [playlist, ...list],
-    );
+    recordLibraryPlaylist(playlist);
     await prependSidebarItem(playlist.browseId);
-    cacheClear(`library:${getActiveChannel()}:`);
+    if (!current()) return false;
     notify(`Saved “${playlist.title}”`);
     return true;
   } catch (e) {
+    if (!current()) return false;
     notify(e instanceof Error ? e.message : 'Could not save the playlist.');
     return false;
   }
@@ -67,15 +67,17 @@ export async function unsavePlaylist(playlist: Playlist): Promise<boolean> {
     notify('That is your own playlist — you can only delete it, not unsave it.');
     return false;
   }
-  const session = get(authStore);
+  const { session, channel, current } = capturePlaylistAccount();
   if (!session) return false;
   try {
     await removePlaylistFromLibrary(playlist.browseId, session);
-    playlistStore.update((list) => list.filter((p) => p.browseId !== playlist.browseId));
-    cacheClear(`library:${getActiveChannel()}:`);
+    cacheClear(`library:${channel}:`);
+    if (!current()) return false;
+    recordLibraryRemoval(playlist.browseId);
     notify(`Removed “${playlist.title}” from your library`);
     return true;
   } catch (e) {
+    if (!current()) return false;
     notify(e instanceof Error ? e.message : 'Could not remove the playlist.');
     return false;
   }

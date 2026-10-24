@@ -17,6 +17,7 @@ vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
 
 const { authStore } = await import('./auth');
 const { settingsStore } = await import('./settings');
+const { updateSettings } = await import('./settings');
 const api = await import('$lib/infra/ytmusic/InnertubeClient');
 const service = await import('./account');
 const session: AuthSession = { kind: 'cookie', cookie: 'SID=restored', savedAt: 0 };
@@ -31,6 +32,16 @@ beforeEach(() => {
 });
 
 describe('channel lifecycle', () => {
+  it('applies the new brand before a slow settings write completes', async () => {
+    const next = { name: 'Channel B', pageId: 'b', isChannel: true };
+    service.channelsStore.set([profile, next]);
+    let finish!: () => void;
+    vi.mocked(updateSettings).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const switching = service.selectChannel('b');
+    expect(get(service.activeChannelStore)).toEqual(next);
+    expect(api.setActiveChannel).toHaveBeenLastCalledWith('b');
+    finish(); await switching;
+  });
   it('clears the channel when a startup session signs out', async () => {
     await service.initChannel();
     expect(get(service.activeChannelStore)).toEqual(profile);

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { overlayScrollbar } from '$lib/ui/actions/overlayScrollbar';
   import { fly, fade } from '$lib/ui/transitions';
   import type { Playlist, Thumbnail } from '$lib/core/models';
   import { bestThumbnail, thumbnailSources } from '$lib/core/models';
   import { artwork } from '$lib/ui/actions/artwork';
-  import { getActiveChannel, getPlaylistMeta } from '$lib/infra/ytmusic/InnertubeClient';
-  import { authIdentity } from '$lib/infra/ytmusic/authContext';
+  import { getPlaylistMeta } from '$lib/infra/ytmusic/InnertubeClient';
+  import { capturePlaylistAccount } from '$lib/app/services/playlistAccount';
   import { authStore } from '$lib/app/services/auth';
   import { createNewPlaylist, updatePlaylistDetails, setPlaylistImage } from '$lib/app/services/playlistEdit';
   import { closePlaylistEditor, playlistEditorStore, type PlaylistEditorState } from '$lib/app/services/playlistEditor';
@@ -104,8 +105,8 @@
   async function save(): Promise<void> {
     if (busy || loading || readingImage || !title.trim()) return;
     const opening = state;
-    const owner = authIdentity($authStore), channel = getActiveChannel();
-    const current = () => !destroyed && state === opening && authIdentity($authStore) === owner && getActiveChannel() === channel;
+    const account = capturePlaylistAccount();
+    const current = () => !destroyed && get(playlistEditorStore) === opening && account.current();
     busy = true;
     try {
       let target = createdPlaylist ?? playlist;
@@ -115,7 +116,9 @@
         target = createdPlaylist = { browseId: id, title: title.trim(), thumbnails: [] };
       }
       if (pendingImage) {
-        const imageOk = await setPlaylistImage(target, pendingImage.dataBase64, pendingImage.mime);
+        imageError = '';
+        const imageOk = await setPlaylistImage(target, pendingImage.dataBase64, pendingImage.mime,
+          message => { if (current()) imageError = message; });
         if (!current() || !imageOk) return;
         pendingImage = null;
       }

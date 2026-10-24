@@ -623,20 +623,30 @@ async function runSearch(q: string, session: AuthSession | null | undefined, fil
  *     the landing page is kept only as a fallback. */
 const LIBRARY_PLAYLIST_BROWSE_IDS = ['FEmusic_liked_playlists', 'FEmusic_library_landing'];
 
-export async function getLibraryPlaylists(session: AuthSession): Promise<Playlist[]> {
+export async function getLibraryPlaylists(session: AuthSession, onPage?: (playlists: Playlist[]) => void): Promise<Playlist[]> {
   // Cached (and persisted) so the playlist rail survives a restart instead of
   // coming back empty until the network answers again. Only non-empty lists
   // are cached: an empty result is either a genuine empty library or a failed
   // read, and caching it would make the rail look permanently broken.
   return cached(
-    `library:${getActiveChannel()}:${sessionKey(session)}`,
+    `library:${getActiveChannel()}:complete-v4:${sessionKey(session)}`,
     TTL.playlist,
-    () => runLibraryPlaylists(session),
+    () => runLibraryPlaylists(session, onPage),
     { shouldCache: (value) => value.length > 0 },
   );
 }
 
-async function runLibraryPlaylists(session: AuthSession): Promise<Playlist[]> {
+function libraryRequestMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  let info = (error as AnyNode)?.info;
+  if (typeof info === 'string') {
+    try { info = JSON.parse(info); } catch { return message; }
+  }
+  const detail = info?.error?.message;
+  return typeof detail === 'string' && detail ? `${message} — ${detail.slice(0, 240)}` : message;
+}
+
+async function runLibraryPlaylists(session: AuthSession, onPage?: (playlists: Playlist[]) => void): Promise<Playlist[]> {
   const client = await getInnertube(session, { retrievePlayer: false });
   const collected = new Map<string, Playlist>();
   const rendererCounts: Record<string, number> = {};
@@ -645,7 +655,8 @@ async function runLibraryPlaylists(session: AuthSession): Promise<Playlist[]> {
   for (const browseId of LIBRARY_PLAYLIST_BROWSE_IDS) {
     if (collected.size > 0) break;
     let continuation: string | undefined;
-    for (let page = 0; page < 5; page++) {
+    const seen = new Set<string>();
+    for (let page = 0; page < 200; page++) {
       let scan;
       try {
         const response: AnyNode = await client.actions.execute('/browse', {
@@ -653,10 +664,15 @@ async function runLibraryPlaylists(session: AuthSession): Promise<Playlist[]> {
           client: 'YTMUSIC',
         });
         const raw = response?.data;
-        if (!raw) break;
+        if (!raw) {
+          if (continuation) throw new Error('YouTube returned an empty playlist continuation.');
+          break;
+        }
         scan = scanLibrary(raw);
       } catch (e) {
-        errors.push(`${browseId}: ${e instanceof Error ? e.message : String(e)}`);
+        // Never persist a partial library as a successful 30-minute cache hit.
+        if (collected.size > 0) throw new CherryError('network', `Loaded ${collected.size} playlists, but page ${page + 1} could not be loaded: ${libraryRequestMessage(e)}`, e);
+        errors.push(`${browseId}, page ${page + 1}: ${libraryRequestMessage(e)}`);
         break;
       }
       for (const [key, count] of Object.entries(scan.rendererCounts)) {
@@ -665,7 +681,11 @@ async function runLibraryPlaylists(session: AuthSession): Promise<Playlist[]> {
       for (const playlist of scan.playlists) {
         if (!collected.has(playlist.browseId)) collected.set(playlist.browseId, playlist);
       }
+      if (collected.size > 0) onPage?.([...collected.values()]);
       if (!scan.continuation) break;
+      if (seen.has(scan.continuation)) throw new CherryError('network', 'YouTube repeated a playlist continuation. Refresh the library to try again.');
+      if (page === 199) throw new CherryError('network', 'YouTube returned too many playlist pages. Refresh the library to try again.');
+      seen.add(scan.continuation);
       continuation = scan.continuation;
     }
   }
@@ -689,6 +709,31 @@ async function runLibraryPlaylists(session: AuthSession): Promise<Playlist[]> {
     }
   }
 
+  // Music hides empty/video-only playlists, including lists created by the
+  // WEB playlist manager. Read the web library too, under the same brand.
+  let webContinuation: string | undefined;
+  const webTokens = new Set<string>();
+  for (let page = 0; page < 200; page++) {
+    try {
+      const response: AnyNode = await client.actions.execute('/browse', {
+        ...(webContinuation ? { continuation: webContinuation } : { browseId: 'FEplaylist_aggregation' }),
+        client: 'WEB',
+      });
+      if (!response?.data && webContinuation) throw new Error('YouTube returned an empty playlist continuation.');
+      const scan = scanLibrary(response?.data);
+      for (const playlist of scan.playlists) {
+        if (!collected.has(playlist.browseId)) collected.set(playlist.browseId, playlist);
+      }
+      if (collected.size > 0) onPage?.([...collected.values()]);
+      if (!scan.continuation) break;
+      if (webTokens.has(scan.continuation)) throw new Error('YouTube repeated a playlist continuation.');
+      if (page === 199) throw new Error('YouTube returned too many playlist pages.');
+      webTokens.add(scan.continuation);
+      webContinuation = scan.continuation;
+    } catch (error) {
+      throw new CherryError('network', `Loaded ${collected.size} playlists, but the YouTube web library (page ${page + 1}) could not be loaded: ${libraryRequestMessage(error)}`, error);
+    }
+  }
   return [...collected.values()];
 }
 
@@ -1087,16 +1132,21 @@ export async function getAddablePlaylists(
   // Never cache an empty/failed result: an empty menu is either a failed read
   // or a brand-new account, neither of which should stick for 30 minutes.
   return cached(
-    `addable:${getActiveChannel()}:${sessionKey(session)}`,
+    `addable:${getActiveChannel()}:all-v2:${sessionKey(session)}`,
     TTL.playlist,
     async () => {
       const client = await getInnertube(session, { retrievePlayer: false });
-      const response: AnyNode = await client.actions.execute('playlist/get_add_to_playlist', {
-        videoIds,
-        excludeWatchLater: true,
-        client: 'YTMUSIC',
-      });
-      return scanAddablePlaylists(response?.data);
+      const responses = await Promise.allSettled(['YTMUSIC', 'WEB'].map(clientName =>
+        client.actions.execute('playlist/get_add_to_playlist', { videoIds, excludeWatchLater: true, client: clientName })));
+      const playlists = new Map<string, Playlist>();
+      let succeeded = false;
+      for (const response of responses) {
+        if (response.status !== 'fulfilled') continue;
+        succeeded = true;
+        for (const playlist of scanAddablePlaylists(response.value?.data)) playlists.set(playlist.browseId, playlist);
+      }
+      if (!succeeded) throw (responses[0] as PromiseRejectedResult).reason;
+      return [...playlists.values()];
     },
     { shouldCache: (value) => value.length > 0 },
   );
@@ -1209,7 +1259,13 @@ export async function renamePlaylist(
   session?: AuthSession | null,
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
-  await client.playlist.setName(editPlaylistId(playlistId), name);
+  // The SDK's setName currently passes playlist_id where its endpoint expects
+  // playlistId, dropping the target from the request entirely.
+  const result = await client.actions.execute('browse/edit_playlist', {
+    playlistId: editPlaylistId(playlistId),
+    actions: [{ action: 'ACTION_SET_PLAYLIST_NAME', playlistName: name }], client: 'YTMUSIC',
+  });
+  assertPlaylistMutation(result, 'rename the playlist');
 }
 
 export async function setPlaylistDescription(
@@ -1218,7 +1274,17 @@ export async function setPlaylistDescription(
   session?: AuthSession | null,
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
-  await client.playlist.setDescription(editPlaylistId(playlistId), description);
+  const result = await client.actions.execute('browse/edit_playlist', {
+    playlistId: editPlaylistId(playlistId),
+    actions: [{ action: 'ACTION_SET_PLAYLIST_DESCRIPTION', playlistDescription: description }], client: 'YTMUSIC',
+  });
+  assertPlaylistMutation(result, 'update the playlist description');
+}
+
+/** Browser client headers used by the separate resumable image uploader. */
+export async function getPlaylistImageContext(session: AuthSession): Promise<{ clientVersion: string; visitorData: string }> {
+  const [client, { Constants }] = await Promise.all([getInnertube(session, { retrievePlayer: false }), loadYt()]);
+  return { clientVersion: Constants.CLIENTS.YTMUSIC.VERSION, visitorData: client.session?.context?.client?.visitorData ?? '' };
 }
 
 /**
@@ -1231,24 +1297,33 @@ export async function setPlaylistCustomThumbnail(
   session?: AuthSession | null,
 ): Promise<void> {
   const client = await getInnertube(session, { retrievePlayer: false });
-  const result: AnyNode = await client.actions.execute('browse/edit_playlist', {
-    playlistId: editPlaylistId(browseId),
-    actions: [
-      {
-        action: 'ACTION_SET_CUSTOM_THUMBNAIL',
-        addedCustomThumbnail: {
-          imageKey: {
-            type: 'PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL',
-            name: 'studio_square_thumbnail',
+  let result: AnyNode;
+  try {
+    result = await client.actions.execute('browse/edit_playlist', {
+      playlistId: editPlaylistId(browseId),
+      actions: [
+        {
+          action: 'ACTION_SET_CUSTOM_THUMBNAIL',
+          addedCustomThumbnail: {
+            imageKey: {
+              type: 'PLAYLIST_IMAGE_TYPE_CUSTOM_THUMBNAIL',
+              name: 'studio_square_thumbnail',
+            },
+            playlistScottyEncryptedBlobId: encryptedBlobId,
           },
-          playlistScottyEncryptedBlobId: encryptedBlobId,
         },
-      },
-    ],
-    client: 'YTMUSIC',
-  });
+      ],
+      client: 'YTMUSIC',
+    });
+  } catch (error) {
+    const detail = libraryRequestMessage(error);
+    if (/status code 403|HTTP 403/.test(detail)) {
+      throw new CherryError('internal', 'The image uploaded, but YouTube denied applying it to this playlist (HTTP 403). Check custom-thumbnail access for the selected channel in YouTube Studio. The existing cover was kept.', error);
+    }
+    throw new CherryError('internal', `Could not apply the uploaded playlist image: ${detail}`, error);
+  }
   // Surface a rejection instead of silently leaving the old artwork.
-  if (!result?.success || (typeof result?.status_code === 'number' && result.status_code >= 400)) {
+  if (!result?.success || result?.data?.status === 'STATUS_FAILED' || (typeof result?.status_code === 'number' && result.status_code >= 400)) {
     throw new CherryError('internal', `YouTube Music rejected the image (HTTP ${result?.status_code ?? '?'}).`);
   }
   const error = result?.data?.error;
@@ -1283,7 +1358,7 @@ export async function removePlaylistFromLibrary(
 }
 
 function assertPlaylistMutation(result: AnyNode, action: string): void {
-  if (!result?.success || result?.status_code >= 400 || result?.data?.error) {
+  if (!result?.success || result?.status_code >= 400 || result?.data?.error || result?.data?.status === 'STATUS_FAILED') {
     throw new CherryError('internal', `YouTube Music could not ${action}${result?.data?.error?.message ? `: ${result.data.error.message}` : '.'}`);
   }
 }

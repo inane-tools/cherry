@@ -4,6 +4,37 @@ export function macTrafficLightPosition(scale) {
   return { x: 14, y: Math.round((48 * scale - 14) / 2) };
 }
 
+/** AppKit can lay out the titlebar again after showing/restoring native buttons. */
+export function installMacWindowControls(window) {
+  let visible;
+  let pending;
+  const align = () => {
+    if (!window.isDestroyed() && !window.isFullScreen()) {
+      window.setWindowButtonPosition(macTrafficLightPosition(window.webContents.getZoomFactor()));
+    }
+  };
+  const schedule = () => {
+    if (pending) clearImmediate(pending);
+    pending = setImmediate(() => { pending = undefined; align(); });
+  };
+  const refresh = () => { align(); schedule(); };
+  for (const event of ['ready-to-show', 'show', 'focus', 'restore', 'resize', 'leave-full-screen']) {
+    window.on(event, schedule);
+  }
+  window.once('closed', () => { if (pending) clearImmediate(pending); });
+  return {
+    refresh,
+    setVisible(next) {
+      // Most settings writes have nothing to do with native chrome. Avoid
+      // asking AppKit to rebuild it on every playback/account preference save.
+      if (next === visible) return;
+      visible = next;
+      window.setWindowButtonVisibility(next);
+      refresh();
+    },
+  };
+}
+
 /** Keep the native traffic lights on macOS; other hosts use renderer buttons. */
 export function windowChrome(platform) {
   return platform === 'darwin'

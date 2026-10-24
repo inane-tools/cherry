@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { AuthSession, Playlist, Track } from '$lib/core/models';
 import type { HomeSection } from '$lib/infra/ytmusic/rawHome';
+import { activeChannelStore } from './channelProfile';
 
 vi.mock('./auth', async () => {
   const { writable } = await import('svelte/store');
@@ -78,6 +79,68 @@ describe('Home profile and native ordering', () => {
 });
 
 describe('account and channel loads', () => {
+  it('restores each brand library and confirmed edits across switches, even if its next read fails', async () => {
+    vi.mocked(api.getActiveChannel).mockReturnValue('brand-a');
+    activeChannelStore.set({ name: 'A', pageId: 'brand-a' });
+    service.recordLibraryPlaylist(playlist('created-a'));
+    vi.mocked(api.getActiveChannel).mockReturnValue('brand-b');
+    activeChannelStore.set({ name: 'B', pageId: 'brand-b' });
+    expect(get(service.playlistStore)).toEqual([]);
+    service.recordLibraryPlaylist(playlist('created-b'));
+    vi.mocked(api.getActiveChannel).mockReturnValue('brand-a');
+    activeChannelStore.set({ name: 'A', pageId: 'brand-a' });
+    expect(get(service.playlistStore)).toEqual([playlist('created-a')]);
+    vi.mocked(api.getLibraryPlaylists).mockRejectedValueOnce(new Error('offline'));
+    await service.loadLibrary();
+    expect(get(service.playlistStore)).toEqual([playlist('created-a')]);
+    vi.mocked(api.getLibraryPlaylists).mockResolvedValueOnce([playlist('server-a')]);
+    await service.loadLibrary();
+    expect(get(service.playlistStore).map(p => p.title)).toEqual(['created-a', 'server-a']);
+    vi.mocked(api.getActiveChannel).mockReturnValue('brand-b');
+    activeChannelStore.set({ name: 'B', pageId: 'brand-b' });
+    expect(get(service.playlistStore)).toEqual([playlist('created-b')]);
+    authStore.set(null);
+    authStore.set(session);
+    expect(get(service.playlistStore)).toEqual([]);
+  });
+  it('keeps successfully loaded pages visible if a later page is rejected', async () => {
+    vi.mocked(api.getLibraryPlaylists).mockImplementationOnce(async (_session, onPage) => {
+      onPage?.([playlist('available')]);
+      throw new Error('YouTube rejected playlist page 2 (HTTP 400)');
+    });
+    await service.loadLibrary();
+    expect(get(service.playlistStore)).toEqual([playlist('available')]);
+    expect(get(service.libraryError)).toContain('page 2');
+    expect(get(service.libraryLoading)).toBe(false);
+  });
+  it('still loads the library when account discovery applies a new brand during refresh', async () => {
+    vi.mocked(initChannel).mockImplementationOnce(async () => {
+      activeChannelStore.set({ name: 'Discovered brand', pageId: 'discovered' });
+      return null;
+    });
+    await service.reloadAll();
+    expect(api.getLibraryPlaylists).toHaveBeenCalledOnce();
+    expect(get(service.playlistStore)).toEqual([playlist('new')]);
+  });
+  it('preserves a create and rename when a slower library response arrives', async () => {
+    const response = deferred<Playlist[]>();
+    vi.mocked(api.getLibraryPlaylists).mockReturnValueOnce(response.promise);
+    const pending = service.loadLibrary(); await settle();
+    service.recordLibraryPlaylist(playlist('created'));
+    service.recordLibraryPlaylist(playlist('existing'), { title: 'Renamed' });
+    response.resolve([playlist('existing')]); await pending;
+    expect(get(service.playlistStore)).toEqual([playlist('created'), { ...playlist('existing'), title: 'Renamed' }]);
+  });
+  it('clears the previous brand immediately and ignores its late library response', async () => {
+    const response = deferred<Playlist[]>();
+    service.playlistStore.set([playlist('old-brand')]);
+    vi.mocked(api.getLibraryPlaylists).mockReturnValueOnce(response.promise);
+    const pending = service.loadLibrary(); await settle();
+    activeChannelStore.set({ name: 'New brand', pageId: 'new-brand' });
+    expect(get(service.playlistStore)).toEqual([]);
+    response.resolve([playlist('old-brand')]); await pending;
+    expect(get(service.playlistStore)).toEqual([]);
+  });
   it('loads extra Home sections, removes duplicates, and stops repeated continuation tokens', async () => {
     vi.mocked(api.getHomePage).mockResolvedValueOnce({ sections: [section('first')], continuation: 'next' }).mockResolvedValueOnce({ sections: [section('first'), section('second')], continuation: 'next' });
     await service.loadHome();

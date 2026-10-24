@@ -13,8 +13,8 @@ import { bestThumbnail } from '$lib/core/models';
 import {
   addTracksToPlaylist,
   createPlaylist,
-  getActiveChannel,
   getPlaylistMeta,
+  getPlaylistImageContext,
   removeTrackFromPlaylist,
   renamePlaylist,
   setPlaylistCustomThumbnail,
@@ -24,31 +24,17 @@ import { cacheClear } from '$lib/infra/storage/cache';
 import { addPlaylistLocally, addablePlaylistsStore, renamePlaylistLocally } from './addablePlaylists';
 import { authStore } from './auth';
 import { notify } from './contextMenu';
-import { openPage } from './navigation';
 import { errorMessage, invokeStrict } from './platform';
 import { openPlaylistPicker } from './playlistPicker';
-import { openPlaylistStore, openPlaylistTracks, playlistStore, refreshEditedPlaylist, recordPlaylistRemoval } from './playlists';
+import { openPlaylistStore, openPlaylistTracks, playlistStore, refreshEditedPlaylist, recordPlaylistRemoval, recordLibraryPlaylist } from './playlists';
 import { settingsStore, updateSettings } from './settings';
 import { prependSidebarItem } from './folders';
+import { capturePlaylistAccount } from './playlistAccount';
 
 function requireSession(): boolean {
   if (get(authStore)) return true;
   notify('Sign in with YouTube Music to edit playlists.');
   return false;
-}
-
-/** Only the playlist that changed is dropped from the cache, not every one. */
-function invalidateCollection(browseId: string): void {
-  cacheClear(`collection:${getActiveChannel()}:${browseId}`);
-}
-
-function invalidateLibrary(): void {
-  cacheClear(`library:${getActiveChannel()}:`);
-}
-
-/** Drop the cached header (title/description/art) for one playlist. */
-function invalidateMeta(browseId: string): void {
-  cacheClear(`meta:${getActiveChannel()}:${browseId}`);
 }
 
 // ── Default playlist ───────────────────────────────────────────────
@@ -80,8 +66,8 @@ export async function setDefaultPlaylist(playlist: Playlist | null): Promise<voi
 const pendingAdds = new Map<string, Promise<boolean>>();
 
 export function addTracksTo(playlist: Playlist, tracks: Track[]): Promise<boolean> {
-  const session = get(authStore);
-  const key = JSON.stringify([authIdentity(session), getActiveChannel(), playlist.browseId, tracks.map(track => track.videoId)]);
+  const { session, channel, revision } = capturePlaylistAccount();
+  const key = JSON.stringify([authIdentity(session), channel, revision, playlist.browseId, tracks.map(track => track.videoId)]);
   const pending = pendingAdds.get(key);
   if (pending) return pending;
   const operation = addTracksOnce(playlist, tracks).finally(() => {
@@ -95,11 +81,12 @@ async function addTracksOnce(playlist: Playlist, tracks: Track[]): Promise<boole
   if (!requireSession()) return false;
   const additions = tracks.filter((t) => t.videoId);
   if (additions.length === 0) return false;
+  const { session, channel, current } = capturePlaylistAccount();
   try {
-    const session = get(authStore);
-    const channel = getActiveChannel();
     await addTracksToPlaylist(playlist.browseId, additions.map((t) => t.videoId), session);
-    if (authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel) return true;
+    for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
+    cacheClear(`library:${channel}:`);
+    if (!current()) return true;
     void refreshEditedPlaylist(playlist, additions).catch(error => console.warn('[cherry] playlist refresh failed:', error));
     notify(
       additions.length === 1
@@ -108,6 +95,7 @@ async function addTracksOnce(playlist: Playlist, tracks: Track[]): Promise<boole
     );
     return true;
   } catch (e) {
+    if (!current()) return false;
     notify(errorMessage(e, 'Could not add to the playlist.'));
     return false;
   }
@@ -120,23 +108,25 @@ export async function createNewPlaylist(title: string, tracks: Track[] = []): Pr
     notify('Give the playlist a name.');
     return null;
   }
+  const { session, channel, current } = capturePlaylistAccount();
   try {
-    const session = get(authStore);
-    const channel = getActiveChannel();
     const id = await createPlaylist(name, tracks.map((t) => t.videoId), session);
-    if (authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel) return id;
+    cacheClear(`library:${channel}:`);
+    cacheClear(`addable:${channel}:`);
+    if (!current()) return id;
     // Show it in the rail immediately; the next library refresh fills in the
     // real metadata (thumbnail/author) once YouTube returns it.
     const optimistic: Playlist = { browseId: id, title: name, thumbnails: [] };
-    playlistStore.update((list) => [optimistic, ...list.filter((p) => p.browseId !== id)]);
+    recordLibraryPlaylist(optimistic);
     addPlaylistLocally(optimistic);
     await prependSidebarItem(id);
-    invalidateLibrary();
+    if (!current()) return id;
     notify(
       tracks.length > 0 ? `Created “${name}” with ${tracks.length} songs` : `Created “${name}”`,
     );
     return id;
   } catch (e) {
+    if (!current()) return null;
     notify(errorMessage(e, 'Could not create the playlist.'));
     return null;
   }
@@ -149,23 +139,22 @@ export async function removeTrackFrom(playlist: Playlist, track: Track, index?: 
     notify('Only playlists you can edit support removing songs.');
     return;
   }
-  const session = get(authStore);
-  const channel = getActiveChannel();
+  const { session, channel, revision, current } = capturePlaylistAccount();
   const tracks = get(openPlaylistStore)?.browseId === playlist.browseId ? get(openPlaylistTracks) : [];
   const at = index !== undefined && tracks[index] === track ? index : tracks.indexOf(track);
   const occurrence = at < 0 ? 0 : tracks.slice(0, at).filter(item => item.videoId === track.videoId).length;
-  const key = JSON.stringify([authIdentity(session), channel, playlist.browseId, track.playlistEntryId ?? [track.videoId, occurrence]]);
+  const key = JSON.stringify([authIdentity(session), channel, revision, playlist.browseId, track.playlistEntryId ?? [track.videoId, occurrence]]);
   if (pendingRemovals.has(key)) return;
   pendingRemovals.add(key);
   try {
     await removeTrackFromPlaylist(playlist.browseId, track.videoId, session, { playlistEntryId: track.playlistEntryId, occurrence });
-    if (authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel) return;
-    invalidateCollection(playlist.browseId);
-    invalidateMeta(playlist.browseId);
-    invalidateLibrary();
+    for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
+    cacheClear(`library:${channel}:`);
+    if (!current()) return;
     recordPlaylistRemoval(playlist, track);
     notify(`Removed “${track.title}”`);
   } catch (e) {
+    if (!current()) return;
     notify(errorMessage(e, 'Could not remove the track.'));
   } finally {
     pendingRemovals.delete(key);
@@ -179,30 +168,30 @@ export async function updatePlaylistDetails(
 ): Promise<boolean> {
   if (!requireSession()) return false;
   const name = title.trim();
+  const { session, channel, current } = capturePlaylistAccount();
   try {
     if (name && name !== playlist.title) {
-      await renamePlaylist(playlist.browseId, name, get(authStore));
+      await renamePlaylist(playlist.browseId, name, session);
+      cacheClear(`meta:${channel}:${playlist.browseId}`);
+      cacheClear(`library:${channel}:`);
+      cacheClear(`addable:${channel}:`);
+      if (!current()) return false;
+      // A successful rename is retained even if the later description fails.
+      recordLibraryPlaylist(playlist, { title: name });
+      renamePlaylistLocally(playlist.browseId, name);
     }
+    if (!current()) return false;
     // `null` = the current description could not be read; leave it untouched.
     if (description !== null) {
-      await setPlaylistDescription(playlist.browseId, description, get(authStore));
+      await setPlaylistDescription(playlist.browseId, description, session);
+      cacheClear(`meta:${channel}:${playlist.browseId}`);
+      cacheClear(`library:${channel}:`);
     }
-    if (name) {
-      // Update the rail, the editable list and the open header in place (no
-      // refetch, no history).
-      playlistStore.update((list) =>
-        list.map((p) => (p.browseId === playlist.browseId ? { ...p, title: name } : p)),
-      );
-      renamePlaylistLocally(playlist.browseId, name);
-      if (get(openPlaylistStore)?.browseId === playlist.browseId) {
-        openPage({ view: 'playlist', entity: { ...playlist, title: name } });
-      }
-    }
-    invalidateMeta(playlist.browseId);
-    invalidateLibrary();
+    if (!current()) return false;
     notify('Playlist updated');
     return true;
   } catch (e) {
+    if (!current()) return false;
     notify(errorMessage(e, 'Could not update the playlist.'));
     return false;
   }
@@ -210,13 +199,8 @@ export async function updatePlaylistDetails(
 
 /** Update the rail entry and the open page with new artwork. */
 function applyThumbnails(playlist: Playlist, thumbnails: Thumbnail[]): void {
-  playlistStore.update((list) =>
-    list.map((p) => (p.browseId === playlist.browseId ? { ...p, thumbnails } : p)),
-  );
+  recordLibraryPlaylist(playlist, { thumbnails });
   addablePlaylistsStore.update(list => list.map(item => item.browseId === playlist.browseId ? { ...item, thumbnails } : item));
-  if (get(openPlaylistStore)?.browseId === playlist.browseId) {
-    openPage({ view: 'playlist', entity: { ...playlist, thumbnails } });
-  }
 }
 
 /**
@@ -235,20 +219,26 @@ export async function setPlaylistImage(
   playlist: Playlist,
   dataBase64: string,
   mime: string,
+  onError?: (message: string) => void,
 ): Promise<boolean> {
-  const session = get(authStore);
+  const { session, channel, current } = capturePlaylistAccount();
   if (!session) {
     notify('Sign in with YouTube Music to change playlist art.');
     return false;
   }
   try {
+    const uploadContext = await getPlaylistImageContext(session);
+    if (!current()) return false;
     const blobId = await invokeStrict<string>(
       'upload_playlist_thumbnail',
-      { cookie: session.cookie, dataBase64, mime, accountIndex: session.accountIndex ?? 0, channelId: getActiveChannel() },
+      { cookie: session.cookie, dataBase64, mime, accountIndex: session.accountIndex ?? 0, channelId: channel, playlistId: playlist.browseId, ...uploadContext },
       'Changing playlist art needs the desktop app.',
     );
+    if (!current()) return false;
     await setPlaylistCustomThumbnail(playlist.browseId, blobId, session);
-    invalidateMeta(playlist.browseId);
+    cacheClear(`meta:${channel}:${playlist.browseId}`);
+    cacheClear(`library:${channel}:`);
+    if (!current()) return false;
 
     // Show the new art right away (YouTube's own header can lag behind a new
     // custom thumbnail), then swap in the server URL once it differs.
@@ -259,7 +249,10 @@ export async function setPlaylistImage(
     // upload preview rather than replacing it with a lagging default thumbnail.
     for (let attempt = 0; previous && attempt < 3; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+      if (!current()) return false;
+      cacheClear(`meta:${channel}:${playlist.browseId}`);
       const meta = await getPlaylistMeta(playlist.browseId, session);
+      if (!current()) return false;
       const next = bestThumbnail(meta?.thumbnails ?? [], 512);
       if (next && next !== previous && next !== localUrl) {
         applyThumbnails(playlist, meta?.thumbnails ?? []);
@@ -270,7 +263,10 @@ export async function setPlaylistImage(
     notify('Playlist image updated');
     return true;
   } catch (e) {
-    notify(errorMessage(e, 'Could not update the playlist image.'));
+    if (!current()) return false;
+    const message = errorMessage(e, 'Could not update the playlist image.');
+    onError?.(message);
+    notify(message);
     return false;
   }
 }

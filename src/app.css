@@ -497,7 +497,6 @@ html.light .win-caption > button:last-child:hover { color: #fff; }
 /* Native controls occupy window coordinates; the content header starts after
    the inline rail. Account for both that rail and renderer zoom. */
 .cherry-shell.macos {
-  --cherry-chrome-background: color-mix(in srgb, var(--color-surface) 90%, transparent);
   --mac-controls-width: calc(78px / var(--cherry-ui-scale, 1));
   --mac-titlebar-inset: calc(var(--mac-controls-width) + 16px);
 }
@@ -514,11 +513,15 @@ html.light .win-caption > button:last-child:hover { color: #fff; }
   -webkit-app-region: drag;
 }
 
-/* macOS uses the same material for the topbar and both inline sidebar modes.
-   The rail begins below the shared strip, with 8px before its first button. */
+/* Let the page surface/accent wash continue through macOS chrome. The shared
+   strip still blurs scrolled content, with the same scrolling tint as Windows. */
 .cherry-shell.macos .cherry-topbar-backdrop-window {
   bottom: auto;
   height: 48px;
+  background: transparent;
+}
+.cherry-shell.macos .cherry-topbar-backdrop-window.cherry-topbar-scrolled {
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
 }
 .cherry-shell.macos .cherry-sidebar {
   isolation: isolate;
@@ -531,7 +534,7 @@ html.light .win-caption > button:last-child:hover { color: #fff; }
   inset: 48px 0 0;
   z-index: -1;
   pointer-events: none;
-  background: var(--cherry-chrome-background);
+  background: transparent;
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
 }

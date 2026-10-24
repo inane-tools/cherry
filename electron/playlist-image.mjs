@@ -23,12 +23,22 @@ async function responseText(response) {
   return Buffer.concat(chunks).toString('utf8');
 }
 export function createPlaylistImageUpload({ fetchImpl = globalThis.fetch, now = () => Math.floor(Date.now() / 1000), userAgent = () => 'Cherry Electron' } = {}) {
-  return async ({ cookie, dataBase64, mime, accountIndex = 0, channelId = '' }) => {
+  return async ({ cookie, dataBase64, mime, accountIndex = 0, channelId = '', playlistId = '', clientVersion = '', visitorData = '' }) => {
     if (typeof cookie !== 'string' || cookie.length > 100000 || typeof dataBase64 !== 'string' || dataBase64.length > 20 * 1024 * 1024 || !['image/jpeg', 'image/png'].includes(mime)) throw new Error('Invalid playlist image');
     if (!Number.isInteger(accountIndex) || accountIndex < 0 || (channelId && (typeof channelId !== 'string' || !/^[a-zA-Z0-9_-]{1,256}$/.test(channelId)))) throw new Error('Invalid playlist upload account');
+    if (typeof playlistId !== 'string' || (playlistId && !/^[a-zA-Z0-9_-]{1,256}$/.test(playlistId))) throw new Error('Invalid playlist upload target');
+    if ([clientVersion, visitorData].some(value => typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value))) throw new Error('Invalid playlist upload client');
     const bytes = Buffer.from(dataBase64, 'base64');
     if (!bytes.length || (mime === 'image/jpeg' ? !bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) : !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))) throw new Error('Invalid playlist image data');
-    const headers = { authorization: uploadAuthorization(cookie, now()), cookie, origin: ORIGIN, 'x-origin': ORIGIN, 'x-goog-authuser': String(accountIndex), 'user-agent': userAgent() };
+    const headers = { authorization: uploadAuthorization(cookie, now()), cookie, origin: ORIGIN, 'x-origin': ORIGIN,
+      referer: playlistId ? ORIGIN + '/playlist?list=' + encodeURIComponent(playlistId.replace(/^VL/, '')) : ORIGIN + '/',
+      'x-goog-authuser': String(accountIndex), 'x-youtube-bootstrap-logged-in': 'true', 'user-agent': userAgent() };
+    if (clientVersion) {
+      headers['x-youtube-client-name'] = '67';
+      headers['x-youtube-client-version'] = clientVersion;
+      headers['x-goog-api-format-version'] = '1';
+    }
+    if (visitorData) headers['x-goog-visitor-id'] = visitorData;
     if (channelId) headers['x-goog-pageid'] = channelId;
     const start = await fetchImpl(START_URL, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60000),
       headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8', 'x-goog-upload-protocol': 'resumable', 'x-goog-upload-command': 'start', 'x-goog-upload-header-content-length': String(bytes.length), 'x-goog-upload-header-content-type': mime },
@@ -36,15 +46,22 @@ export function createPlaylistImageUpload({ fetchImpl = globalThis.fetch, now = 
     });
     const destination = start.headers.get('x-goog-upload-url');
     await responseText(start);
-    if (!start.ok || !destination) throw new Error('Playlist image upload was not accepted (HTTP ' + start.status + ')');
+    if (!start.ok || !destination) throw new Error(uploadFailure('start', start.status));
     const finish = await fetchImpl(sessionUrl(destination), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60000),
       headers: { ...headers, 'content-type': 'application/octet-stream', 'x-goog-upload-command': 'upload, finalize', 'x-goog-upload-offset': '0' }, body: bytes,
     });
     const text = await responseText(finish);
-    if (!finish.ok) throw new Error('Playlist image upload failed (HTTP ' + finish.status + ')');
+    if (!finish.ok) throw new Error(uploadFailure('finish', finish.status));
     let result;
-    try { result = JSON.parse(text); } catch { throw new Error('Unexpected playlist image upload response'); }
+    try { result = JSON.parse(text.replace(/^\)\]\}'\s*/, '')); } catch { throw new Error('Unexpected playlist image upload response'); }
     if (typeof result?.encryptedBlobId !== 'string' || !result.encryptedBlobId || result.encryptedBlobId.length > 16384) throw new Error('Playlist image upload did not return an image ID');
     return result.encryptedBlobId;
   };
+}
+
+function uploadFailure(stage, status) {
+  const message = 'YouTube Music refused to ' + stage + ' the playlist cover upload (HTTP ' + status + ').';
+  return status === 401 || status === 403
+    ? message + ' Sign in again with the account that owns this playlist and select its brand account before retrying.'
+    : message;
 }

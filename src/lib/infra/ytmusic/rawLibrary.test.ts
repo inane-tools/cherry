@@ -16,6 +16,32 @@ const twoRow = (id: string, title: string, pageType = 'MUSIC_PAGE_TYPE_PLAYLIST'
 });
 
 describe('scanLibrary', () => {
+  it('reads empty and video-only playlists from web lockups and follows rich-grid pages', () => {
+    const item = (id: string, contentType = 'LOCKUP_CONTENT_TYPE_PLAYLIST') => ({ richItemRenderer: { content: { lockupViewModel: {
+      contentId: id, contentType,
+      metadata: { lockupMetadataViewModel: { title: { content: 'Empty playlist' } } },
+      contentImage: { collectionThumbnailViewModel: { primaryThumbnail: { thumbnailViewModel: { image: { sources: [{ url: 'https://img/empty', width: 336 }] } } } } },
+    } } } });
+    const scan = scanLibrary({ richGridRenderer: { contents: [item('PLempty'), item('video', 'LOCKUP_CONTENT_TYPE_VIDEO'),
+      { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: 'web-next' } } } }],
+    } });
+    expect(scan.playlists).toEqual([{ browseId: 'VLPLempty', title: 'Empty playlist', author: undefined, trackCount: undefined, thumbnails: [{ url: 'https://img/empty', width: 336 }] }]);
+    expect(scan.continuation).toBe('web-next');
+  });
+  it('only follows the playlist container continuation, never a sort-menu reload', () => {
+    expect(scanLibrary({
+      header: { menuRenderer: { continuations: [{ reloadContinuationData: { continuation: 'sort-token' } }] } },
+      contents: { gridRenderer: { items: [twoRow('VLPL1', 'First')], continuations: [{ nextContinuationData: { continuation: 'library-token' } }] } },
+    }).continuation).toBe('library-token');
+  });
+  it('reads grid continuation data without following unrelated menu commands', () => {
+    const scan = scanLibrary({ contents: { gridRenderer: {
+      items: [twoRow('VLPL1', 'First')],
+      menu: { continuationCommand: { token: 'not-library' } },
+      continuations: [{ nextContinuationData: { continuation: 'library-next' } }],
+    } } });
+    expect(scan.continuation).toBe('library-next');
+  });
   it('extracts playlists in document order, skipping albums and duplicates', () => {
     const raw = {
       contents: {

@@ -233,7 +233,7 @@
     <div class="absolute inset-0 z-[35] bg-[var(--color-surface)]" out:fade={{ duration: 300 }} aria-hidden="true"></div>
   {/if}
   {#if macInlineSidebar}
-    <div class="cherry-topbar-backdrop cherry-topbar-backdrop-window" aria-hidden="true" transition:fade={{ duration: 160 }}></div>
+    <div class="cherry-topbar-backdrop cherry-topbar-backdrop-window" class:cherry-topbar-scrolled={pageScrolled} aria-hidden="true" transition:fade={{ duration: 160 }}></div>
   {/if}
   <div class="flex min-h-0 flex-1">
     <!-- Playlist rail: full window height, never covered by the top bar or player.
@@ -282,26 +282,7 @@
       </main>
       <PlayerBar />
 
-      <!-- Transient notice. Lives inside the content column (not the window) so
-           it is centred over the app content instead of being pulled left by
-           the playlist rail. Match the floating compact-player lyrics strip. -->
-      {#key notice}
-      {#if notice}
-        <div
-          class="pointer-events-none absolute inset-x-0 top-14 z-50 flex justify-center px-4"
-          role="status"
-          aria-live="polite"
-          transition:fly|global={{ y: -12, duration: 240 }}
-        >
-          <div
-            class="flex w-max max-w-[36rem] items-center gap-3 rounded-xl bg-[var(--color-popover)] px-4 py-3 text-sm font-semibold text-white shadow-lg"
-          >
-            <i class="ph ph-info shrink-0 text-base text-[var(--color-accent)]" aria-hidden="true"></i>
-            <span class="min-w-0 break-words">{notice}</span>
-          </div>
-        </div>
-      {/if}
-      {/key}
+
       </div>
       {#if ready && !signedOut && $queueSidebarVisible}
         <QueueSidebar />
@@ -353,4 +334,22 @@
   <!-- Floating Settings / Search panels (above the sign-in gate). -->
   <SettingsOverlay />
   <SearchOverlay />
+  <!-- Notices must stay above dialog backdrops, including upload errors. -->
+  {#key notice}
+  {#if notice}
+    <div
+      class="pointer-events-none absolute inset-x-0 top-14 z-[90] flex justify-center px-4"
+      role="status"
+      aria-live="polite"
+      transition:fly|global={{ y: -12, duration: 240 }}
+    >
+      <div
+        class="flex w-max max-w-[36rem] items-center gap-3 rounded-xl bg-[var(--color-popover)] px-4 py-3 text-sm font-semibold text-white shadow-lg"
+      >
+        <i class="ph ph-info shrink-0 text-base text-[var(--color-accent)]" aria-hidden="true"></i>
+        <span class="min-w-0 break-words">{notice}</span>
+      </div>
+    </div>
+  {/if}
+  {/key}
 </div>

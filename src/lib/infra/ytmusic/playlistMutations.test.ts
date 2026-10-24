@@ -3,9 +3,29 @@ const execute = vi.hoisted(() => vi.fn());
 const addVideos = vi.hoisted(() => vi.fn());
 vi.mock('youtubei.js', () => ({ Platform: { shim: {} }, Innertube: { create: async () => ({ actions: { execute }, playlist: { addVideos } }) } }));
 vi.mock('./evaluator', () => ({ installEvaluator: () => {} }));
-import { addPlaylistToLibrary, removePlaylistFromLibrary, addTracksToPlaylist, removeTrackFromPlaylist, deleteOwnedPlaylist, resetInnertubeClient, getHomePage } from './InnertubeClient';
+import { addPlaylistToLibrary, removePlaylistFromLibrary, addTracksToPlaylist, removeTrackFromPlaylist, deleteOwnedPlaylist, resetInnertubeClient, getHomePage, renamePlaylist, setPlaylistDescription, setPlaylistCustomThumbnail } from './InnertubeClient';
 const session = { kind: 'cookie' as const, cookie: 'test-session', savedAt: 0 };
 beforeEach(() => { resetInnertubeClient(); addVideos.mockReset().mockResolvedValue({ success: true }); execute.mockReset().mockResolvedValue({ success: true, status_code: 200, data: {} }); });
+
+it('distinguishes a successful upload from a denied cover attach', async () => {
+  execute.mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 403'), { info: JSON.stringify({ error: { message: 'The caller does not have permission' } }) }));
+  await expect(setPlaylistCustomThumbnail('VLPL123', 'uploaded-blob', session)).rejects.toThrow('The image uploaded, but YouTube denied applying it');
+});
+
+it('renames with a real playlistId and supports clearing the description', async () => {
+  await renamePlaylist('VLPL123', 'Renamed', session);
+  expect(execute).toHaveBeenLastCalledWith('browse/edit_playlist', {
+    playlistId: 'PL123', actions: [{ action: 'ACTION_SET_PLAYLIST_NAME', playlistName: 'Renamed' }], client: 'YTMUSIC',
+  });
+  await setPlaylistDescription('VLPL123', '', session);
+  expect(execute).toHaveBeenLastCalledWith('browse/edit_playlist', {
+    playlistId: 'PL123', actions: [{ action: 'ACTION_SET_PLAYLIST_DESCRIPTION', playlistDescription: '' }], client: 'YTMUSIC',
+  });
+});
+it('reports rejected playlist edits rather than announcing a successful rename', async () => {
+  execute.mockResolvedValueOnce({ success: true, data: { status: 'STATUS_FAILED' } });
+  await expect(renamePlaylist('VLPL123', 'Renamed', session)).rejects.toThrow(/rename/);
+});
 
 it.each(['VLLM', 'LM', 'VLLL', 'LL'])('adds to %s through song likes, once per distinct video', async playlistId => {
   await addTracksToPlaylist(playlistId, ['song-a', 'song-b', 'song-a'], session);

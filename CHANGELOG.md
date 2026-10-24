@@ -4,6 +4,34 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.3] — 2026-10-24
+
+Furano.
+
+### Fixed
+
+- Include empty and video-only YouTube playlists in the library and editable
+  playlist menus, alongside YouTube Music playlists.
+- Keep playlist reads and edits isolated when switching Google accounts or
+  brand channels. Preserve confirmed edits while server responses catch up.
+- Load all library pages, keep already loaded playlists visible if a later page
+  fails, and avoid saving incomplete results as a complete library.
+- Correct playlist rename requests and allow clearing playlist descriptions.
+- Keep playlist image errors readable above dialogs and distinguish successful
+  image uploads from YouTube permission denials when applying the cover.
+- Restore macOS traffic-light alignment after native window layout changes and
+  avoid resetting their visibility on unrelated settings saves.
+
+### Changed
+
+- macOS sidebar and topbar backgrounds follow the page surface and accent wash,
+  while retaining the scrolling topbar blur.
+
+### Known issues
+
+- YouTube can still deny applying a custom playlist cover with HTTP 403. This
+  release improves the error message; it does not resolve that permission denial.
+
 ## [2.0.2] — 2026-10-23
 
 Furano.

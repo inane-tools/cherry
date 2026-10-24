@@ -28,7 +28,26 @@ export interface LibraryScan {
 const PLAYLIST_RENDERERS = new Set([
   'musicTwoRowItemRenderer',
   'musicResponsiveListItemRenderer',
+  'gridPlaylistRenderer', 'playlistRenderer', 'lockupViewModel',
 ]);
+const LIBRARY_CONTAINERS = new Set([
+  'gridRenderer', 'richGridRenderer', 'musicShelfRenderer', 'musicPlaylistShelfRenderer',
+  'gridContinuation', 'musicShelfContinuation', 'musicPlaylistShelfContinuation',
+  'appendContinuationItemsAction', 'reloadContinuationItemsCommand',
+]);
+
+/** Read a list's own pagination, without walking its menus or row actions. */
+function listContinuation(container: Json): string | undefined {
+  const next = container?.continuations?.[0]?.nextContinuationData?.continuation;
+  if (typeof next === 'string' && next) return next;
+  const rows = container?.items ?? container?.contents ?? container?.continuationItems;
+  if (!Array.isArray(rows)) return undefined;
+  for (const row of rows) {
+    const token = row?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+    if (typeof token === 'string' && token) return token;
+  }
+  return undefined;
+}
 
 /** A playlist browse id: `VL…` (YT Music) or `PL…` (classic). */
 function isPlaylistId(id: unknown): id is string {
@@ -82,8 +101,12 @@ function thumbnailsOf(root: Json): Thumbnail[] {
 
 /** Extract a playlist row from either row renderer variant. */
 function extractPlaylist(renderer: Json): Playlist | null {
+  // WEB includes empty/video-only playlists which Music omits entirely.
+  if (renderer.contentType && renderer.contentType !== 'LOCKUP_CONTENT_TYPE_PLAYLIST') return null;
   const browse = findFirst(renderer, (value) => isPlaylistId(value?.browseEndpoint?.browseId));
-  const browseId: string | undefined = browse?.browseEndpoint?.browseId;
+  const id = renderer.contentId ?? renderer.playlistId;
+  const browseId: string | undefined = browse?.browseEndpoint?.browseId
+    ?? (typeof id === 'string' && id.startsWith('PL') ? `VL${id}` : undefined);
   if (!isPlaylistId(browseId)) return null;
 
   // Reject albums/artists/podcast shows that reuse the same row renderer.
@@ -93,7 +116,7 @@ function extractPlaylist(renderer: Json): Playlist | null {
   if (pageType && pageType !== 'MUSIC_PAGE_TYPE_PLAYLIST') return null;
 
   // Title: `title` for two-row items, first flex column for responsive rows.
-  let title = textOf(renderer.title);
+  let title = textOf(renderer.title) ?? renderer.metadata?.lockupMetadataViewModel?.title?.content;
   if (!title && Array.isArray(renderer.flexColumns)) {
     for (const column of renderer.flexColumns) {
       const candidate = textOf(column?.musicResponsiveListItemFlexColumnRenderer?.text);
@@ -157,15 +180,19 @@ export function scanLibrary(raw: Json): LibraryScan {
         if (playlist && !playlists.has(playlist.browseId)) {
           playlists.set(playlist.browseId, playlist);
         }
+        // Row actions can contain their own browse/continuation commands.
+        continue;
       }
-      if (!continuation && key === 'continuationCommand') {
-        const token = (value as Json)?.token;
-        if (typeof token === 'string' && token) continuation = token;
+      if (!continuation && LIBRARY_CONTAINERS.has(key)) {
+        continuation = listContinuation(value);
       }
-      if (value && typeof value === 'object') pending.push({ node: value, depth: depth + 1 });
+      if (value && typeof value === 'object' && !/menu/i.test(key)) pending.push({ node: value, depth: depth + 1 });
     }
   }
 
+  // Also accept a bare appended continuation item, without treating nested
+  // menu commands as pagination for the main playlist list.
+  continuation ??= raw?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
   return { playlists: [...playlists.values()], rendererCounts, continuation };
 }
 
