@@ -41,7 +41,7 @@ export function entriesOf(section: HomeSection): CarouselEntry[] {
     thumbnails: card.thumbnails,
     kind: 'card',
     playback: card.playback,
-    canPlay: card.pageType !== 'MUSIC_PAGE_TYPE_USER_CHANNEL' && (!!card.playback || /^(VL|PL|RD|MPR)/.test(card.browseId) || card.browseId.startsWith('FEmusic_library_privately_owned_release')),
+    canPlay: card.pageType !== 'MUSIC_PAGE_TYPE_ARTIST_DISCOGRAPHY' && !card.browseId.startsWith('MPAD') && card.pageType !== 'MUSIC_PAGE_TYPE_USER_CHANNEL' && (!!card.playback || /^(VL|PL|RD|MPR)/.test(card.browseId) || card.browseId.startsWith('FEmusic_library_privately_owned_release')),
     round: card.browseId.startsWith('UC') || card.pageType === 'MUSIC_PAGE_TYPE_ARTIST' || card.pageType === 'MUSIC_PAGE_TYPE_USER_CHANNEL',
   }));
   const songs: CarouselEntry[] = section.songs.map((song) => ({
@@ -116,7 +116,7 @@ export function openBrowseCard(
     openAlbum({ browseId, title, artists: artistsFromSubtitle(subtitle), thumbnails });
   } else if (pageType === 'MUSIC_PAGE_TYPE_ARTIST' || browseId.startsWith('UC') || browseId.startsWith('FEmusic_library_privately_owned_artist')) {
     openArtist({ name: title, browseId, ...(thumbnails.length ? { thumbnails } : {}) });
-  } else if (browseId.startsWith('FE')) {
+  } else if (pageType === 'MUSIC_PAGE_TYPE_ARTIST_DISCOGRAPHY' || browseId.startsWith('MPAD') || browseId.startsWith('FE')) {
     openPage({ view: 'browse', entity: { browseId, title, params } });
   } else {
     openPlaylist({ browseId, title, thumbnails });

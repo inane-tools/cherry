@@ -188,10 +188,10 @@ export async function getInnertube(
       const msg = e instanceof Error ? e.message : String(e);
       // eslint-disable-next-line no-console
       console.error('[cherry] innertube session failed:', e);
-      if (/auth|token|revok|login|401|403/i.test(msg)) {
+      if (/\b(?:authentication|unauthenticated|revoked|login|401|403)\b|\bsign[ -]?in\b|\b(?:access|refresh)[ _-]?token\b/i.test(msg)) {
         throw new CherryError('auth-invalid', 'Session expired. Please sign in again.', e);
       }
-      const cause = msg.length > 160 ? `${msg.slice(0, 160)}…` : msg;
+      const cause = msg.length > 300 ? `${msg.slice(0, 300)}…` : msg;
       throw new CherryError(
         'network',
         `Could not reach YouTube Music. Check your connection. (${cause})`,
@@ -878,7 +878,7 @@ export async function getArtistPage(
   browseId: string,
   session?: AuthSession | null,
 ): Promise<ArtistPage> {
-  return cached(`artist:${getActiveChannel()}:headers-v2:${browseId}`, TTL.playlist, async () => {
+  return cached(`artist:${getActiveChannel()}:songs-v3:${browseId}`, TTL.playlist, async () => {
     const client = await getInnertube(session, { retrievePlayer: false });
     const response: AnyNode = await client.actions.execute('/browse', {
       browseId,
@@ -912,7 +912,7 @@ export async function getAlbumPage(
   browseId: string,
   session?: AuthSession | null,
 ): Promise<AlbumPage> {
-  return cached(`album:${getActiveChannel()}:${browseId}`, TTL.playlist, async () => {
+  return cached(`album:${getActiveChannel()}:plays-v2:${browseId}`, TTL.playlist, async () => {
     const client = await getInnertube(session, { retrievePlayer: false });
     // Raw browse for a robust header/cover, typed album for artist + year.
     const response: AnyNode = await client.actions.execute('/browse', {

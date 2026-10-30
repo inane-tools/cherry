@@ -81,6 +81,63 @@ export function apiHeaders(value, input, userAgent) {
   return headers;
 }
 
+const CONNECTION_ERRORS = {
+  ERR_FAILED: 'The system network request failed', ERR_ADDRESS_UNREACHABLE: 'The server address could not be reached',
+  ERR_BLOCKED_BY_CLIENT: 'Security software or a network filter blocked the request',
+  ERR_BLOCKED_BY_ADMINISTRATOR: 'A system policy blocked the request',
+  ERR_NAME_NOT_RESOLVED: 'DNS could not resolve the server', ENOTFOUND: 'DNS could not resolve the server', EAI_AGAIN: 'DNS lookup temporarily failed',
+  ERR_CONNECTION_RESET: 'The connection was reset', ECONNRESET: 'The connection was reset',
+  ERR_CONNECTION_CLOSED: 'The connection closed unexpectedly', ERR_NETWORK_CHANGED: 'The network connection changed',
+  ERR_INTERNET_DISCONNECTED: 'The device is offline', ERR_CONNECTION_REFUSED: 'The connection was refused', ECONNREFUSED: 'The connection was refused',
+  ERR_CONNECTION_TIMED_OUT: 'The connection timed out', ERR_TIMED_OUT: 'The connection timed out', ETIMEDOUT: 'The connection timed out',
+  UND_ERR_CONNECT_TIMEOUT: 'The connection timed out',
+  ERR_PROXY_CONNECTION_FAILED: 'The system proxy could not be reached', ERR_TUNNEL_CONNECTION_FAILED: 'The system proxy could not establish a connection',
+  ERR_CERT_AUTHORITY_INVALID: 'The HTTPS certificate is not trusted', ERR_CERT_DATE_INVALID: 'The HTTPS certificate has an invalid date',
+  ERR_CERT_COMMON_NAME_INVALID: 'The HTTPS certificate does not match the server',
+  UNABLE_TO_GET_ISSUER_CERT_LOCALLY: 'The HTTPS certificate is not trusted', UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'The HTTPS certificate is not trusted',
+  SELF_SIGNED_CERT_IN_CHAIN: 'The HTTPS certificate is not trusted', DEPTH_ZERO_SELF_SIGNED_CERT: 'The HTTPS certificate is not trusted',
+  CERT_HAS_EXPIRED: 'The HTTPS certificate has expired',
+};
+function connectionCode(error) {
+  const pending = [error]; const seen = new Set();
+  while (pending.length && seen.size < 24) {
+    const value = pending.shift();
+    if (!value || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    if (Object.hasOwn(CONNECTION_ERRORS, value.code)) return value.code;
+    const match = String(value.message ?? '').match(/\b(?:ERR_[A-Z_]+|UND_ERR_CONNECT_TIMEOUT)\b/);
+    if (match && Object.hasOwn(CONNECTION_ERRORS, match[0])) return match[0];
+    pending.push(value.cause, ...(Array.isArray(value.errors) ? value.errors.slice(0, 16) : []));
+  }
+}
+
+/** Use the same OS-aware networking as the login window. Explicit cookies must
+ * survive, while Chromium's cookie jar must never replace the selected account.
+ * Retry only transient GET/HEAD connection failures, never playlist mutations. */
+export function createApiFetch(chromiumFetch, { retryDelayMs = 200 } = {}) {
+  return async (value, options = {}) => {
+    const url = allowedRequest(value);
+    const readOnly = ['GET', 'HEAD'].includes((options.method ?? 'GET').toUpperCase());
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fetchAllowed(url, options, false, {
+          fetchImpl: (target, init) => chromiumFetch(target.href, { ...init, credentials: 'omit', cache: 'no-store' }),
+        });
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        const code = connectionCode(error);
+        if (attempt === 0 && readOnly && ['ERR_NETWORK_CHANGED', 'ERR_CONNECTION_RESET', 'ERR_CONNECTION_CLOSED', 'ECONNRESET', 'EAI_AGAIN'].includes(code)) {
+          await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+          continue;
+        }
+        // Electron serializes only the message over IPC. Preserve a useful,
+        // bounded diagnosis without exposing request URLs, cookies or tokens.
+        throw new Error(`Network request to ${url.hostname} failed: ${code ? `${CONNECTION_ERRORS[code]} (${code})` : 'Could not establish a secure connection. Check the connection and whether security software is blocking Cherry.'}`, { cause: error });
+      }
+    }
+  };
+}
+
 /** Media bodies are often paused by playback buffers. Chromium owns their HTTP
  * connections, avoiding Node/Undici's paused-parser assertion on socket end.
  * Keep destination/redirect checks and abort/range handling in the shared relay.

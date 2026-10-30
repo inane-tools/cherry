@@ -2,6 +2,18 @@ import { expect, it } from 'vitest';
 import { scanHome, scanHomeFilters, homeContinuation, scanPageHeader } from './rawHome';
 
 const text = (value: string) => ({ runs: [{ text: value }] });
+
+it('keeps artist Top songs as songs even when their menus offer a mix', () => {
+  const [section] = scanHome({ musicShelfRenderer: { title: text('Top songs'), contents: [{ musicResponsiveListItemRenderer: {
+    flexColumns: [
+      { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: 'Old Stories', navigationEndpoint: { watchEndpoint: { videoId: 'KlN0EAILYwA' } } }] } } },
+      { musicResponsiveListItemFlexColumnRenderer: { text: text('Kevin Penkin') } },
+    ],
+    menu: { menuRenderer: { items: [{ menuNavigationItemRenderer: { navigationEndpoint: { watchEndpoint: { videoId: 'KlN0EAILYwA', playlistId: 'RDAMVMKlN0EAILYwA' } } } }] } },
+  } }] } });
+  expect(section.cards).toEqual([]);
+  expect(section.songs).toMatchObject([{ videoId: 'KlN0EAILYwA', title: 'Old Stories' }]);
+});
 const card = (id: string) => ({ musicTwoRowItemRenderer: { title: text(id), navigationEndpoint: { browseEndpoint: { browseId: id } }, thumbnailRenderer: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: `https://image/${id}` }] } } } } });
 const song = (id: string) => ({ musicResponsiveListItemRenderer: { flexColumns: [{ musicResponsiveListItemFlexColumnRenderer: { text: text(id) } }], overlay: { musicItemThumbnailOverlayRenderer: { content: { musicPlayButtonRenderer: { playNavigationEndpoint: { watchEndpoint: { videoId: id } } } } } } } });
 const shelf = (title: string, contents: object[], extra = {}) => ({ musicCarouselShelfRenderer: { header: { musicCarouselShelfBasicHeaderRenderer: { title: text(title) } }, contents, ...extra } });

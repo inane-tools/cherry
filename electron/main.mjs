@@ -7,7 +7,8 @@ import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assetPath, trustedRenderer, externalUrl, fullscreenPermission } from './policy.mjs';
-import { fetchAllowed, apiHeaders, createMediaFetch } from './network.mjs';
+import { apiHeaders, createApiFetch, createMediaFetch } from './network.mjs';
+import { createChromiumFetch } from './chromium-fetch.mjs';
 import { captureYouTubeSession, createAuthPersistence } from './login.mjs';
 import { createDiscordPresence } from './discord.mjs';
 import { createLastfm } from './lastfm.mjs';
@@ -70,6 +71,8 @@ const send = (name, value) => { if (window && !window.isDestroyed()) window.webC
 const discord = createDiscordPresence();
 const lastfm = createLastfm();
 const fetchMedia = createMediaFetch((url, options) => net.fetch(url, options));
+const chromiumApiFetch = createChromiumFetch(options => net.request(options));
+const fetchApi = createApiFetch(chromiumApiFetch);
 const updates = createUpdates({
   environment: updateEnvironment({ packaged: app.isPackaged, platform: process.platform, env: process.env, smoke }),
   loadUpdater: async () => { const { default: module } = await import('electron-updater'); return module.autoUpdater; },
@@ -266,11 +269,11 @@ const commands = {
   http_proxy_fetch: async ({ url, method = 'GET', headers = {}, body }) => {
     if (!['GET', 'POST', 'PUT', 'DELETE', 'HEAD'].includes(method) || (body && (typeof body !== 'string' || body.length > 20 * 1024 * 1024))) throw new Error('Invalid HTTP request');
     const clean = apiHeaders(url, headers, browserAgent());
-    const response = await fetchAllowed(url, { method, headers: clean, body: body ?? undefined });
+    const response = await fetchApi(url, { method, headers: clean, body: body ?? undefined });
     const bytes = await boundedBytes(response);
     return { status: response.status, headers: Object.fromEntries(response.headers), body: bytes.toString('utf8') };
   },
-  http_proxy_fetch_base64: async ({ url }) => (await boundedBytes(await fetchAllowed(url))).toString('base64'),
+  http_proxy_fetch_base64: async ({ url }) => (await boundedBytes(await fetchApi(url))).toString('base64'),
   cache_size: () => profileSize(profilePath),
   clear_cache: () => clearSessionCaches([['App', session.defaultSession], ['Login', loginSession()]]),
   clear_local_data: async () => {
@@ -413,6 +416,8 @@ async function main() {
     if (process.platform === 'win32' && updateTaskbar(window, { hasTrack: true, playing: true }) !== true) throw new Error('Native taskbar toolbar rejected enabled buttons');
     const { testMediaTransport } = await import('./media-transport.smoke.mjs');
     await testMediaTransport((url, options) => net.fetch(url, options));
+    const { testApiTransport } = await import('./api-transport.smoke.mjs');
+    await testApiTransport(chromiumApiFetch, session.defaultSession.cookies);
     const { default: updaterModule } = await import('electron-updater');
     if (typeof updaterModule.autoUpdater.checkForUpdates !== 'function') throw new Error('Packaged updater dependency missing');
     const errors = [];

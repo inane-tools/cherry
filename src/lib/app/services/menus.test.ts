@@ -5,7 +5,7 @@ vi.mock('./links', async importOriginal => ({ ...await importOriginal<typeof imp
 vi.mock('./radio', () => ({ playRadio: vi.fn() }));
 vi.mock('./player', () => ({ playTracks: vi.fn() }));
 vi.mock('./playlists', () => ({ playPlaylist: vi.fn() }));
-vi.mock('./catalog', () => ({ openArtist: vi.fn(), openTrackAlbum: vi.fn() }));
+vi.mock('./catalog', () => ({ openAlbum: vi.fn(), openArtist: vi.fn(), openTrackAlbum: vi.fn() }));
 vi.mock('./pins', () => ({ isPinned: () => false, togglePin: vi.fn(), toggleAlbumPin: vi.fn(), toggleArtistPin: vi.fn(), toggleTrackPin: vi.fn() }));
 vi.mock('./auth', () => ({ authStore: writable({ kind: 'cookie', cookie: 'SID=fixture', savedAt: 0 }) }));
 vi.mock('./playlistEdit', () => ({ getDefaultPlaylist: () => null, removeTrackFrom: vi.fn(), saveTrack: vi.fn(), setDefaultPlaylist: vi.fn() }));
@@ -19,7 +19,13 @@ vi.mock('./songCredits', () => ({ openSongCredits: vi.fn() }));
 vi.mock('./queueActions', () => ({ queueTracks: mocks.tracks, queueCollection: mocks.collection }));
 import { trackMenu, playlistMenu, albumMenu, folderMenu, artistMenu, stationMenu } from './menus';
 import { toggleAlbumPin, toggleArtistPin, toggleTrackPin } from './pins';
-import { openArtist, openTrackAlbum } from './catalog';
+import { openAlbum, openArtist, openTrackAlbum } from './catalog';
+
+it('opens the exact album from its context menu', async () => {
+  const album = { browseId: 'MPREb_9gn9Z9Xl95W', title: 'MADE IN ABYSS ORIGINAL SOUNDTRACK 4', artists: [], thumbnails: [] };
+  await albumMenu(album).find(item => item.label === 'Open album')!.action();
+  expect(openAlbum).toHaveBeenCalledWith(album);
+});
 
 it('offers album navigation for songs, including rows whose album needs resolving', async () => {
   const song = { videoId: 'song', title: 'Song', artists: [], thumbnails: [] };

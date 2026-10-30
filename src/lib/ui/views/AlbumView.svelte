@@ -125,9 +125,10 @@
       <div class="flex items-center gap-3 border-b border-white/5 px-2 pb-2 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
         <span class="w-6 text-center">#</span>
         <span class="flex-1">Title</span>
-        <span>Duration</span>
+        <span class="w-16 shrink-0 text-center normal-case tracking-normal" title="Relative YouTube plays within this album">Popularity</span>
+        <span class="w-14 shrink-0 text-right">Duration</span>
       </div>
-      <TrackList {tracks} onPlay={(_t, i) => playTracks(tracks, i)} />
+      <TrackList {tracks} showPopularity onPlay={(_t, i) => playTracks(tracks, i)} />
       </div>
     {/if}
   {/if}

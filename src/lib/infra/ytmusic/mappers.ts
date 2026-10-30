@@ -13,6 +13,7 @@
 
 import type { Album, ArtistRef, Playlist, Thumbnail, Track } from '$lib/core/models';
 import { albumFromRuns, artistsFromRuns } from './musicByline';
+import { parsePlayCount } from './playCounts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNode = any;
@@ -207,6 +208,19 @@ function playlistEntryIdOf(node: AnyNode): string | undefined {
   return find(node.menu);
 }
 
+function playCountOf(node: AnyNode): { playCount?: number; playCountText?: string } {
+  const columns: AnyNode[] = [...(node.flex_columns ?? []), ...(node.fixed_columns ?? [])];
+  const texts = [str(node.views), str(node.play_count_text), ...columns.flatMap(col =>
+    [str(col.title), ...(col.title?.runs ?? []).map((run: AnyNode) => str(run))])];
+  for (const text of texts) {
+    if (!text) continue;
+    const playCount = parsePlayCount(text);
+    if (playCount !== undefined) return { playCount, playCountText: text };
+  }
+  const count = node.play_count ?? node.view_count;
+  return typeof count === 'number' && Number.isFinite(count) && count >= 0 ? { playCount: count } : {};
+}
+
 export function mapTrack(node: AnyNode): Track | null {
   if (!node || typeof node !== 'object') return null;
   if (node.type === 'MusicCardShelf') return mapCardShelf(node);
@@ -230,6 +244,7 @@ export function mapTrack(node: AnyNode): Track | null {
       ? { name: String(albumNode.name ?? albumNode.text), browseId: albumNode.browse_id ?? albumNode.id }
       : albumFromRuns((node.flex_columns ?? []).slice(1).flatMap((col: AnyNode) => col?.title?.runs ?? [])),
     durationSeconds: trackDuration(node),
+    ...playCountOf(node),
     thumbnails: thumbs(node),
     isExplicit: isExplicit(node),
     creditsBrowseId: creditsBrowseIdOf(node),

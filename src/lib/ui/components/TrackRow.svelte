@@ -6,6 +6,7 @@
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
   import ArtistsLine from './ArtistsLine.svelte';
+  import TrackPopularity from './TrackPopularity.svelte';
 
   export let track: Track;
   export let index: number;
@@ -16,6 +17,8 @@
   export let playlist: import('$lib/core/models').Playlist | undefined = undefined;
   /** A collection can identify the playing occurrence when videos repeat. */
   export let current: boolean | undefined = undefined;
+  export let showPopularity = false;
+  export let maxPlayCount = 0;
 
   $: isCurrent = !!$playerStore.track && (current ?? ($playerStore.track.videoId === track.videoId));
   $: playing = isCurrent && $playerStore.status === 'playing';
@@ -66,5 +69,6 @@
     <span class="block truncate text-sm {isCurrent ? 'text-[var(--color-accent2)]' : ''}">{track.title}</span>
     <ArtistsLine artists={track.artists} textClass="block truncate text-xs text-zinc-500" />
   </span>
-  <span class="text-xs text-zinc-600">{fmt(track.durationSeconds)}</span>
+  {#if showPopularity}<TrackPopularity count={track.playCount} countText={track.playCountText} maximum={maxPlayCount} />{/if}
+  <span class="text-xs text-zinc-600 {showPopularity ? 'w-14 shrink-0 text-right' : ''}">{fmt(track.durationSeconds)}</span>
 </div>

@@ -127,6 +127,17 @@ it('retains server page types for menu routing', () => {
   expect(entries[0].pageType).toBe('MUSIC_PAGE_TYPE_ARTIST');
 });
 
+it('opens the artist Albums heading as a discography browse grid, preserving params', async () => {
+  const { openBrowseCard } = await import('./browse');
+  openBrowseCard('MPADUCmUdoXixFr4EffDIQkarfLg', 'Albums', [], undefined, 'ggMIegYIARoCAQI%3D', 'MUSIC_PAGE_TYPE_ARTIST_DISCOGRAPHY');
+  expect(openPage).toHaveBeenCalledWith({ view: 'browse', entity: {
+    browseId: 'MPADUCmUdoXixFr4EffDIQkarfLg', title: 'Albums', params: 'ggMIegYIARoCAQI%3D',
+  } });
+  expect(openPlaylist).not.toHaveBeenCalled();
+  const [discography] = entriesOf({ ...section, cards: [{ browseId: 'MPADUCartist', title: 'Albums', thumbnails: [], pageType: 'MUSIC_PAGE_TYPE_ARTIST_DISCOGRAPHY' }] });
+  expect(discography.canPlay).toBe(false);
+});
+
 it('opens user-channel cards as profiles without autoplay or artist navigation', async () => {
   const [profile] = entriesOf({ ...section, cards: [{ browseId: 'UCprofile', title: 'SAME', thumbnails: [], params: 'private-sections', pageType: 'MUSIC_PAGE_TYPE_USER_CHANNEL' }] });
   expect(profile).toMatchObject({ canPlay: false, round: true });

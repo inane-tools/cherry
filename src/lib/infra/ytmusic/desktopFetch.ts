@@ -46,7 +46,13 @@ async function proxiedFetch(input: any, init?: any): Promise<Response> {
   // NOTE: the Electron relay adds a browser-style `Origin` header for Google
   // hosts. youtubei.js only sets it on its "server" shim, and without it some
   // endpoints (e.g. accounts_list) return a degraded body.
-  const res = await invoke<ProxyResult>('http_proxy_fetch', { url, method, headers, body });
+  let res: ProxyResult;
+  try {
+    res = await invoke<ProxyResult>('http_proxy_fetch', { url, method, headers, body });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message.replace(/^Error invoking remote method ['"]desktop:invoke['"]:\s*(?:Error:\s*)?/, ''), { cause: error });
+  }
   return new Response([204, 205, 304].includes(res.status) || method === 'HEAD' ? null : res.body, { status: res.status, headers: res.headers });
 }
 

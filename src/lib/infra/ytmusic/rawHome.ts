@@ -360,14 +360,6 @@ function extractResponsive(renderer: Json): { card?: HomeCard; song?: HomeSong }
   const title = textOf(firstColumn) ?? textOf(renderer?.title);
   if (!title) return {};
 
-  const station = findFirst(renderer, value => value?.watchPlaylistEndpoint?.playlistId || value?.watchEndpoint?.playlistId?.startsWith('RD'));
-  const radio = station?.watchPlaylistEndpoint ?? station?.watchEndpoint;
-  if (radio?.playlistId) {
-    return { card: { browseId: radio.playlistId.startsWith('VL') ? radio.playlistId : `VL${radio.playlistId}`,
-      title, subtitle: subtitleOf(renderer), thumbnails: thumbnailsOf(renderer),
-      playback: { videoId: radio.videoId, playlistId: radio.playlistId, params: radio.params } } };
-  }
-
   // Songs carry a watch endpoint in the first column runs, or on the overlay
   // play button.
   const watch = findFirst(
@@ -379,6 +371,17 @@ function extractResponsive(renderer: Json): { card?: HomeCard; song?: HomeSong }
     return {
       song: { videoId, title, subtitle: artistLine(renderer), thumbnails: thumbnailsOf(renderer) },
     };
+  }
+
+  // A song's menu contains Start mix. Inspect it only after checking the row's
+  // own song endpoint, otherwise every artist Top songs row becomes a station
+  // and loses its song actions (including Go to album).
+  const station = findFirst(renderer, value => value?.watchPlaylistEndpoint?.playlistId || value?.watchEndpoint?.playlistId?.startsWith('RD'));
+  const radio = station?.watchPlaylistEndpoint ?? station?.watchEndpoint;
+  if (radio?.playlistId) {
+    return { card: { browseId: radio.playlistId.startsWith('VL') ? radio.playlistId : `VL${radio.playlistId}`,
+      title, subtitle: subtitleOf(renderer), thumbnails: thumbnailsOf(renderer),
+      playback: { videoId: radio.videoId, playlistId: radio.playlistId, params: radio.params } } };
   }
 
   const browse = findFirst(

@@ -33,7 +33,7 @@ import { openPlaylistEditor } from './playlistEditor';
 import { openPlaylistPicker } from './playlistPicker';
 import { openSongCredits } from './songCredits';
 import { queueTracks, queueCollection } from './queueActions';
-import { openArtist, openTrackAlbum } from './catalog';
+import { openAlbum, openArtist, openTrackAlbum } from './catalog';
 
 async function copy(label: string, url: string): Promise<void> {
   const ok = await copyText(url);
@@ -248,7 +248,8 @@ export function playlistMenu(playlist: Playlist, opts: { pin?: boolean } = {}): 
 /** Albums can be queued without opening their detail page. */
 export function albumMenu(album: Album): ContextMenuItem[] {
   const pinned = isPinned(album.browseId);
-  return [{ label: 'Add to queue', icon: 'ph ph-list-plus', disabled: !get(authStore), action: () => queueCollection(album) },
+  return [{ label: 'Open album', icon: 'ph ph-vinyl-record', action: () => openAlbum(album) },
+    { label: 'Add to queue', icon: 'ph ph-list-plus', disabled: !get(authStore), action: () => queueCollection(album) },
     { label: pinned ? 'Unpin album' : 'Pin album', icon: pinned ? 'ph-fill ph-push-pin-slash' : 'ph ph-push-pin', disabled: !get(authStore), action: () => toggleAlbumPin(album) },
     { label: 'Copy music link', brandIcon: 'youtube-music', separatorBefore: true,
       action: () => copy('YouTube Music link', `https://music.youtube.com/browse/${encodeURIComponent(album.browseId)}`) }];

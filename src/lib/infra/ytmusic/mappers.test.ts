@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 
 describe('mapTrack', () => {
+  it('retains play counts from album flex columns instead of dropping the third column', () => {
+    const track = mapTrack({ id: 'album-song', item_type: 'song', title: 'Song',
+      flex_columns: [{ title: { text: 'Song' } }, { title: { text: 'Composer' } }, { title: { text: '70K plays' } }] });
+    expect(track).toMatchObject({ playCount: 70000, playCountText: '70K plays' });
+    expect(mapTrack({ id: 'song', title: 'Song', flex_columns: [{ title: { text: '2026' } }] })?.playCount).toBeUndefined();
+  });
   it('keeps the unlinked composer instead of replacing it with the linked album (FjztDd3a8MU)', () => {
     const albumRun = { text: 'NieR:Automata Ver1.1a Original Soundtrack', endpoint: {
       name: 'browseEndpoint', payload: { browseId: 'MPREb_W02rOERpy4r',

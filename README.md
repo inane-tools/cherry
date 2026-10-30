@@ -23,6 +23,8 @@ Made by [inane.tools](https://inane.tools). More about Cherry at
 - Organise playlists in folders, pin your favourites, and create or edit playlists.
 - Listen with artwork, lyrics or music videos up to 1080p. Start a mix from any song.
 - Search the catalogue or paste a YouTube link. Drag tracks around your queue.
+- Browse artist discographies and albums, with relative track popularity based
+  on YouTube's reported play counts.
 - Use light or dark mode, artwork colours, custom accents and tinted backgrounds.
 - Sign in inside the app and switch between accounts. Saved sign-ins use your
   operating system’s secure storage.

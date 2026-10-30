@@ -1,7 +1,67 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAllowed, apiHeaders, createMediaFetch } from './network.mjs';
+import { fetchAllowed, apiHeaders, createApiFetch, createMediaFetch } from './network.mjs';
 const media = 'https://rr1.googlevideo.com/video?sig=a%2Bb';
+
+test('API requests use Chromium while preserving explicit session identity and request bodies', async () => {
+  const api = createApiFetch(async (url, options) => {
+    assert.equal(url, 'https://music.youtube.com/youtubei/v1/browse');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.redirect, 'manual');
+    const headers = new Headers(options.headers);
+    assert.equal(headers.get('cookie'), 'SID=synthetic');
+    assert.equal(headers.get('authorization'), 'SAPISIDHASH synthetic');
+    assert.equal(headers.get('x-goog-authuser'), '2');
+    assert.equal(headers.get('x-goog-pageid'), 'brand-channel');
+    assert.equal(options.body, '{"browseId":"FEmusic_home"}');
+    return new Response('{"ok":true}', { status: 200 });
+  });
+  const response = await api('https://music.youtube.com/youtubei/v1/browse', { method: 'POST',
+    headers: { cookie: 'SID=synthetic', authorization: 'SAPISIDHASH synthetic', 'x-goog-authuser': '2', 'x-goog-pageid': 'brand-channel' },
+    body: '{"browseId":"FEmusic_home"}' });
+  assert.deepEqual(await response.json(), { ok: true });
+});
+
+test('API transport retries one transient read failure but never replays mutations', async () => {
+  let calls = 0;
+  const api = createApiFetch(async () => {
+    if (++calls === 1) throw Error('net::ERR_CONNECTION_RESET');
+    return new Response('ok');
+  }, { retryDelayMs: 0 });
+  assert.equal(await (await api('https://www.youtube.com/sw.js_data')).text(), 'ok');
+  assert.equal(calls, 2);
+  calls = 0;
+  await assert.rejects(api('https://music.youtube.com/youtubei/v1/playlist/edit', { method: 'POST', body: '{}' }), /ERR_CONNECTION_RESET/);
+  assert.equal(calls, 1);
+});
+
+test('API error diagnostics preserve DNS/TLS codes without exposing credentials or signed URLs', async () => {
+  for (const error of [
+    new Error('net::ERR_CERT_AUTHORITY_INVALID'),
+    new TypeError('fetch failed', { cause: Object.assign(new Error('private diagnostic'), { code: 'ENOTFOUND' }) }),
+  ]) {
+    const api = createApiFetch(async () => { throw error; });
+    await assert.rejects(api('https://www.youtube.com/test?token=secret', { headers: { cookie: 'SID=private' } }), failure => {
+      assert.match(failure.message, /www\.youtube\.com/);
+      assert.match(failure.message, /ERR_CERT_AUTHORITY_INVALID|ENOTFOUND/);
+      assert.doesNotMatch(failure.message, /secret|private|token|SID/);
+      return true;
+    });
+  }
+});
+
+test('API transport keeps destination validation, HTTP errors and cancellation intact', async () => {
+  let calls = 0;
+  const api = createApiFetch(async () => { calls++; return new Response('denied', { status: 403 }); });
+  await assert.rejects(api('file:///private'), /Refused/);
+  assert.equal(calls, 0);
+  assert.equal((await api('https://music.youtube.com/test')).status, 403);
+  assert.equal(calls, 1);
+  const controller = new AbortController(); controller.abort();
+  const aborted = createApiFetch(async () => { throw new DOMException('Cancelled', 'AbortError'); });
+  await assert.rejects(aborted('https://music.youtube.com/test', { signal: controller.signal }), { name: 'AbortError' });
+});
 test('an active transfer can outlive its connection/idle timeout', async () => {
   const response = await fetchAllowed(media, {}, true, { timeoutMs: 80, fetchImpl: async (_url, options) => new Response(new ReadableStream({
     async pull(output) {

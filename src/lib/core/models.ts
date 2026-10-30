@@ -31,6 +31,9 @@ export interface Track {
   artists: ArtistRef[];
   album?: { name: string; browseId?: BrowseId };
   durationSeconds?: number;
+  /** Public YouTube play/view count; may be rounded by the provider. */
+  playCount?: number;
+  playCountText?: string;
   thumbnails: Thumbnail[];
   /** Set when from the user's library / Premium-only flag */
   isExplicit?: boolean;

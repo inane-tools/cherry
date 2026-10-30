@@ -4,6 +4,27 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] — 2026-10-30
+
+Mombetsu.
+
+### Added
+
+- Album track lists show five-bar popularity based on YouTube's reported plays,
+  relative to the most-played track in that album. Missing counts stay unavailable.
+- Album context menus include Open album.
+
+### Fixed
+
+- Artist Albums headings open their discography grid rather than an empty playlist.
+- Artist Top songs keep song context menus instead of being mistaken for mixes
+  because their menus contain a Start mix endpoint.
+- YouTube API and artwork requests use Chromium's OS-aware network transport,
+  matching the login window, while retaining explicit account/channel cookies.
+- Retry transient connection resets for GET/HEAD requests once, without replaying
+  playlist edits or other mutations. Show bounded DNS/TLS connection diagnostics
+  instead of a generic IPC fetch failure; certificate errors do not prompt relogin.
+
 ## [2.0.3] — 2026-10-24
 
 Furano.

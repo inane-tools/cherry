@@ -8,6 +8,8 @@
   export let playlist: Playlist | undefined = undefined;
   export let currentIndex: number | undefined = undefined;
   export let onPlay: (track: Track, index: number) => void;
+  export let showPopularity = false;
+  $: maxPlayCount = showPopularity ? tracks.reduce((max, track) => Math.max(max, track.playCount ?? 0), 0) : 0;
   const rowHeight = 54; // 52px row plus the existing 2px gap.
   let start = 0, end = 20, focused = -1;
   let list: HTMLDivElement;
@@ -49,14 +51,14 @@
     {#each visible as index (tracks[index].videoId + ':' + index)}
       <div data-track-index={index} role="listitem" aria-posinset={index + 1} aria-setsize={tracks.length}
         class="absolute inset-x-0" style:top={`${index * rowHeight}px`}>
-        <TrackRow track={tracks[index]} {index} list={tracks} {playlist} current={currentIndex === undefined ? undefined : index === currentIndex} {onPlay} />
+        <TrackRow track={tracks[index]} {index} list={tracks} {playlist} current={currentIndex === undefined ? undefined : index === currentIndex} {onPlay} {showPopularity} {maxPlayCount} />
       </div>
     {/each}
   </div>
 {:else}
   <div class="mt-1 flex flex-col gap-0.5" role="list" aria-label="Songs">
     {#each tracks as track, index (track.videoId + ':' + index)}
-      <div role="listitem"><TrackRow {track} {index} list={tracks} {playlist} current={currentIndex === undefined ? undefined : index === currentIndex} {onPlay} /></div>
+      <div role="listitem"><TrackRow {track} {index} list={tracks} {playlist} current={currentIndex === undefined ? undefined : index === currentIndex} {onPlay} {showPopularity} {maxPlayCount} /></div>
     {/each}
   </div>
 {/if}

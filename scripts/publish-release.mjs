@@ -51,6 +51,12 @@ for (const [metadata, binary] of [['latest.yml', expected[0]], ['latest-linux.ym
   const checksum = hash.digest('base64');
   if (entry.sha512 !== checksum || doc.sha512 !== checksum || entry.size !== (await stat(resolve(folder, binary))).size) throw new Error(`Updater checksum/size mismatch: ${binary}`);
 }
+// Asset preflight is useful while a development version is still Unreleased.
+// Actual publication below continues to require a dated changelog entry.
+if (process.argv.includes('--check')) {
+  console.log(`Verified ${expected.length} assets for ${repo} ${tag}`);
+  process.exit(0);
+}
 const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
 const section = changelog.split(`## [${pkg.version}]`)[1]?.split('\n## [')[0];
 if (!section || section.split('\n')[0].includes('Unreleased')) throw new Error('Missing dated changelog entry');
@@ -60,7 +66,6 @@ catch (error) { if (error.code !== 'ENOENT') throw error; }
 const notesFile = resolve(tmpdir(), `cherry-release-${process.env.GITHUB_RUN_ID || 'local'}.md`);
 await writeFile(notesFile, `${notes}\n\nWindows: use the NSIS setup executable. Linux: use AppImage or install the Flatpak bundle. macOS: use the arm64 DMG for Apple Silicon or x64 DMG for Intel, then drag Cherry into Applications. macOS builds are ad-hoc signed and are not notarized; Gatekeeper may require approval in System Settings → Privacy & Security. macOS and Flatpak updates are manual; Windows and AppImage use Cherry’s GitHub updater.\n`);
 console.log(`Verified ${expected.length} assets for ${repo} ${tag}`);
-if (process.argv.includes('--check')) process.exit(0);
 if (!process.env.GH_TOKEN || !process.env.GITHUB_SHA) throw new Error('Publication requires GitHub Actions release credentials and commit');
 function gh(args) {
   const result = spawnSync('gh', args, { encoding: 'utf8' });
