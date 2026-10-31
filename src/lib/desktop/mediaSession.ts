@@ -1,4 +1,5 @@
 export interface MediaInfo {
+  trackId?: string; volume?: number;
   title: string; artist: string; album: string; artwork: string;
   isPlaying: boolean; isLoading?: boolean; durationSecs: number; positionSecs: number;
 }

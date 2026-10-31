@@ -1,7 +1,8 @@
 <script lang="ts">
   import { getCurrentWindow } from '$lib/desktop/window';
   import { onMount, tick } from 'svelte';
-  import { isDesktop, isMacDesktop } from '$lib/app/services/platform';
+  import { isDesktop, isMacDesktop, isLinuxDesktop } from '$lib/app/services/platform';
+  import { nativeTitlebar, trackTitlebarOffset } from '$lib/app/services/nativeTitlebar';
   import { settingsStore } from '$lib/app/services/settings';
   import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
@@ -96,6 +97,8 @@
 
   let windows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
   let macos = isMacDesktop();
+  let linux = isLinuxDesktop();
+  $: leftControls = macos || $nativeTitlebar.left > 0;
   let maximized = false;
   onMount(() => {
     let disposed = false;
@@ -105,6 +108,7 @@
       const platform = await window.cherryDesktop?.invoke<string>('desktop_platform');
       windows = platform === 'windows';
       macos = platform === 'macos';
+      linux = platform === 'linux';
       const win = getCurrentWindow();
       maximized = await win.isMaximized();
       const unlisten = await win.onResized(() => { void win.isMaximized().then(value => { if (!disposed) maximized = value; }); });
@@ -143,8 +147,11 @@
 <!-- svelte-ignore a11y_no_static_element_interactions : header starts a native window drag -->
 <!-- Navigation sits below modal backdrops; account/window controls stay above. -->
 <header
+  use:trackTitlebarOffset
   data-desktop-drag-region
   class:macos
+  class:left-controls={leftControls}
+  class:linux-native={linux}
   class="absolute inset-x-0 top-0 flex h-12 items-center gap-2 pl-2"
 >
   {#if !minimal && scrolled && showBackdrop}
@@ -188,7 +195,7 @@
   {/if}
 
   <!-- Right: account + native window controls. -->
-  <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls || macos ? '' : 'pr-3'}">
+  <div class="cherry-topbar-actions relative {macos || linux ? 'z-[60]' : 'z-40'} ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls || macos ? '' : 'pr-3'}">
     {#if !minimal}
       {#if $updateStore.phase === 'available' || $updateStore.phase === 'ready'}
         <button
@@ -221,7 +228,7 @@
       </button>
     {/if}
 
-    {#if isDesktop() && !macos && $settingsStore.windowControls}
+    {#if isDesktop() && windows && $settingsStore.windowControls}
       <!-- Native Windows caption buttons: Segoe system glyphs
            (E921 minimise, E922 maximise, E923 restore, E8BB close).
            `z-40` keeps them clickable above the sign-in gate, which covers the
@@ -267,12 +274,15 @@
 {/if}
 
 <style>
-  header.macos {
-    padding-left: var(--mac-titlebar-inset);
+  header.left-controls {
+    padding-left: max(8px, calc(var(--mac-controls-width) + 8px - var(--titlebar-window-offset, 0px)));
     padding-right: 16px;
     gap: 16px;
   }
-  header.macos .cherry-topbar-navigation { gap: 12px; }
-  header.macos .cherry-topbar-identity { gap: 10px; }
-  header.macos .cherry-topbar-actions { gap: 12px; }
+  header.left-controls .cherry-topbar-navigation { gap: 12px; }
+  header.left-controls .cherry-topbar-identity { gap: 10px; }
+  header.left-controls .cherry-topbar-actions { gap: 12px; }
+  header.linux-native {
+    padding-right: calc(var(--native-controls-right, 0px) + 16px);
+  }
 </style>

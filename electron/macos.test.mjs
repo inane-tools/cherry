@@ -62,8 +62,11 @@ test('uses the current zoom after deferred layout and leaves fullscreen controls
   await nextLayout();
 });
 
-test('native traffic-light chrome is exclusive to macOS', () => {
+test('uses native controls on macOS and Linux while preserving Windows renderer captions', () => {
   assert.equal(windowChrome('darwin').titleBarStyle, 'hidden');
   assert.deepEqual(windowChrome('win32'), { frame: false });
-  assert.deepEqual(windowChrome('linux'), { frame: false });
+  assert.deepEqual(windowChrome('linux'), {
+    frame: true, titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', height: 48 },
+  });
+  assert.equal(windowChrome('linux', false).titleBarOverlay, false);
 });

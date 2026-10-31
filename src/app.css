@@ -111,6 +111,7 @@ body {
 /* A shallow wash uses the same restrained accent tint as the player bar. */
 .cherry-shell {
   --shell-wash-strength: 12%;
+  --chrome-tint: color-mix(in srgb, var(--color-popover) 85%, transparent);
   background-color: var(--color-surface);
   background-image: linear-gradient(
     to bottom,
@@ -169,8 +170,11 @@ html.no-gradients .cherry-playerbar {
 /* Sidebar surface: the player bar's dark tone (flat, no gradient), a touch
    translucent against the underlying theme surface. */
 .cherry-sidebar {
-  background: color-mix(in srgb, var(--color-popover) 85%, transparent);
+  background: var(--chrome-tint);
   backdrop-filter: blur(6px);
+}
+.cherry-shell.native-chrome[data-sidebar-layout="expanded"] .cherry-library-sidebar {
+  border-right: 1px solid color-mix(in srgb, var(--color-line) 60%, transparent);
 }
 
 /* Thin, sleek custom scrollbars: no arrow buttons, clean overlay thumb. */
@@ -494,18 +498,16 @@ html.light .win-caption > button:last-child:hover { color: #fff; }
   .cherry-loading-skeleton { animation: cherry-loading-pulse 1.8s ease-in-out infinite; }
 }
 
+.cherry-shell.native-chrome .cherry-topbar-backdrop { background: var(--chrome-tint); }
+
 /* Native controls occupy window coordinates; the content header starts after
    the inline rail. Account for both that rail and renderer zoom. */
-.cherry-shell.macos {
-  --mac-controls-width: calc(78px / var(--cherry-ui-scale, 1));
-  --mac-titlebar-inset: calc(var(--mac-controls-width) + 16px);
+.cherry-shell.left-controls {
+  --mac-controls-width: var(--native-controls-left, 0px);
 }
-.cherry-shell.macos[data-sidebar-layout="expanded"] { --mac-titlebar-inset: 16px; }
-.cherry-shell.macos[data-sidebar-layout="compact"] {
-  --mac-titlebar-inset: max(16px, calc(var(--mac-controls-width) + 16px - 56px));
-}
-.cherry-shell.macos .cherry-sidebar { padding-top: 56px; }
-.cherry-shell.macos .cherry-sidebar::before {
+.cherry-shell.macos { --mac-controls-width: calc(78px / var(--cherry-ui-scale, 1)); }
+.cherry-shell.left-controls .cherry-library-sidebar { padding-top: 56px; }
+.cherry-shell.left-controls .cherry-library-sidebar::before {
   content: '';
   position: absolute;
   inset: 0 0 auto;
@@ -513,22 +515,22 @@ html.light .win-caption > button:last-child:hover { color: #fff; }
   -webkit-app-region: drag;
 }
 
-/* Let the page surface/accent wash continue through macOS chrome. The shared
-   strip still blurs scrolled content, with the same scrolling tint as Windows. */
-.cherry-shell.macos .cherry-topbar-backdrop-window {
+/* Tint the top strip only after scrolling. The sidebar keeps a clear blur
+   beneath the native controls in this layout. */
+.cherry-shell.left-controls .cherry-topbar-backdrop-window {
   bottom: auto;
   height: 48px;
   background: transparent;
 }
-.cherry-shell.macos .cherry-topbar-backdrop-window.cherry-topbar-scrolled {
-  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+.cherry-shell.left-controls .cherry-topbar-backdrop-window.cherry-topbar-scrolled {
+  background: var(--chrome-tint);
 }
-.cherry-shell.macos .cherry-sidebar {
+.cherry-shell.left-controls .cherry-library-sidebar {
   isolation: isolate;
   background: transparent;
   backdrop-filter: none;
 }
-.cherry-shell.macos .cherry-sidebar::after {
+.cherry-shell.left-controls .cherry-library-sidebar::after {
   content: '';
   position: absolute;
   inset: 48px 0 0;

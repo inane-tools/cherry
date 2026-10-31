@@ -20,9 +20,9 @@ export function textMenuItems(params) {
   ];
 }
 
-export function installTextMenu(window, Menu) {
+export function installTextMenu(window, Menu, currentWindow = () => window) {
   window.webContents.on('context-menu', (_event, params) => {
     const items = textMenuItems(params);
-    if (items.length) Menu.buildFromTemplate(items).popup({ window });
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: currentWindow() });
   });
 }

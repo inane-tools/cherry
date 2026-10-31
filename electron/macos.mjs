@@ -35,8 +35,12 @@ export function installMacWindowControls(window) {
   };
 }
 
-/** Keep the native traffic lights on macOS; other hosts use renderer buttons. */
-export function windowChrome(platform) {
+/** Keep macOS traffic lights and Linux system-themed window controls native. */
+export function windowChrome(platform, controlsVisible = true) {
+  if (platform === 'linux') return {
+    frame: true, titleBarStyle: 'hidden',
+    titleBarOverlay: controlsVisible ? { color: '#00000000', height: 48 } : false,
+  };
   return platform === 'darwin'
     ? { frame: true, titleBarStyle: 'hidden', trafficLightPosition: macTrafficLightPosition(1) }
     : { frame: false };

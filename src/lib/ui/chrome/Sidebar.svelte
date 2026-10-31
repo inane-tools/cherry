@@ -540,6 +540,7 @@
 {/snippet}
 
 <aside
+  class:cherry-library-sidebar={!forceFull}
   class="relative flex h-full shrink-0 flex-col {forceFull
     ? 'w-full bg-[var(--color-surface)]/95 pt-12'
     : compact

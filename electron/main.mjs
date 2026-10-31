@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme, dialog } from 'electron';
+import { app, BrowserWindow, BaseWindow, WebContentsView, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme, dialog } from 'electron';
 import { macMenuTemplate, windowChrome, installMacWindowControls } from './macos.mjs';
+import { createMpris } from './mpris.mjs';
+import { createLinuxWindow } from './linux-window.mjs';
 import { installTextMenu } from './text-menu.mjs';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -29,6 +31,10 @@ const smoke = process.argv.includes('--smoke-test');
 if (smoke) nativeTheme.themeSource = 'light';
 if (devUrl && !/^http:\/\/127\.0\.0\.1:1423\/?$/.test(devUrl)) throw new Error('Invalid development origin');
 app.setName('Cherry');
+if (process.platform === 'linux') {
+  const disabled = app.commandLine.getSwitchValue('disable-features');
+  app.commandLine.appendSwitch('disable-features', [disabled, 'HardwareMediaKeyHandling', 'MediaSessionService'].filter(Boolean).join(','));
+}
 const appId = smoke ? 'tools.inane.cherry.electron.smoke' : 'tools.inane.cherry.electron';
 app.setAppUserModelId(appId);
 // Never reuse the released app's settings, cookies, updater state or keychain.
@@ -42,6 +48,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 let window;
 let macWindowControls;
+let linuxWindowControls;
+let mpris;
 let login;
 let tray;
 let settings = {};
@@ -195,6 +203,7 @@ function openLogin() {
   void login.loadURL('https://music.youtube.com');
 }
 function updateTray(state) {
+  mpris?.setModes(state);
   updateTaskbar(window, state);
   // macOS uses the main application's Dock entry, without a menu-bar tray.
   if (process.platform === 'darwin') return;
@@ -217,6 +226,18 @@ const commands = {
   ...(smoke ? {
     'smoke:traffic-lights': () => window.getWindowButtonPosition(),
     'smoke:zoom': () => window.webContents.getZoomFactor(),
+    'smoke:mpris': async ({ shuffle, loopStatus } = {}) => {
+      const { sessionBus, Variant } = await import('@jellybrick/dbus-next');
+      const bus = sessionBus();
+      try {
+        const proxy = await bus.getProxyObject('org.mpris.MediaPlayer2.cherry.smoke.instance' + process.pid, '/org/mpris/MediaPlayer2');
+        const properties = proxy.getInterface('org.freedesktop.DBus.Properties');
+        const iface = 'org.mpris.MediaPlayer2.Player';
+        if (typeof shuffle === 'boolean') await properties.Set(iface, 'Shuffle', new Variant('b', shuffle));
+        if (loopStatus) await properties.Set(iface, 'LoopStatus', new Variant('s', loopStatus));
+        return { shuffle: (await properties.Get(iface, 'Shuffle')).value, loopStatus: (await properties.Get(iface, 'LoopStatus')).value };
+      } finally { bus.disconnect(); }
+    },
     'smoke:dispatch': ({ action }) => send('tray://action', action),
     'smoke:second-instance': ({ legacy = false }) => promisify(execFile)(process.execPath, [...(!app.isPackaged ? [app.getAppPath()] : []), '--smoke-test', ...(legacy ? ['--open-playlist', 'VLSMOKE'] : ['--open-playlist=VLSMOKE'])], { windowsHide: true, timeout: 10000 }),
   } : {}),
@@ -224,6 +245,8 @@ const commands = {
   updater_check: () => updates.check(),
   updater_download: () => updates.download(),
   updater_install: () => updates.install(),
+  media_now_playing: ({ info }) => mpris?.update(info),
+  media_cleared: () => mpris?.clear(),
   desktop_platform: () => process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
   'window:minimize': () => window.minimize(),
   'window:close': () => window.close(),
@@ -231,9 +254,10 @@ const commands = {
   'window:is-maximized': () => window.isMaximized(),
   'window:is-fullscreen': () => window.isFullScreen(),
   'window:title': ({ title }) => window.setTitle(String(title).slice(0, 300)),
-  set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); macWindowControls?.refresh(); },
+  set_window_controls_theme: ({ dark }) => { if (typeof dark !== 'boolean') throw new Error('Invalid window controls theme'); linuxControlsDark = dark; refreshLinuxWindowControls(); },
+  set_window_zoom: ({ scale }) => { if (!Number.isFinite(scale) || scale < .5 || scale > 3) throw new Error('Invalid zoom'); window.webContents.setZoomFactor(scale); macWindowControls?.refresh(); refreshLinuxWindowControls(); },
   'settings:get': ({ key }) => { if (key !== 'settings') throw new Error('Unknown settings key'); return settings; },
-  'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; macWindowControls?.setVisible(settings.windowControls !== false); await atomic('settings.json', JSON.stringify(settings)); }); },
+  'settings:set': ({ key, value }) => { if (key !== 'settings' || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings'); return enqueueWrite(async () => { settings = value; macWindowControls?.setVisible(settings.windowControls !== false); await atomic('settings.json', JSON.stringify(settings)); linuxWindowControls?.setVisible(settings.windowControls !== false); }); },
   'app:relaunch': () => {
     if (migratingData && !migration.committed) throw new Error('Wait for the import to finish before restarting.');
     app.relaunch(); app.quit();
@@ -317,6 +341,25 @@ const commands = {
   discord_clear_presence: () => discord.clear(),
   discord_set_presence: ({ payload }) => discord.setPresence(payload),
 };
+// Overlay height is in native DIPs; keep it aligned with the 48 CSS-pixel bar.
+// Enabling/disabling overlays replaces the native frame, retaining WebContents.
+let linuxControlsEnabled = false;
+let linuxControlsDark = true;
+function refreshLinuxWindowControls() {
+  if (linuxControlsEnabled && window && !window.isDestroyed()) {
+    window.setTitleBarOverlay({ color: '#00000000', symbolColor: linuxControlsDark ? '#ffffff' : '#000000', height: Math.round(48 * window.webContents.getZoomFactor()) });
+  }
+}
+
+function attachWindowEvents(host) {
+  host.once('ready-to-show', () => { if (!smoke && window === host) host.show(); });
+  host.on('resize', () => { if (window === host) send('window-resized', null); });
+  host.on('focus', () => { if (window === host) send('window-focus', true); });
+  host.on('blur', () => { if (window === host) send('window-focus', false); });
+  // Retiring a Linux frame must not quit the app or close its sign-in window.
+  host.on('closed', () => { if (window === host) { login?.close(); app.quit(); } });
+}
+
 async function main() {
   await app.whenReady();
   try { await recoverMigration(profilePath); }
@@ -325,6 +368,14 @@ async function main() {
     app.quit(); return;
   }
   permissions(session.defaultSession);
+  if (process.platform === 'linux') {
+    const { default: Player } = await import('@jellybrick/mpris-service');
+    mpris = createMpris({ Player, name: smoke ? 'cherry.smoke.instance' + process.pid : 'cherry',
+      dispatch: send,
+      raise: () => { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); },
+      quit: () => app.quit(), onError: error => console.warn('[mpris]', error.message),
+    });
+  }
   await prepareWindowsIdentity({ appId, assets, directory: data('branding'), register: !smoke }).catch(error => console.warn('[windows] Could not register app name/icon:', error.message));
   try { settings = JSON.parse(await readFile(data('settings.json'), 'utf8')); } catch { settings = {}; }
   protocol.handle('cherry', async request => {
@@ -352,9 +403,25 @@ async function main() {
       return new Response(response.body, { status: response.status, headers: output });
     } catch { return new Response('Media request failed', { status: 502, headers: cors }); }
   });
-  window = new BrowserWindow({ title: 'Cherry', width: 1280, height: 850, minWidth: 460, minHeight: 540,
-    ...windowChrome(process.platform), show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
-    webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !smoke } });
+  const windowOptions = { title: 'Cherry', width: 1280, height: 850, minWidth: 460, minHeight: 540,
+    ...windowChrome(process.platform, settings.windowControls !== false), show: false, backgroundColor: '#0a0a0f', icon: join(assets, 'icon.png'),
+    webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !smoke } };
+  linuxControlsDark = settings.theme === 'dark' || (settings.theme !== 'light' && nativeTheme.shouldUseDarkColors);
+  if (process.platform === 'linux') {
+    linuxWindowControls = createLinuxWindow({ BaseWindow, WebContentsView, options: windowOptions,
+      controlsVisible: settings.windowControls !== false,
+      onCreated: (next, controlsVisible) => {
+        window = next;
+        linuxControlsEnabled = controlsVisible;
+        login?.setParentWindow(next);
+        attachWindowEvents(next);
+        refreshLinuxWindowControls();
+      },
+    });
+  } else {
+    window = new BrowserWindow(windowOptions);
+    attachWindowEvents(window);
+  }
   if (process.platform === 'darwin') {
     macWindowControls = installMacWindowControls(window);
     macWindowControls.setVisible(settings.windowControls !== false);
@@ -365,7 +432,7 @@ async function main() {
       window.show(); window.focus();
     });
   }
-  installTextMenu(window, Menu);
+  installTextMenu(window, Menu, () => window);
   if (process.platform === 'win32') window.setAppDetails({ appId, appIconPath: data('branding/icon.ico'), relaunchDisplayName: 'Cherry', relaunchCommand: [process.execPath, ...(!app.isPackaged ? [app.getAppPath()] : [])].map(value => '"' + value + '"').join(' ') });
   ipcMain.handle('desktop:invoke', async (event, command, args = {}) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !trustedRenderer(event.senderFrame.url, devUrl)) throw new Error('Untrusted IPC sender');
@@ -388,11 +455,6 @@ async function main() {
   window.webContents.on('render-process-gone', () => { playlistLaunch.reset(); void discord.clear().catch(() => {}); });
   window.webContents.on('will-navigate', (event, url) => { if (!trustedRenderer(url, devUrl)) event.preventDefault(); });
   window.webContents.setWindowOpenHandler(({ url }) => { try { void shell.openExternal(externalUrl(url)); } catch {} return { action: 'deny' }; });
-  window.once('ready-to-show', () => { if (!smoke) window.show(); });
-  window.on('resize', () => send('window-resized', null));
-  window.on('focus', () => send('window-focus', true)); window.on('blur', () => send('window-focus', false));
-  // Closing exits; there is intentionally no minimize-to-tray behavior.
-  window.on('closed', () => { login?.close(); app.quit(); });
   if (devUrl) console.log('[desktop] Loading ' + devUrl);
   await window.loadURL(devUrl ?? 'cherry://app/index.html');
   // Some Windows launch configurations suppress the first native ShowWindow.
@@ -519,6 +581,72 @@ async function main() {
       checkbox.click(); await new Promise(resolve => setTimeout(resolve, 0));
       const settingsButton = [...document.querySelectorAll('.cherry-gate button')].find(button => button.textContent.trim() === 'Settings');
       settingsButton?.click(); await new Promise(resolve => setTimeout(resolve, 50));
+      if (platform === 'linux' || platform === 'macos') {
+        // Reproduce the right queue rail without requiring a live signed-in account.
+        const rail = document.createElement('aside');
+        rail.className = 'cherry-sidebar';
+        rail.style.cssText = 'width:320px;flex-shrink:0';
+        rail.setAttribute('aria-label', 'Playback queue');
+        document.querySelector('main').parentElement.parentElement.appendChild(rail);
+        const actions = document.querySelector('.cherry-topbar-actions');
+        const probe = document.createElement('button');
+        probe.style.cssText = 'width:32px;height:32px';
+        actions.appendChild(probe);
+        try {
+          const before = getComputedStyle(rail, '::before');
+          if (!['none', 'normal', ''].includes(before.content)) throw Error('Queue rail adds a titlebar drag strip');
+          const bounds = probe.getBoundingClientRect();
+          if (getComputedStyle(probe).getPropertyValue('-webkit-app-region') !== 'no-drag') throw Error('Topbar menu is a drag region');
+          if (document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) !== probe) throw Error('Queue or overlay blocks the topbar menu');
+        } finally { rail.remove(); probe.remove(); }
+      }
+      if (platform === 'linux') {
+        const overlay = navigator.windowControlsOverlay;
+        if (!overlay?.visible) throw Error('Linux native window controls missing');
+        if (document.querySelector('.win-caption')) throw Error('Duplicate renderer captions on Linux');
+        const beforeSettings = await bridge.invoke('settings:get', { key: 'settings' });
+        const marker = document.createElement('span');
+        marker.id = 'smoke-window-survived';
+        document.body.appendChild(marker);
+        for (const visible of [false, true, false, true]) {
+          await bridge.invoke('settings:set', { key: 'settings', value: { ...beforeSettings, windowControls: visible } });
+          for (let attempt = 0; attempt < 50 && overlay.visible !== visible; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+          if (overlay.visible !== visible) throw Error('Linux controls visibility did not update live');
+          if (document.getElementById(marker.id) !== marker) throw Error('Changing Linux controls reloaded the app');
+        }
+        marker.remove();
+
+        for (const [request, expected] of [
+          [{ shuffle: false }, { shuffle: false }], [{ shuffle: true }, { shuffle: true }],
+          [{ loopStatus: 'Track' }, { repeat: 'one' }], [{ loopStatus: 'Playlist' }, { repeat: 'all' }],
+          [{ loopStatus: 'None' }, { repeat: 'off' }],
+        ]) {
+          await bridge.invoke('smoke:mpris', request);
+          let converged = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const saved = await bridge.invoke('settings:get', { key: 'settings' });
+            const reported = await bridge.invoke('smoke:mpris');
+            converged = Object.entries(expected).every(([key, value]) => saved[key] === value)
+              && Object.entries(request).every(([key, value]) => reported[key] === value);
+            if (converged) break;
+            await new Promise(resolve => setTimeout(resolve, 20));
+          }
+          if (!converged) throw Error('MPRIS request did not synchronize queue, settings and desktop: ' + JSON.stringify(request));
+        }
+
+        for (const scale of [0.55, 1.1, 1.65, 2.2, 1.1]) {
+          await bridge.invoke('set_window_zoom', { scale });
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const rect = overlay.getTitlebarAreaRect();
+          if (Math.abs(rect.height - 48) > 2) throw Error('Linux controls did not follow UI zoom: ' + JSON.stringify(rect));
+          const shell = document.querySelector('.cherry-shell');
+          const header = document.querySelector('header');
+          if (shell.classList.contains('left-controls') !== (rect.x > 0)) throw Error('Linux control side not reflected in layout');
+          const right = innerWidth - rect.x - rect.width;
+          if (parseFloat(getComputedStyle(header).paddingRight) + 1 < right) throw Error('Header overlaps native Linux controls');
+          if (rect.x > 0 && header.getBoundingClientRect().left + parseFloat(getComputedStyle(header).paddingLeft) + 1 < rect.x) throw Error('Header overlaps left Linux controls');
+        }
+      }
       if (platform === 'macos') {
         const header = document.querySelector('header.macos');
         if (!header) throw Error('macOS topbar missing');
@@ -614,6 +742,6 @@ if (!app.requestSingleInstanceLock({ playlistId: playlistArgument(process.argv) 
 else {
   app.on('second-instance', (_event, argv, _directory, extra) => {
     playlistLaunch.receive(typeof extra?.playlistId === 'string' ? ['--open-playlist', extra.playlistId] : argv); if (!smoke) { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); } });
-  app.on('will-quit', () => { discord.close(); tray?.destroy(); });
+  app.on('will-quit', () => { mpris?.close(); discord.close(); tray?.destroy(); });
   void main().catch(error => { console.error('Electron startup failed:', error); app.exit(1); });
 }

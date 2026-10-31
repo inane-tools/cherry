@@ -16,6 +16,23 @@ WOFF2 files ship, without external requests or fallback font formats. Windows
 caption buttons retain their native Segoe glyphs. The inane footer keeps the
 original GitHub and X brand marks as inline SVGs; it does not load Boxicons fonts.
 
+Linux uses Electron's native Window Controls Overlay for system button placement
+and Freedesktop icon-theme glyphs (with Electron's fallback if unavailable).
+These follow the desktop's client-side decoration settings; custom KWin window
+decoration artwork is separate from the icon theme. Overlay geometry reserves
+space at either edge, including at different UI zoom levels. Left-side controls
+share the macOS sidebar spacing, with the scrolling backdrop limited to content
+when the sidebar is expanded. Show window controls applies immediately on Linux:
+only the native BaseWindow is replaced, retaining the WebContentsView, playback
+and page state. Header clearance uses measured content offsets and native button
+bounds, including when the sidebar is resized or UI zoom changes.
+
+Linux exposes its own MPRIS service (`org.mpris.MediaPlayer2.cherry`), including
+writable Shuffle and LoopStatus, rather than Chromium's limited bridge. Requests
+set and persist queue modes, and state changes are reported back to the desktop.
+Flatpak grants ownership of this bus name. Other hosts keep Chromium Media Session.
+The MPRIS integration test uses an isolated D-Bus session and synthetic metadata.
+
 The main window only accepts IPC from its main frame at cherry://app (or the
 fixed development origin). Preload forwards payloads without exposing ipcRenderer.
 Handlers own fixed data paths and validate network schemes/hosts and redirects.

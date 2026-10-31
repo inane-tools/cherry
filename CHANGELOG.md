@@ -4,6 +4,28 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.2] — 2026-11-01
+
+Mombetsu.
+
+### Fixed
+
+- Linux titlebar controls use the desktop's button layout and icon theme. Show
+  window controls applies immediately while retaining the page and playback.
+- Linux window corners remain rounded when controls change; maximized and
+  fullscreen windows use square corners.
+- Linux media-player widgets can set shuffle and repeat, with queue settings
+  synchronized back to the desktop through MPRIS.
+- Linux/macOS titlebar spacing accounts for the full left-side control group,
+  sidebar width and UI zoom. The top-right menu remains clickable with the large
+  queue open.
+- Linux/macOS scrolling titlebar blur gains a subtle tint. Expanded sidebars
+  keep the blur over the content column, with a light divider at the sidebar edge.
+  Compact sidebars retain the full-width topbar treatment without a divider.
+
+Windows retains its existing window controls, titlebar styling and media-session
+behavior. A broader titlebar redesign is deferred to the 2.2 series.
+
 ## [2.1.1] — 2026-10-31
 
 Mombetsu.

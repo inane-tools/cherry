@@ -7,6 +7,7 @@
 // and pushes them to the DOM.
 
 import { get } from 'svelte/store';
+import { invokeSafe } from './platform';
 import type { CherrySettings } from '$lib/infra/storage/settingsRepo';
 import { bestThumbnail } from '$lib/core/models';
 import { playerStore } from './player';
@@ -47,6 +48,7 @@ function apply(settings: CherrySettings): void {
   const theme = effectiveTheme(settings);
   if (theme !== lastTheme) {
     applyThemeClass(theme);
+    if (/Linux/.test(navigator.userAgent)) void invokeSafe('set_window_controls_theme', { dark: theme === 'dark' });
     // Accents are lightened in light mode (theme.ts), so it needs to know.
     setLightMode(theme === 'light');
     lastTheme = theme;

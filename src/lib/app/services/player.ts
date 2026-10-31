@@ -657,6 +657,7 @@ export function setVolume(v: number): void {
   // survive a restart rather than only living in the in-memory store.
   settingsStore.update((s) => ({ ...s, volume, muted: el.muted }));
   void persistVolume(volume, el.muted);
+  if (typeof window !== 'undefined' && window.cherryDesktop?.platform === 'linux') void pushMediaState();
 }
 
 export function setMuted(m: boolean): void {
@@ -665,6 +666,7 @@ export function setMuted(m: boolean): void {
   playerStore.update((p) => ({ ...p, muted: m }));
   settingsStore.update((s) => ({ ...s, muted: m }));
   void persistVolume(el.volume, m);
+  if (typeof window !== 'undefined' && window.cherryDesktop?.platform === 'linux') void pushMediaState();
 }
 
 let volumeSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -952,6 +954,7 @@ async function pushMediaState(): Promise<void> {
   // card never appeared at all.)
   await invokeSafe('media_now_playing', {
     info: {
+      trackId: t.videoId, volume: st.muted ? 0 : st.volume,
       title: t.title,
       artist: t.artists.map((a) => a.name).join(', '),
       album: t.album?.name ?? '',
