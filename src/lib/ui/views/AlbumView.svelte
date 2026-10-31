@@ -20,6 +20,7 @@
   $: album = page.view === 'album' ? page.entity : null;
   $: data = $albumPageStore;
   $: title = data?.title || album?.title || '';
+  $: source = album ? { kind: 'album' as const, title, browseId: album.browseId, thumbnails: album.thumbnails } : null;
   $: thumbnails = data?.thumbnails?.length ? data.thumbnails : (album?.thumbnails ?? []);
 
   // Artist/year come from the detail header (the raw subtitle is just
@@ -94,7 +95,7 @@
           <button
             class="cherry-nav-button flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold text-white transition-colors disabled:cursor-default disabled:opacity-40"
             disabled={tracks.length === 0}
-            onclick={() => playTracks(tracks, 0)}
+            onclick={() => playTracks(tracks, 0, source)}
           >
             <i class="ph-fill ph-play text-xl leading-none" aria-hidden="true"></i>
             Play
@@ -106,7 +107,7 @@
             disabled={tracks.length === 0}
             title="Shuffle play"
             aria-label="Shuffle play"
-            onclick={() => playTracksShuffled(tracks)}
+            onclick={() => playTracksShuffled(tracks, source)}
           >
             <i class="ph ph-shuffle leading-none" aria-hidden="true"></i>
           </button>
@@ -128,7 +129,7 @@
         <span class="w-16 shrink-0 text-center normal-case tracking-normal" title="Relative YouTube plays within this album">Popularity</span>
         <span class="w-14 shrink-0 text-right">Duration</span>
       </div>
-      <TrackList {tracks} showPopularity onPlay={(_t, i) => playTracks(tracks, i)} />
+      <TrackList {tracks} {source} showPopularity onPlay={(_t, i) => playTracks(tracks, i, source)} />
       </div>
     {/if}
   {/if}

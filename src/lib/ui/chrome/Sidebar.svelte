@@ -78,7 +78,7 @@
   $: playlists = $playlistStore;
   $: pinnedOrder = $pinnedStore.map(pin => pin.browseId);
   $: pinnedIds = new Set(pinnedOrder);
-  $: topItems = buildSidebarItems($sidebarOrderStore, playlists, $foldersStore, $pinnedStore);
+  $: topItems = buildSidebarItems($sidebarOrderStore, playlists, $foldersStore, $pinnedStore, $settingsStore.showYoutubePlaylists);
 
   function rowMenu(playlist: Playlist, pin?: SidebarPin) {
     if (pin?.kind === 'album') return albumMenu(pin.album);
@@ -219,7 +219,7 @@
     event.preventDefault();
     const cur = drag;
     const target = drop;
-    const order = topItems.map((t) => t.id);
+    const order = buildSidebarItems($sidebarOrderStore, $playlistStore, $foldersStore, $pinnedStore).map(item => item.id);
     endDrag();
     if (!target) return;
 
@@ -311,6 +311,7 @@
   }
   $: if (listEl) {
     void $playlistStore;
+    void $settingsStore.showYoutubePlaylists;
     void $foldersStore;
     void $libraryLoading;
     // The list height also changes when the order, pins or open folders change.

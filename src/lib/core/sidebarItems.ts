@@ -12,7 +12,12 @@ export function sidebarPinPreview(pin: SidebarPin): Playlist {
   return { browseId: pin.browseId, title: pin.title, thumbnails: fallback };
 }
 
-export function buildSidebarItems(order: string[], playlists: Playlist[], folders: PlaylistFolder[], pins: SidebarPin[]): SidebarItem[] {
+export function buildSidebarItems(order: string[], playlists: Playlist[], folders: PlaylistFolder[], pins: SidebarPin[], showYoutubePlaylists = true): SidebarItem[] {
+  if (!showYoutubePlaylists) {
+    const hidden = new Set(playlists.filter(playlist => playlist.librarySource === 'youtube').map(playlist => playlist.browseId));
+    playlists = playlists.filter(playlist => !hidden.has(playlist.browseId));
+    pins = pins.filter(pin => !isPlaylistPin(pin) || !hidden.has(pin.browseId));
+  }
   const pinIds = new Set(pins.map(pin => pin.browseId));
   const assigned = new Set(folders.flatMap(folder => folder.playlistIds));
   const unpinned = playlists.filter(playlist => !pinIds.has(playlist.browseId) && !assigned.has(playlist.browseId));

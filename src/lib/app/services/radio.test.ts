@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
-import { clearQueue, setQueue, queueItems } from './queue';
+import { clearQueue, setQueue, queueItems, queueSource, enqueue } from './queue';
 const mocks = vi.hoisted(() => ({ page: vi.fn(), play: vi.fn() }));
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ getRadioPage: mocks.page, getActiveChannel: () => 'channel' }));
 vi.mock('./auth', () => ({ authStore: writable<unknown>({ cookie: 'session' }) }));
@@ -13,7 +13,8 @@ const track = (videoId: string) => ({ videoId, title: videoId, artists: [], thum
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 beforeEach(() => {
   clearQueue(); vi.clearAllMocks(); authStore.set({ cookie: 'session' } as any);
-  mocks.play.mockImplementation(async tracks => { setQueue(tracks); });
+  mocks.page.mockReset();
+  mocks.play.mockImplementation(async (tracks, startAt, source) => { setQueue(tracks, startAt, source); });
 });
 it('retains the server station endpoint, refills and ignores duplicate tracks and repeated tokens', async () => {
   const stop = startRadioRefill();
@@ -50,5 +51,20 @@ it('ignores a refill response after signing out', async () => {
     playerStore.update(s => ({ ...s, status: 'playing' }));
     authStore.set(null); resolve({ tracks: [track('stale')] }); await flush();
     expect(get(queueItems).map(item => item.track.videoId)).toEqual(['a']);
+  } finally { stop(); }
+});
+
+it('drops an in-flight automatic refill when a song is added manually', async () => {
+  const stop = startRadioRefill();
+  try {
+    let resolve!: (value: unknown) => void;
+    mocks.page.mockResolvedValueOnce({ tracks: [track('a')], continuation: 'next' })
+      .mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    await playRadio({ playlistId: 'RDstation' }, { title: 'Personal mix' });
+    playerStore.update(s => ({ ...s, status: 'playing' }));
+    enqueue([track('manual')]);
+    resolve({ tracks: [track('stale')] }); await flush();
+    expect(get(queueSource)).toBeNull();
+    expect(get(queueItems).map(item => item.track.videoId)).toEqual(['a', 'manual']);
   } finally { stop(); }
 });

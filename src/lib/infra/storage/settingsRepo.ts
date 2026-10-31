@@ -41,6 +41,7 @@ export interface CherrySettings {
   /** Ids of sidebar folders the user collapsed (folders default to open). */
   collapsedFolders: string[];
   /** Slim the playlist rail (covers only, search as a button). */
+  showYoutubePlaylists: boolean;
   compactSidebar: boolean;
   /** Keep the queue in a right sidebar when there is room. */
   queueSidebar: boolean;
@@ -110,6 +111,7 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   playlistFolders: [],
   sidebarOrder: [],
   collapsedFolders: [],
+  showYoutubePlaylists: true,
   compactSidebar: false,
   queueSidebar: false,
   windowControls: true,

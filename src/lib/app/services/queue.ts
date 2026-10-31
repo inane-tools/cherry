@@ -2,7 +2,7 @@
 // <audio> element and asks the queue what to play next.
 
 import { derived, get, writable } from 'svelte/store';
-import type { QueueItem, RepeatMode, Track } from '$lib/core/models';
+import type { QueueItem, QueueSource, RadioEndpoint, RepeatMode, Track } from '$lib/core/models';
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -23,6 +23,9 @@ const repeat = writable<RepeatMode>('off');
 const shuffleOn = writable<boolean>(false);
 // When shuffle is on, `order` maps play-position → items index.
 const order = writable<number[]>([]);
+export const queueSource = writable<QueueSource | null>(null);
+let revision = 0;
+export const queueRevision = () => revision;
 
 export const queueStore = { items, index, repeat, shuffle: shuffleOn };
 // Named re-exports so Svelte components can auto-subscribe ($repeatMode, …).
@@ -83,7 +86,9 @@ function queueEntries(tracks: Track[]): QueueItem[] {
   });
 }
 
-export function setQueue(tracks: Track[], startAt = 0): void {
+export function setQueue(tracks: Track[], startAt = 0, source: QueueSource | null = null): void {
+  revision++;
+  queueSource.set(tracks.length ? source : null);
   const list = queueEntries(tracks);
   items.set(list);
   const clamped = Math.max(0, Math.min(startAt, list.length - 1));
@@ -99,8 +104,9 @@ export function setQueue(tracks: Track[], startAt = 0): void {
   }
 }
 
-export function enqueue(tracks: Track[], playNext = false, options: { appendInOrder?: boolean } = {}): void {
+export function enqueue(tracks: Track[], playNext = false, options: { appendInOrder?: boolean; automatic?: boolean } = {}): void {
   if (tracks.length === 0) return;
+  if (!options.automatic) queueSource.set(null);
   const list = get(items);
   if (list.length === 0) {
     setQueue(tracks, 0);
@@ -139,6 +145,8 @@ export function enqueue(tracks: Track[], playNext = false, options: { appendInOr
 }
 
 export function clearQueue(): void {
+  revision++;
+  queueSource.set(null);
   items.set([]);
   index.set(-1);
   order.set([]);
@@ -263,7 +271,10 @@ export function setQueueState(state: {
   order: number[];
   shuffle: boolean;
   repeat: RepeatMode;
+  source?: QueueSource | null;
 }): void {
+  revision++;
+  queueSource.set(state.items.length ? validQueueSource(state.source) : null);
   const count = state.items.length;
   items.set(state.items);
   repeat.set(state.repeat);
@@ -275,6 +286,24 @@ export function setQueueState(state: {
       : state.items.map((_, i) => i);
   order.set(restoredOrder);
   index.set(count > 0 ? Math.max(0, Math.min(state.index, count - 1)) : -1);
+}
+
+export function validQueueSource(source: QueueSource | null | undefined): QueueSource | null {
+  if (!source || !['playlist', 'album', 'mix'].includes(source.kind) || typeof source.title !== 'string' || !source.title.trim()) return null;
+  const browseId = typeof source.browseId === 'string' ? source.browseId.slice(0, 500) : undefined;
+  const endpoint: RadioEndpoint = {};
+  for (const key of ['videoId', 'playlistId', 'params'] as const) {
+    const value = source.endpoint?.[key];
+    if (typeof value === 'string' && value) endpoint[key] = value.slice(0, 4096);
+  }
+  if (source.kind === 'mix' ? !endpoint.videoId && !endpoint.playlistId : !browseId) return null;
+  return { kind: source.kind, title: source.title.slice(0, 500),
+    ...(browseId ? { browseId } : {}),
+    ...(source.kind === 'mix' ? { endpoint } : {}),
+    ...(Array.isArray(source.thumbnails) ? { thumbnails: source.thumbnails
+      .filter(image => image && typeof image.url === 'string').slice(0, 8)
+      .map(image => ({ url: image.url.slice(0, 8192) })) } : {}),
+  };
 }
 
 /** Current play order, for persistence. */

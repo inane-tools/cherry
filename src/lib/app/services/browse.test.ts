@@ -35,7 +35,7 @@ it('plays the displayed playlist rather than its recommendation overlay endpoint
 });
 it('keeps station playback endpoints', async () => {
   await playCarouselEntry(section, entry('VLRDstation'));
-  expect(mocks.radio).toHaveBeenCalledWith({ playlistId: 'RDunrelated' });
+  expect(mocks.radio).toHaveBeenCalledWith({ playlistId: 'RDunrelated' }, { title: 'Selected' });
   expect(mocks.playlist).not.toHaveBeenCalled();
 });
 it('loads the displayed album instead of an overlay mix', async () => {
@@ -71,7 +71,7 @@ it('plays songs and albums directly and opens navigation buttons as browse pages
   await selectCarouselEntry(originalSection, entriesOf(originalSection)[0]);
   expect(playTracks).toHaveBeenCalledWith([expect.objectContaining({ videoId: 'song' })], 0);
   await playCarouselEntry(originalSection, { key: 'c:MPRalbum', title: 'Album', thumbnails: [], kind: 'card' });
-  expect(playTracks).toHaveBeenLastCalledWith([expect.objectContaining({ videoId: 'album-song', artists: [{ name: 'Album artist' }] })]);
+  expect(playTracks).toHaveBeenLastCalledWith([expect.objectContaining({ videoId: 'album-song', artists: [{ name: 'Album artist' }] })], 0, { kind: 'album', title: 'Album', browseId: 'MPRalbum' });
   await selectCarouselEntry(originalSection, { key: 'c:FEmusic_category', browseId: 'FEmusic_category', browseParams: 'focus', title: 'Focus', thumbnails: [], kind: 'card', canPlay: false });
   expect(openPage).toHaveBeenCalledWith({ view: 'browse', entity: { browseId: 'FEmusic_category', title: 'Focus', params: 'focus' } });
 });

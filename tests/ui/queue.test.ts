@@ -2,9 +2,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mount, unmount, tick } from 'svelte';
 import { get } from 'svelte/store';
 vi.mock('$lib/app/services/player', async () => { const { writable } = await import('svelte/store'); return { playerStore: writable({ status: 'paused' }), playQueueItem: vi.fn() }; });
+vi.mock('$lib/app/services/queueSourceNavigation', () => ({ openQueueSource: vi.fn() }));
 vi.mock('$lib/app/services/catalog', () => ({ openArtist: vi.fn() }));
 import QueueList from '../../src/lib/ui/chrome/QueueList.svelte';
-import { setQueue, upNextQueue } from '../../src/lib/app/services/queue';
+import { openQueueSource } from '../../src/lib/app/services/queueSourceNavigation';
+import { enqueue, setQueue, upNextQueue } from '../../src/lib/app/services/queue';
 let viewport: HTMLDivElement;
 let component: ReturnType<typeof mount>;
 let frames: FrameRequestCallback[];
@@ -58,4 +60,15 @@ it('can keyboard-navigate to the end without mounting the whole queue', async ()
   await tick();
   await vi.waitFor(() => expect((document.activeElement as HTMLElement).dataset.queueIndex).toBe('998'));
   expect(viewport.querySelectorAll('[data-queue-row]').length).toBeLessThan(35);
+});
+
+it('shows a navigable source until a song is added manually', async () => {
+  const source = { kind: 'playlist' as const, browseId: 'VLPLsource', title: 'My playlist' };
+  setQueue([{ videoId: 'a', title: 'A', artists: [], thumbnails: [] }], 0, source);
+  component = mount(QueueList, { target: viewport }); await tick();
+  const link = viewport.querySelector<HTMLButtonElement>('[aria-label="Open My playlist"]')!;
+  expect(link.textContent).toContain('Playing from playlist');
+  link.click(); expect(openQueueSource).toHaveBeenCalledWith(source);
+  enqueue([{ videoId: 'manual', title: 'Manual', artists: [], thumbnails: [] }]); await tick();
+  expect(viewport.querySelector('[aria-label="Open My playlist"]')).toBeNull();
 });

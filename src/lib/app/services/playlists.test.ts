@@ -374,3 +374,14 @@ it('refreshes only the changed playlist header when another playlist is open', a
   expect(get(service.openPlaylistStore)?.browseId).toBe('OTHER');
   expect(get(service.playlistStore)[0]).toMatchObject({ trackCount: 3, thumbnails: [{ url: 'https://image.test/target' }] });
 });
+
+it('keeps known playlist artwork when opening a queue source without artwork', async () => {
+  const { pageStore } = await import('./navigation');
+  const known = { ...playlist('VLPLsource'), author: 'Curator', thumbnails: [{ url: 'https://image.test/playlist' }] };
+  service.playlistStore.set([known]);
+  service.openPlaylist({ browseId: known.browseId, title: known.title, thumbnails: [] });
+  expect(get(pageStore)).toMatchObject({ view: 'playlist', entity: { thumbnails: known.thumbnails, author: 'Curator' } });
+  const newer = [{ url: 'https://image.test/new-cover' }];
+  service.openPlaylist({ ...known, thumbnails: newer });
+  expect(get(pageStore)).toMatchObject({ view: 'playlist', entity: { thumbnails: newer } });
+});

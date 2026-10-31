@@ -22,6 +22,7 @@
   import { appendProfileSection, isPersonalMix, profileSectionTitle, repeatListening } from '$lib/core/profileSections';
   import { repeatListeningStore } from '$lib/app/services/profilePersonalization';
   import { appendBrowseSections, browsePresentation } from '$lib/core/browseLayout';
+  import { openMix } from '$lib/app/services/mixes';
 
   let sections: HomeSection[] = [];
   let header: PageHeader | null = null;
@@ -147,14 +148,11 @@
     finally { actionBusy = false; }
   }
 
-  async function playPersonalMix() {
-    if (actionBusy) return;
-    if (mixEntry && mixSection) {
-      actionBusy = true;
-      try { await selectCarouselEntry(mixSection, mixEntry); }
-      catch { notify('Could not play your personal mix. Try again.'); }
-      finally { actionBusy = false; }
-    } else if (mixAction) await runAction(mixAction);
+  function openPersonalMix() {
+    const endpoint = mixEntry?.playback ?? mixAction?.playback;
+    if (endpoint) openMix(endpoint, 'Personal mix', mixEntry?.thumbnails ?? profileArtwork);
+    else if (mixEntry && mixSection) openBrowseCard(mixEntry.browseId ?? mixEntry.key.slice(2), 'Personal mix', mixEntry.thumbnails, undefined, mixEntry.browseParams, mixEntry.pageType);
+    else if (mixAction?.browse) openBrowseCard(mixAction.browse.browseId, 'Personal mix', profileArtwork, undefined, mixAction.browse.params, mixAction.browse.pageType);
   }
 </script>
 
@@ -178,10 +176,10 @@
           {/if}
         </div>
         <svelte:fragment slot="aside">
-          <button class="cherry-nav-button group flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors disabled:opacity-40" disabled={actionBusy} onclick={playPersonalMix} aria-label="Play personal mix">
+          <button class="cherry-nav-button group flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors" onclick={openPersonalMix} aria-label="Open personal mix">
             <span class="relative block aspect-square w-20 shrink-0 overflow-hidden rounded-xl bg-white/5">
               {#if mixArtwork.length}<img use:artwork={{ urls: mixArtwork }} alt="" class="h-full w-full object-cover" />{/if}
-              <span class="absolute inset-0 flex items-center justify-center bg-black/25 text-white"><i class="ph-fill ph-play text-3xl" aria-hidden="true"></i></span>
+              <span class="absolute inset-0 flex items-center justify-center bg-black/25 text-white"><i class="ph ph-arrow-up-right text-3xl" aria-hidden="true"></i></span>
             </span>
             <span class="min-w-0"><span class="block text-[13px] font-semibold text-white">Personal mix</span><span class="mt-1 block text-[10px] text-zinc-400">Made for you · Private</span></span>
           </button>

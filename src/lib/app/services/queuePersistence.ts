@@ -6,7 +6,7 @@
 // to drop when the user signs out or clears data. Nothing here is secret.
 
 import { get } from 'svelte/store';
-import type { QueueItem, RepeatMode } from '$lib/core/models';
+import type { QueueItem, QueueSource, RepeatMode } from '$lib/core/models';
 import {
   currentOrder,
   queueIndex,
@@ -14,6 +14,7 @@ import {
   repeatMode,
   shuffleMode,
   setQueueState,
+  queueSource,
 } from './queue';
 
 const STORAGE_KEY = 'cherry.queue.v1';
@@ -28,6 +29,7 @@ export interface PersistedQueue {
   repeat: RepeatMode;
   /** Playback position of the current track, in seconds. */
   position: number;
+  source?: QueueSource | null;
 }
 
 function store(): Storage | null {
@@ -106,6 +108,7 @@ function writeNow(): void {
     shuffle: get(shuffleMode),
     repeat: get(repeatMode),
     position: Math.max(0, Math.round(pendingPosition)),
+    source: get(queueSource),
   };
   try {
     ls.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -154,6 +157,7 @@ export function watchQueue(): void {
   watch(queueIndex);
   watch(shuffleMode);
   watch(repeatMode);
+  watch(queueSource);
 
   // Flush on the way out so a quit right after a change (before the throttle
   // fires) does not lose the position.
@@ -191,6 +195,7 @@ export function restoreQueue(): number | null {
     order: saved.order,
     shuffle: saved.shuffle,
     repeat: saved.repeat,
+    source: saved.source,
   });
   return Math.max(0, saved.position ?? 0);
 }

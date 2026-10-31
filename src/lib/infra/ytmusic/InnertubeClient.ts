@@ -629,7 +629,7 @@ export async function getLibraryPlaylists(session: AuthSession, onPage?: (playli
   // are cached: an empty result is either a genuine empty library or a failed
   // read, and caching it would make the rail look permanently broken.
   return cached(
-    `library:${getActiveChannel()}:complete-v4:${sessionKey(session)}`,
+    `library:${getActiveChannel()}:complete-v5:${sessionKey(session)}`,
     TTL.playlist,
     () => runLibraryPlaylists(session, onPage),
     { shouldCache: (value) => value.length > 0 },
@@ -679,7 +679,7 @@ async function runLibraryPlaylists(session: AuthSession, onPage?: (playlists: Pl
         rendererCounts[key] = (rendererCounts[key] ?? 0) + count;
       }
       for (const playlist of scan.playlists) {
-        if (!collected.has(playlist.browseId)) collected.set(playlist.browseId, playlist);
+        if (!collected.has(playlist.browseId)) collected.set(playlist.browseId, { ...playlist, librarySource: 'music' });
       }
       if (collected.size > 0) onPage?.([...collected.values()]);
       if (!scan.continuation) break;
@@ -722,7 +722,7 @@ async function runLibraryPlaylists(session: AuthSession, onPage?: (playlists: Pl
       if (!response?.data && webContinuation) throw new Error('YouTube returned an empty playlist continuation.');
       const scan = scanLibrary(response?.data);
       for (const playlist of scan.playlists) {
-        if (!collected.has(playlist.browseId)) collected.set(playlist.browseId, playlist);
+        if (!collected.has(playlist.browseId)) collected.set(playlist.browseId, { ...playlist, librarySource: 'youtube' });
       }
       if (collected.size > 0) onPage?.([...collected.values()]);
       if (!scan.continuation) break;

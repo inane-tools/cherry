@@ -9,7 +9,7 @@ import { cacheClear } from '$lib/infra/storage/cache';
 import { authStore } from './auth';
 import { initChannel } from './account';
 import { openPage, pageStore } from './navigation';
-import { enqueue } from './queue';
+import { enqueue, queueRevision } from './queue';
 import { playTracks, playTracksShuffled } from './player';
 import { rememberPlaylist } from './playlistShortcuts';
 import { playlistAccountRevision } from './playlistAccount';
@@ -297,7 +297,8 @@ export async function refreshLibrary(): Promise<void> {
  */
 export function openPlaylist(playlist: Playlist): void {
   const known = get(playlistStore).find(item => item.browseId === playlist.browseId);
-  if (known) playlist = { ...known, ...playlist, author: playlist.author || known.author };
+  if (known) playlist = { ...known, ...playlist, author: playlist.author || known.author,
+    thumbnails: playlist.thumbnails.length ? playlist.thumbnails : known.thumbnails };
   playlist = { ...playlist, ...libraryEdits.get(playlist.browseId)?.patch };
   rememberPlaylist(playlist);
   openPage({ view: 'playlist', entity: playlist });
@@ -325,6 +326,8 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
     // playlist begins playing immediately instead of after every page is read.
     let started = false;
     let seen = 0;
+    let playingRevision: number | undefined;
+    const source = { kind: 'playlist' as const, title: playlist.title, browseId: playlist.browseId, thumbnails: playlist.thumbnails };
     await streamCollectionTracks(playlist.browseId, session, (partial) => {
       if (stale()) return;
       const fresh = partial.slice(seen);
@@ -333,10 +336,11 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
       if (!started) {
         started = true;
         rememberPlaylist(playlist);
-        if (shuffle) void playTracksShuffled(fresh);
-        else void playTracks(fresh, 0);
+        if (shuffle) void playTracksShuffled(fresh, source);
+        else void playTracks(fresh, 0, source);
+        playingRevision = queueRevision();
       } else {
-        enqueue(fresh);
+        if (queueRevision() === playingRevision) enqueue(fresh, false, { automatic: true });
       }
     });
   } catch (e) {

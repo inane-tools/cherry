@@ -17,3 +17,20 @@ it('keeps pins above folders, excludes duplicate library rows and preserves fold
   expect(result[0]).toMatchObject({ playlist: { title: 'Current title' } });
   expect(result[2]).toMatchObject({ items: [child] });
 });
+
+it('hides web-only playlists including pins and folder children without changing saved data', () => {
+  const music = { browseId: 'music', title: 'Music', thumbnails: [], librarySource: 'music' as const };
+  const youtube = { browseId: 'youtube', title: 'Videos', thumbnails: [], librarySource: 'youtube' as const };
+  const unknown = { browseId: 'new', title: 'New playlist', thumbnails: [] };
+  const folder = { id: 'folder', name: 'Folder', playlistIds: ['youtube', 'music'] };
+  const playlists = [music, youtube, unknown];
+  const pins = [{ browseId: 'youtube', title: 'Videos' }, album];
+  const order = ['new', 'folder'];
+  const hidden = buildSidebarItems(order, playlists, [folder], pins, false);
+  expect(hidden.map(item => item.id)).toEqual(['MPRalbum', 'new', 'folder']);
+  expect(hidden[2]).toMatchObject({ items: [music] });
+  expect(buildSidebarItems(order, playlists, [folder], pins, true).map(item => item.id)).toEqual(['youtube', 'MPRalbum', 'new', 'folder']);
+  expect(playlists).toHaveLength(3);
+  expect(folder.playlistIds).toEqual(['youtube', 'music']);
+  expect(pins).toHaveLength(2);
+});

@@ -592,6 +592,10 @@
 
       {#if $authStore}
         <div class="mt-4 border-t border-white/[0.06] pt-3">
+          <div class="mb-4 flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-fill ph-youtube-logo text-base" aria-hidden="true"></i>Show YouTube playlists</span>
+            <Toggle checked={$settingsStore.showYoutubePlaylists} label="Show YouTube playlists" onchange={(value) => updateSettings({ showYoutubePlaylists: value })} />
+          </div>
           <div class="flex items-center justify-between gap-4">
             <span class="text-[12px] text-zinc-300">Default save playlist</span>
             <Dropdown

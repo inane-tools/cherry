@@ -3,7 +3,7 @@ import { mount, unmount, tick } from 'svelte';
 import BrowseView from '../../src/lib/ui/views/BrowseView.svelte';
 import { getBrowsePage } from '../../src/lib/infra/ytmusic/InnertubeClient';
 import { playRadio } from '../../src/lib/app/services/radio';
-import { selectCarouselEntry } from '../../src/lib/app/services/browse';
+import { openMix } from '../../src/lib/app/services/mixes';
 import type { HomeSection } from '../../src/lib/infra/ytmusic/rawHome';
 import { pageStore } from '../../src/lib/app/services/navigation';
 import { pageVisitStore } from '../../src/lib/app/services/pageVisit';
@@ -13,12 +13,13 @@ vi.mock('$lib/app/services/auth', async () => ({ authStore: (await import('svelt
 vi.mock('$lib/app/services/account', async () => ({ activeChannelStore: (await import('svelte/store')).writable({ name: 'SAME', pageId: 'brand' }) }));
 vi.mock('$lib/app/services/navigation', async () => ({ pageStore: (await import('svelte/store')).writable({ view: 'browse', entity: { browseId: 'UCowner', title: 'Profile', params: 'own-profile', kind: 'profile' } }) }));
 vi.mock('$lib/app/services/browse', () => ({ entriesOf: (section: HomeSection) => section.cards.map(card => ({ ...card, key: `c:${card.browseId}`, kind: 'card' })), selectCarouselEntry: vi.fn(), playCarouselEntry: vi.fn(), openCarouselMenu: vi.fn(), openBrowseCard: vi.fn(), openProfile: vi.fn() }));
+vi.mock('$lib/app/services/mixes', () => ({ openMix: vi.fn() }));
 vi.mock('$lib/app/services/radio', () => ({ playRadio: vi.fn() }));
 vi.mock('$lib/app/services/links', () => ({ copyText: vi.fn() }));
 vi.mock('$lib/app/services/contextMenu', () => ({ notify: vi.fn() }));
 afterEach(() => vi.unstubAllGlobals());
 
-it('loads a signed-in profile with its parameters, plays the server mix, and follows continuation', async () => {
+it('loads a signed-in profile with its parameters, opens the server mix without playing, and follows continuation', async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   const endpoint = { playlistId: 'RDpersonal', params: 'private-mix' };
   vi.mocked(getBrowsePage).mockResolvedValueOnce({ sections: [], continuation: 'next-profile', header: {
@@ -30,10 +31,11 @@ it('loads a signed-in profile with its parameters, plays the server mix, and fol
   try {
     await vi.waitFor(() => expect(target.querySelector('h1')?.textContent).toBe('SAME'));
     expect(getBrowsePage).toHaveBeenNthCalledWith(1, 'UCowner', expect.objectContaining({ cookie: 'SID=synthetic' }), 'own-profile', undefined);
-    const play = target.querySelector<HTMLButtonElement>('header [aria-label="Play personal mix"]')!;
+    const play = target.querySelector<HTMLButtonElement>('header [aria-label="Open personal mix"]')!;
     expect(play).not.toBeNull();
     play.click();
-    expect(playRadio).toHaveBeenCalledExactlyOnceWith(endpoint);
+    expect(openMix).toHaveBeenCalledWith(endpoint, 'Personal mix', expect.any(Array));
+    expect(playRadio).not.toHaveBeenCalled();
     const more = Array.from(target.querySelectorAll('button')).find(button => button.textContent === 'More')!;
     more.click();
     await vi.waitFor(() => expect(getBrowsePage).toHaveBeenCalledTimes(2));
@@ -50,13 +52,14 @@ it('moves the personal mix shelf into the header without a duplicate shelf or pl
   const target = document.createElement('div'); document.body.append(target);
   const component = mount(BrowseView, { target });
   try {
-    await vi.waitFor(() => expect(target.querySelector('header [aria-label="Play personal mix"]')).not.toBeNull());
-    const card = target.querySelector<HTMLButtonElement>('header [aria-label="Play personal mix"]')!;
+    await vi.waitFor(() => expect(target.querySelector('header [aria-label="Open personal mix"]')).not.toBeNull());
+    const card = target.querySelector<HTMLButtonElement>('header [aria-label="Open personal mix"]')!;
     expect(card.querySelector('img')?.src).toBe('https://image.test/mix');
-    expect(target.querySelectorAll('[aria-label="Play personal mix"]')).toHaveLength(1);
+    expect(target.querySelectorAll('[aria-label="Open personal mix"]')).toHaveLength(1);
     expect(target.querySelector('h2')).toBeNull();
     card.click();
-    expect(selectCarouselEntry).toHaveBeenCalledWith(mix, expect.objectContaining({ playback: { playlistId: 'RDmix' } }));
+    expect(openMix).toHaveBeenCalledWith({ playlistId: 'RDmix' }, 'Personal mix', [{ url: 'https://image.test/mix' }]);
+    expect(playRadio).not.toHaveBeenCalled();
   } finally { await unmount(component); target.remove(); }
 });
 

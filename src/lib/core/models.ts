@@ -55,6 +55,7 @@ export interface Album {
 }
 
 export interface Playlist {
+  librarySource?: 'music' | 'youtube';
   browseId: BrowseId;
   title: string;
   author?: string;
@@ -77,6 +78,14 @@ export interface QueueItem {
   sourceOccurrence?: number;
   /** stable id for drag-reorder / dedupe */
   queueId: string;
+}
+
+export interface QueueSource {
+  kind: 'playlist' | 'album' | 'mix';
+  title: string;
+  browseId?: string;
+  endpoint?: RadioEndpoint;
+  thumbnails?: Thumbnail[];
 }
 
 export type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error';

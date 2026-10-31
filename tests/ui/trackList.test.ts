@@ -23,7 +23,7 @@ it('compares album popularity against all songs and leaves missing counts unavai
   const popularity = viewport.querySelectorAll('[role="img"]');
   expect(popularity).toHaveLength(3);
   expect(popularity[0].querySelectorAll('[data-popularity-active="true"]')).toHaveLength(5);
-  expect(popularity[1].querySelectorAll('[data-popularity-active="true"]')).toHaveLength(2);
+  expect(popularity[1].querySelectorAll('[data-popularity-active="true"]')).toHaveLength(1);
   expect(popularity[2].getAttribute('aria-label')).toBe('Play count unavailable');
 });
 it('mounts only visible rows of a large playlist and preserves original play/removal indexes', async () => {

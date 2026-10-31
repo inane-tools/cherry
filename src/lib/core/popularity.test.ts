@@ -1,10 +1,14 @@
 import { expect, it } from 'vitest';
 import { popularityLevel } from './popularity';
-it('compares plays within the album, with at most five bars and at least one for a played song', () => {
-  expect(popularityLevel(100, 100)).toBe(5);
-  expect(popularityLevel(40, 100)).toBe(2);
-  expect(popularityLevel(1, 100)).toBe(1);
-  expect(popularityLevel(0, 100)).toBe(0);
-  expect(popularityLevel(undefined, 100)).toBeUndefined();
-  expect(popularityLevel(NaN, 100)).toBeUndefined();
+it('spans one to five bars even when album counts are close together', () => {
+  expect([800, 850, 900, 950, 1000].map(count => popularityLevel(count, 1000, 800))).toEqual([1, 2, 3, 4, 5]);
+  expect(popularityLevel(0, 100, 0)).toBe(1);
+  expect(popularityLevel(100, 100, 0)).toBe(5);
+});
+it('keeps tied counts equal and missing counts unavailable', () => {
+  expect(popularityLevel(100, 100, 100)).toBe(5);
+  expect(popularityLevel(0, 0, 0)).toBe(5);
+  expect(popularityLevel(undefined, 100, 50)).toBeUndefined();
+  expect(popularityLevel(NaN, 100, 50)).toBeUndefined();
+  expect(popularityLevel(-1, 100, 50)).toBeUndefined();
 });

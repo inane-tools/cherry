@@ -7,6 +7,7 @@ import {
   cutQueueTo,
   enqueue,
   queueIndex,
+  queueSource,
   queueItems,
   removeFromQueue,
   reorderQueueTo,
@@ -201,4 +202,19 @@ describe('restore', () => {
     setQueueState({ items, index: 7, order: [], shuffle: true, repeat: 'all' });
     expect(current()).toBe('b');
   });
+});
+
+it('retains source through automatic continuation but clears it on manual additions', () => {
+  const source = { kind: 'playlist' as const, title: 'My list', browseId: 'VLPLlist' };
+  setQueue(tracks('a', 'b'), 0, source);
+  enqueue(tracks('c'), false, { automatic: true });
+  expect(get(queueSource)).toEqual(source);
+  enqueue([]);
+  expect(get(queueSource)).toEqual(source);
+  enqueue(tracks('manual'), true);
+  expect(get(queueSource)).toBeNull();
+  expect(current()).toBe('a');
+  expect(upcoming()).toEqual(['manual', 'b', 'c']);
+  setQueue(tracks('next'));
+  expect(get(queueSource)).toBeNull();
 });

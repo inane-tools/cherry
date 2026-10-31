@@ -38,7 +38,7 @@ it('merges web-only playlists and web continuations with Music without duplicati
     ...(next ? [{ continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: next } } } }] : []),
   ] } } });
   mocks.execute.mockResolvedValueOnce(page('music')).mockResolvedValueOnce(webPage('empty', 'next-web')).mockResolvedValueOnce(webPage('music'));
-  expect((await getLibraryPlaylists(session)).map(p => p.title)).toEqual(['music', 'empty']);
+  expect((await getLibraryPlaylists(session)).map(p => [p.title, p.librarySource])).toEqual([['music', 'music'], ['empty', 'youtube']]);
   expect(mocks.execute).toHaveBeenNthCalledWith(2, '/browse', { browseId: 'FEplaylist_aggregation', client: 'WEB' });
   expect(mocks.execute).toHaveBeenNthCalledWith(3, '/browse', { continuation: 'next-web', client: 'WEB' });
 });

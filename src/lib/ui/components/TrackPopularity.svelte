@@ -3,7 +3,8 @@
   export let count: number | undefined;
   export let countText: string | undefined = undefined;
   export let maximum: number;
-  $: level = popularityLevel(count, maximum);
+  export let minimum = 0;
+  $: level = popularityLevel(count, maximum, minimum);
   $: label = level === undefined ? 'Play count unavailable'
     : `${countText || `${count?.toLocaleString()} plays`} · ${level} of 5 popularity bars within this album`;
 </script>

@@ -29,6 +29,7 @@
   $: page = $pageStore;
   $: playlist = page.view === 'playlist' ? page.entity : null;
   $: tracks = $openPlaylistTracks;
+  $: source = playlist ? { kind: 'playlist' as const, title: playlist.title, browseId: playlist.browseId, thumbnails: playlist.thumbnails } : null;
   $: currentTrackIndex = playingTrackIndex(tracks, $currentItem);
   $: artworkPlaylist = $playlistStore.find((p) => p.browseId === playlist?.browseId) ?? playlist;
   $: totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds ?? 0), 0);
@@ -107,7 +108,7 @@
           <button
             class="cherry-nav-button flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold text-white transition-colors disabled:cursor-default disabled:opacity-40"
             disabled={tracks.length === 0}
-            onclick={() => playTracks(tracks, 0)}
+            onclick={() => playTracks(tracks, 0, source)}
           >
             <i class="ph-fill ph-play text-xl leading-none" aria-hidden="true"></i>
             Play
@@ -119,7 +120,7 @@
             disabled={tracks.length === 0}
             title="Shuffle play"
             aria-label="Shuffle play"
-            onclick={() => playTracksShuffled(tracks)}
+            onclick={() => playTracksShuffled(tracks, source)}
           >
             <i class="ph ph-shuffle leading-none" aria-hidden="true"></i>
           </button>
@@ -164,7 +165,7 @@
         <span class="flex-1">Title</span>
         <span>Duration</span>
       </div>
-      <TrackList {tracks} {playlist} currentIndex={currentTrackIndex} onPlay={(_t, i) => playTracks(tracks, i)} />
+      <TrackList {tracks} {playlist} {source} currentIndex={currentTrackIndex} onPlay={(_t, i) => playTracks(tracks, i, source)} />
       <p class="mt-4 px-2 text-[11px] text-zinc-600">
         {trackDisplayArtists(tracks[0])} and more — {tracks.length} songs.
       </p>

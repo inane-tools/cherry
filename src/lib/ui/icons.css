@@ -39,6 +39,9 @@
 .ph.ph-arrow-square-out:before {
   content: "\e5de";
 }
+.ph.ph-arrow-up-right:before {
+  content: "\e092";
+}
 .ph.ph-bookmark-simple:before {
   content: "\e0ea";
 }
@@ -282,6 +285,9 @@
 }
 .ph-fill.ph-arrow-square-out:before {
   content: "\e5de";
+}
+.ph-fill.ph-arrow-up-right:before {
+  content: "\e092";
 }
 .ph-fill.ph-bookmark-simple:before {
   content: "\e0ea";
@@ -540,6 +546,14 @@
 }
 .ph-duotone.ph-arrow-square-out:after {
   content: "\e5df";
+  margin-left: -1em;
+}
+.ph-duotone.ph-arrow-up-right:before {
+  content: "\e092";
+  opacity: 0.2;
+}
+.ph-duotone.ph-arrow-up-right:after {
+  content: "\e093";
   margin-left: -1em;
 }
 .ph-duotone.ph-bookmark-simple:before {

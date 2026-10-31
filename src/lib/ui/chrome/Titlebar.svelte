@@ -66,7 +66,7 @@
       case 'playlist': return { title: page.entity.title, detail: ['Playlist', page.entity.author].filter(Boolean).join(' · '), icon: 'ph-fill ph-playlist', thumbnails: page.entity.thumbnails };
       case 'album': return { title: page.entity.title, detail: ['Album', page.entity.artists.map(artist => artist.name).join(', '), page.entity.year].filter(Boolean).join(' · '), icon: 'ph-fill ph-vinyl-record', thumbnails: page.entity.thumbnails };
       case 'artist': return { title: page.entity.name, detail: 'Artist', icon: 'ph-fill ph-user', thumbnails: page.entity.thumbnails ?? [] };
-      case 'browse': return { title: page.entity.title, detail: page.entity.kind === 'profile' ? 'Profile' : 'Explore', icon: page.entity.kind === 'profile' ? 'ph-fill ph-user' : 'ph-fill ph-compass', thumbnails: page.entity.thumbnails ?? [] };
+      case 'browse': return { title: page.entity.title, detail: page.entity.kind === 'profile' ? 'Profile' : page.entity.kind === 'mix' ? 'Mix' : 'Explore', icon: page.entity.kind === 'profile' ? 'ph-fill ph-user' : page.entity.kind === 'mix' ? 'ph-fill ph-play-circle' : 'ph-fill ph-compass', thumbnails: page.entity.thumbnails ?? [] };
       case 'search': return { title: 'Search', detail: 'Find music', icon: 'ph-fill ph-magnifying-glass', thumbnails: [] };
       case 'settings': return { title: 'Settings', detail: 'Cherry preferences', icon: 'ph-fill ph-gear-six', thumbnails: [] };
     }
@@ -168,7 +168,7 @@
         </button>
       {/if}
       <div class="cherry-topbar-identity flex min-w-0 flex-1 items-center gap-2" aria-label="Current page">
-        {#if $pageStore.view === 'home' || $pageStore.view === 'explore' || ($pageStore.view === 'browse' && $pageStore.entity.kind !== 'profile')}
+        {#if $pageStore.view === 'home' || $pageStore.view === 'explore' || ($pageStore.view === 'browse' && !$pageStore.entity.kind)}
           <img src={logoUrl} alt="" draggable="false" class="h-8 w-8 shrink-0" />
         {:else if headingArtwork.length}
           <img use:artwork={{ urls: headingArtwork }} alt="" draggable="false" class="h-8 w-8 shrink-0 object-cover {$pageStore.view === 'artist' || ($pageStore.view === 'browse' && $pageStore.entity.kind === 'profile') ? 'rounded-full' : 'rounded-md'}" />

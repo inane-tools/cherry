@@ -1,7 +1,7 @@
 // Shared context-menu item builders, so every surface (track rows, playlist
 // cards, the rail) offers the same actions.
 
-import type { Album, ArtistRef, Playlist, PlaylistFolder, RadioEndpoint, Track } from '$lib/core/models';
+import type { Album, ArtistRef, Playlist, PlaylistFolder, QueueSource, RadioEndpoint, Track } from '$lib/core/models';
 import { get } from 'svelte/store';
 import { playRadio } from './radio';
 import { playTracks } from './player';
@@ -50,6 +50,7 @@ export function trackMenu(
   list?: Track[],
   index = 0,
   playlist?: Playlist,
+  source?: QueueSource,
 ): ContextMenuItem[] {
   const signedIn = !!get(authStore);
   const canPlay = !!(signedIn && track.videoId);
@@ -65,7 +66,10 @@ export function trackMenu(
         if (!get(authStore)) return announceSignInRequired();
         const queue = list && list.length > 0 ? list : [track];
         const at = list && list.length > 0 ? index : 0;
-        void playTracks(queue, at);
+        const from = source ?? (playlist ? { kind: 'playlist' as const, title: playlist.title, browseId: playlist.browseId, thumbnails: playlist.thumbnails } : null);
+        if (from?.kind === 'mix' && from.endpoint) void playRadio({ ...from.endpoint, videoId: track.videoId }, { title: from.title });
+        else if (from) void playTracks(queue, at, from);
+        else void playTracks(queue, at);
       },
     },
     { label: 'Add to queue', icon: 'ph ph-list-plus', quick: true, disabled: !canPlay, action: () => queueTracks([track]) },

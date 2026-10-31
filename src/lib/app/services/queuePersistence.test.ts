@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { QueueItem } from '$lib/core/models';
-import { clearQueue, currentItem, setQueue, setShuffle, step } from './queue';
+import { clearQueue, queueSource, currentItem, setQueue, setShuffle, step } from './queue';
 import { boundedQueue, clearStoredQueue, flushQueue, readStoredQueue, rememberPosition, restoreQueue } from './queuePersistence';
 
 const item = (i: number): QueueItem => ({
@@ -70,4 +70,11 @@ describe('boundedQueue', () => {
     expect(bounded.items[0].queueId).toBe('q2489'); // play position 10
     expect(bounded.order).toEqual(bounded.items.map((_, i) => i));
   });
+});
+
+it('restores queue context', () => {
+  const source = { kind: 'album' as const, title: 'Album', browseId: 'MPRalbum', thumbnails: [{ url: 'https://image.test/album' }] };
+  setQueue([item(0).track], 0, source);
+  flushQueue(); clearQueue(); restoreQueue();
+  expect(get(queueSource)).toEqual(source);
 });

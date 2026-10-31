@@ -143,12 +143,13 @@ export async function playCarouselEntry(section: HomeSection, entry: CarouselEnt
     // A collection's overlay may start a recommendation mix rather than the
     // collection shown on the card. Only stations use that watch endpoint.
     if (entry.playback && (!entry.browseId || /^(?:VL)?RD/.test(browseId) || browseId.startsWith('station:'))) {
-      await playRadio(entry.playback); return;
+      await playRadio(entry.playback, { title: entry.title }); return;
     }
     if (browseId.startsWith('MPR') || browseId.startsWith('FEmusic_library_privately_owned_release')) {
       const album = await getAlbumPage(browseId, get(authStore));
       if (!album.tracks.length) { notify('No playable songs found in this album.'); return; }
-      await playTracks(album.tracks.map((track) => track.artists.length ? track : { ...track, artists: album.artists }));
+      await playTracks(album.tracks.map((track) => track.artists.length ? track : { ...track, artists: album.artists }), 0,
+        { kind: 'album', title: album.title || entry.title, browseId });
     } else {
       await playPlaylist({ browseId, title: entry.title, thumbnails: entry.thumbnails });
     }

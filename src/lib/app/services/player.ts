@@ -6,7 +6,7 @@
 
 import { get, writable } from 'svelte/store';
 import { getCurrentWindow } from '$lib/desktop/window';
-import type { PlaybackState, Track } from '$lib/core/models';
+import type { PlaybackState, QueueSource, Track } from '$lib/core/models';
 import { bestThumbnail, trackDisplayArtists } from '$lib/core/models';
 import { isRegionRestricted, toCherryError } from '$lib/core/errors';
 import { getAudioStream, getInnertube, prefetchAudioStream, getMusicVideo } from '$lib/infra/ytmusic/InnertubeClient';
@@ -399,7 +399,7 @@ export function warmup(): void {
   getInnertube(get(authStore)).catch(() => undefined);
 }
 
-export async function playTracks(tracks: Track[], startAt = 0): Promise<void> {
+export async function playTracks(tracks: Track[], startAt = 0, source: QueueSource | null = null): Promise<void> {
   if (tracks.length === 0) return;
   // Auth gate: anonymous streams are PO-token gated and fail to resolve, so
   // playing without a session would only ever surface a stream error. Block it
@@ -409,7 +409,7 @@ export async function playTracks(tracks: Track[], startAt = 0): Promise<void> {
     announceSignInRequired();
     return;
   }
-  setQueue(tracks, startAt);
+  setQueue(tracks, startAt, source);
   await loadCurrent(true);
 }
 
@@ -433,14 +433,14 @@ export function addToQueue(tracks: Track[]): number {
  * shuffled, so the first track is genuinely random rather than always the
  * list's first entry (which is what setting shuffle afterwards would give).
  */
-export async function playTracksShuffled(tracks: Track[]): Promise<void> {
+export async function playTracksShuffled(tracks: Track[], source: QueueSource | null = null): Promise<void> {
   if (tracks.length === 0) return;
   if (!get(authStore)) {
     announceSignInRequired();
     return;
   }
   setShuffle(true);
-  await playTracks(tracks, Math.floor(Math.random() * tracks.length));
+  await playTracks(tracks, Math.floor(Math.random() * tracks.length), source);
 }
 
 export async function toggle(): Promise<void> {

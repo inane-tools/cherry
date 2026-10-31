@@ -53,6 +53,7 @@
   import PlaylistView from '$lib/ui/views/PlaylistView.svelte';
   import ArtistView from '$lib/ui/views/ArtistView.svelte';
   import AlbumView from '$lib/ui/views/AlbumView.svelte';
+  import MixView from '$lib/ui/views/MixView.svelte';
   import BrowseView from '$lib/ui/views/BrowseView.svelte';
 
   let ready = false;
@@ -83,7 +84,7 @@
   $: signedOut = ready && !$authStore;
   $: macInlineSidebar = isMacDesktop() && ready && !signedOut && !$narrowLayout;
   $: bannerPage = ['playlist', 'album', 'artist'].includes($pageStore.view)
-    || ($pageStore.view === 'browse' && $pageStore.entity.kind === 'profile');
+    || ($pageStore.view === 'browse' && ['profile', 'mix'].includes($pageStore.entity.kind ?? ''));
 
   // Lightweight notice banner. The auth gate publishes `cherry:notice` when it
   // blocks an action (search / play) so the user learns *why* nothing happened
@@ -270,6 +271,8 @@
                   <ArtistView />
                 {:else if $pageStore.view === 'album'}
                   <AlbumView />
+                {:else if $pageStore.view === 'browse' && $pageStore.entity.kind === 'mix'}
+                  <MixView />
                 {:else if $pageStore.view === 'browse' || $pageStore.view === 'explore'}
                   <BrowseView />
                 {:else}

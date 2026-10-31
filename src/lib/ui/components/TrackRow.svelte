@@ -1,5 +1,5 @@
 ﻿<script lang="ts">
-  import type { Track } from '$lib/core/models';
+  import type { QueueSource, Track } from '$lib/core/models';
   import { thumbnailSources } from '$lib/core/models';
   import { artwork } from '$lib/ui/actions/artwork';
   import { playerStore } from '$lib/app/services/player';
@@ -19,6 +19,8 @@
   export let current: boolean | undefined = undefined;
   export let showPopularity = false;
   export let maxPlayCount = 0;
+  export let minPlayCount = 0;
+  export let source: QueueSource | null = null;
 
   $: isCurrent = !!$playerStore.track && (current ?? ($playerStore.track.videoId === track.videoId));
   $: playing = isCurrent && $playerStore.status === 'playing';
@@ -30,7 +32,7 @@
   }
 
   function onContext(event: MouseEvent): void {
-    openContextMenu(event, trackMenu(track, list, index, playlist));
+    openContextMenu(event, source ? trackMenu(track, list, index, playlist, source) : trackMenu(track, list, index, playlist));
   }
 
   // The row is a div (not a button) so the artist names inside it can be their
@@ -69,6 +71,6 @@
     <span class="block truncate text-sm {isCurrent ? 'text-[var(--color-accent2)]' : ''}">{track.title}</span>
     <ArtistsLine artists={track.artists} textClass="block truncate text-xs text-zinc-500" />
   </span>
-  {#if showPopularity}<TrackPopularity count={track.playCount} countText={track.playCountText} maximum={maxPlayCount} />{/if}
+  {#if showPopularity}<TrackPopularity count={track.playCount} countText={track.playCountText} maximum={maxPlayCount} minimum={minPlayCount} />{/if}
   <span class="text-xs text-zinc-600 {showPopularity ? 'w-14 shrink-0 text-right' : ''}">{fmt(track.durationSeconds)}</span>
 </div>

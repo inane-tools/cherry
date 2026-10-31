@@ -19,7 +19,7 @@ export type Page =
   | { view: 'playlist'; entity: Playlist }
   | { view: 'artist'; entity: ArtistRef }
   | { view: 'album'; entity: Album }
-  | { view: 'browse'; entity: { browseId: string; title: string; params?: string; kind?: 'profile'; thumbnails?: import('$lib/core/models').Thumbnail[] } };
+  | { view: 'browse'; entity: { browseId: string; title: string; params?: string; kind?: 'profile' | 'mix'; endpoint?: import('$lib/core/models').RadioEndpoint; thumbnails?: import('$lib/core/models').Thumbnail[] } };
 
 export const pageStore = writable<Page>({ view: 'home' });
 export const canGoBack = writable(false);

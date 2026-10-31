@@ -5,6 +5,7 @@
   import {
     currentItem,
     queueItems,
+    queueSource,
     upNextQueue,
     reorderQueueTo,
     removeFromQueue,
@@ -15,6 +16,7 @@
   import { tick } from 'svelte';
   import { virtualRows, rowIndexes } from '$lib/ui/actions/virtualRows';
   import ArtistsLine from '$lib/ui/components/ArtistsLine.svelte';
+  import { openQueueSource } from '$lib/app/services/queueSourceNavigation';
 
   /** Called after a row is chosen (the popup uses it to close itself). */
   export let onNavigate: () => void = () => {};
@@ -105,6 +107,15 @@
     Queue is empty. Play something and it will show up here.
   </p>
 {:else}
+  {#if $queueSource}
+    {@const source = $queueSource}
+    <button class="mb-3 flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-left text-[11px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+      aria-label={`Open ${source.title}`} onclick={() => { openQueueSource(source); onNavigate(); }}>
+      <i class={source.kind === 'album' ? 'ph ph-vinyl-record' : source.kind === 'mix' ? 'ph ph-play-circle' : 'ph ph-playlist'} aria-hidden="true"></i>
+      <span class="min-w-0 truncate">Playing from {source.kind} · <span class="font-medium text-zinc-300">{source.title}</span></span>
+      <i class="ph ph-caret-right ml-auto shrink-0" aria-hidden="true"></i>
+    </button>
+  {/if}
   {#if $currentItem}
     {@const coverSources = thumbnailSources($currentItem.track.thumbnails, 96)}
     <div class="mb-1 px-2 text-[11px] font-medium text-zinc-400">
