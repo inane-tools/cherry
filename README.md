@@ -26,6 +26,8 @@ Made by [inane.tools](https://inane.tools). More about Cherry at
 - Browse artist discographies and albums, with relative track popularity based
   on YouTube's reported play counts.
 - Use light or dark mode, artwork colours, custom accents and tinted backgrounds.
+- A full-width title bar and floating player frame separate navigation and library
+  panels. Keep the queue open in its own right sidebar.
 - Sign in inside the app and switch between accounts. Saved sign-ins use your
   operating system’s secure storage.
 - Use media keys, keyboard shortcuts and a sleep timer. Share what’s playing on
@@ -49,7 +51,7 @@ Windows and AppImage builds check GitHub for updates. macOS and Flatpak updates
 are installed manually.
 
 **Coming from Cherry 1.x?** Keep it installed and close it before importing.
-Install 2.0, then choose **Migrate from 1.x** on the welcome screen after accepting
+Install the current version, then choose **Migrate from 1.x** on the welcome screen after accepting
 the disclaimer. Check your imported data before removing the old app.
 [Migration notes](docs/MIGRATION.md).
 

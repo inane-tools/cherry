@@ -15,7 +15,7 @@
     playlistStore,
   } from '$lib/app/services/playlists';
   import { go, pageStore } from '$lib/app/services/navigation';
-  import { searchOpen } from '$lib/app/services/overlays';
+  import { searchOpen, settingsOpen } from '$lib/app/services/overlays';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { buildSidebarItems, sidebarPinPreview } from '$lib/core/sidebarItems';
   import { openSidebarPin } from '$lib/app/services/pinActions';
@@ -36,6 +36,7 @@
   import { settingsStore, updateSettings } from '$lib/app/services/settings';
   import { closeSidebarDrawer } from '$lib/app/services/layout';
   import AppMenu from '$lib/ui/components/AppMenu.svelte';
+  import AccountButton from '$lib/ui/components/AccountButton.svelte';
 
   /**
    * Force the full (named) layout even when compact mode is on. The drawer has
@@ -270,15 +271,16 @@
   const SIDEBAR_MIN = 176;
   const SIDEBAR_MAX = 440;
   let sidebarWidth = $settingsStore.sidebarWidth || 240;
-  $: sidebarWidth = $settingsStore.sidebarWidth || 240;
+  $: sidebarWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, $settingsStore.sidebarWidth || 240));
 
   // Held so an in-progress resize can be torn down if the rail unmounts (e.g.
   // sign-out or a layout change) instead of leaking the window listeners.
   let resizeCleanup: (() => void) | null = null;
   onDestroy(() => resizeCleanup?.());
+  $: if (($settingsOpen || $searchOpen) && resizeCleanup) resizeCleanup();
 
   function startResize(event: MouseEvent): void {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || $settingsOpen || $searchOpen) return;
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidebarWidth;
@@ -299,33 +301,40 @@
     window.addEventListener('mouseup', onUp);
   }
 
-  // Hide the top fade at the very top and the bottom fade at the very end, so
-  // neither covers the first/last playlist when there is nothing to trail off.
-  let atBottom = false;
+  // Fades reflect the actual scroll range, including folder animations and
+  // streamed library changes. Hidden/short lists start with neither fade.
+  let atBottom = true;
   let atTop = true;
   let listEl: HTMLDivElement | undefined;
-  function updateBottom() {
-    if (!listEl) return;
-    atBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 8;
-    atTop = listEl.scrollTop < 8;
+  function updateScrollEdges(node: HTMLElement) {
+    const range = Math.max(0, node.scrollHeight - node.clientHeight);
+    const overflow = node.clientHeight > 0 && range > 1;
+    atTop = !overflow || node.scrollTop <= 1;
+    atBottom = !overflow || node.scrollTop >= range - 1;
   }
-  $: if (listEl) {
-    void $playlistStore;
-    void $settingsStore.showYoutubePlaylists;
-    void $foldersStore;
-    void $libraryLoading;
-    // The list height also changes when the order, pins or open folders change.
-    void $sidebarOrderStore;
-    void $pinnedStore;
-    void $collapsedFolders;
-    queueMicrotask(updateBottom);
+  function trackRailWidth(node: HTMLElement) {
+    if (forceFull) return;
+    const shell = node.closest<HTMLElement>('.cherry-shell');
+    const update = () => shell?.style.setProperty('--cherry-sidebar-inset', `${node.clientWidth}px`);
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    update();
+    return { destroy() { observer.disconnect(); shell?.style.removeProperty('--cherry-sidebar-inset'); } };
+  }
+
+  function watchLibrarySize(node: HTMLElement) {
+    const observer = new ResizeObserver(() => updateScrollEdges(node));
+    observer.observe(node);
+    if (node.firstElementChild) observer.observe(node.firstElementChild);
+    updateScrollEdges(node);
+    return { destroy() { observer.disconnect(); } };
   }
 
   // ── Row snippets ────────────────────────────────────────────────
   // `topIndex >= 0` marks a top-level row; otherwise it lives in `folderId` at
   // `childIndex`.
   const rowClass =
-    'flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white';
+    'flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white';
 </script>
 
 {#snippet row(playlist: Playlist, topIndex: number, folderId: string | null, childIndex: number, pin: SidebarPin | undefined = undefined)}
@@ -361,9 +370,9 @@
       </button>
     </div>
   {:else}
-    <div class="relative flex items-center {folderId ? 'mx-1' : 'mx-2'}">
+    <div class="relative flex items-center">
       <button
-        class="{rowClass} cursor-grab select-none active:cursor-grabbing {(drag?.kind === 'playlist' || drag?.kind === 'pin') && drag?.id === playlist.browseId
+        class="{rowClass} {folderId ? 'pl-3' : ''} cursor-grab select-none active:cursor-grabbing {(drag?.kind === 'playlist' || drag?.kind === 'pin') && drag?.id === playlist.browseId
           ? 'opacity-40'
           : ''}"
         title={playlist.title}
@@ -487,7 +496,8 @@
       {/if}
     </div>
   {:else}
-    <div class="relative mx-2 flex items-center">
+    <div class={$collapsedFolders.has(folder.id) ? '' : 'border-y border-[var(--color-accent)]/30 bg-[var(--color-accent)]/[0.12]'}>
+    <div class="relative flex items-center">
       <button
         class="{rowClass} cursor-grab text-zinc-300 active:cursor-grabbing {drop?.kind === 'folder' && drop?.folderId === folder.id
           ? 'bg-[var(--color-accent)]/10 ring-2 ring-[var(--color-accent)]/60'
@@ -525,7 +535,6 @@
     {#if !$collapsedFolders.has(folder.id)}
       {#if items.length > 0}
         <div
-          class="mx-2 rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/[0.12]"
           data-child-zone={folder.id}
           data-child-count={items.length}
           transition:slide={{ duration: 200 }}
@@ -536,197 +545,154 @@
         <p class="mx-2 ml-12 py-1 text-[11px] text-zinc-600">Empty — drag a playlist here.</p>
       {/if}
     {/if}
+    </div>
   {/if}
 {/snippet}
 
 <aside
-  class="relative flex h-full shrink-0 flex-col {forceFull
-    ? 'w-full bg-[var(--color-surface)]/95 pt-12'
-    : compact
-      ? 'cherry-sidebar w-14 pt-2'
-      : 'cherry-sidebar pt-1'}"
+  use:trackRailWidth
+  class="cherry-sidebar-rail relative z-10 flex h-full min-h-0 shrink-0 flex-col gap-2 px-2 {forceFull ? 'pointer-events-auto' : 'pointer-events-none'} {forceFull
+    ? 'w-full bg-[var(--color-surface)]/95'
+    : compact ? 'w-[72px]' : ''}"
   style={!compact && !forceFull ? `width: ${sidebarWidth}px` : ''}
 >
-  {#if !compact && !forceFull}
+  {#if !compact && !forceFull && !$settingsOpen && !$searchOpen}
     <!-- Drag handle on the right edge resizes the expanded sidebar. -->
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
     <div
-      class="absolute inset-y-0 -right-1 z-50 w-2 cursor-col-resize transition-colors hover:bg-[var(--color-accent)]/50"
+      class="pointer-events-auto absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize transition-colors hover:bg-[var(--color-accent)]/50"
       role="separator"
       aria-label="Resize sidebar"
       onmousedown={startResize}
     ></div>
   {/if}
 
-  <!-- Navigation + actions: one vertical stack shared by both layouts. Compact
-       shows icons only (with hover tooltips); the expanded sidebar adds labels
-       and can be resized by dragging its right edge. -->
-  {#if compact}
-    <div class="relative z-20 flex shrink-0 flex-col items-center gap-2">
-      <button
-        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        aria-label="Search"
-        onclick={() => go('search')}
-        onmouseenter={(e) => showTip(e, 'Search')}
-        onmouseleave={hideTip}
-      >
-        <i class="{$searchOpen ? 'ph-fill' : 'ph'} ph-magnifying-glass"></i>
-      </button>
-      <button
-        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        aria-label="Home"
-        onclick={() => go('home')}
-        onmouseenter={(e) => showTip(e, 'Home')}
-        onmouseleave={hideTip}
-      >
-        <i class="{$pageStore.view === 'home' ? 'ph-fill' : 'ph'} ph-house"></i>
-      </button>
-      <button
-        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        aria-label="Explore"
-        onclick={() => go('explore')}
-        onmouseenter={(e) => showTip(e, 'Explore')}
-        onmouseleave={hideTip}
-      >
-        <i class="{$pageStore.view === 'explore' ? 'ph-fill' : 'ph'} ph-compass"></i>
-      </button>
-      <button
-        class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        aria-label="New playlist or folder"
-        aria-haspopup="menu" aria-expanded={newMenuOpen}
-        onclick={openNewMenu}
-        onmouseenter={(e) => showTip(e, 'New playlist or folder')}
-        onmouseleave={hideTip}
-      >
-        <i class="ph ph-plus text-xl"></i>
-      </button>
-    </div>
-  {:else}
-    <div class="relative z-20 flex shrink-0 flex-col gap-0.5 px-2">
-      <button
-        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
-        aria-label="Search"
-        onclick={() => go('search')}
-      >
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="{$searchOpen ? 'ph-fill' : 'ph'} ph-magnifying-glass text-xl"></i>
-        </span>
-        <span class="truncate">Search</span>
-      </button>
-      <button
-        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
-        aria-label="Home"
-        onclick={() => go('home')}
-      >
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="{$pageStore.view === 'home' ? 'ph-fill' : 'ph'} ph-house text-xl"></i>
-        </span>
-        <span class="truncate">Home</span>
-      </button>
-      <button
-        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
-        aria-label="Explore"
-        onclick={() => go('explore')}
-      >
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="{$pageStore.view === 'explore' ? 'ph-fill' : 'ph'} ph-compass text-xl"></i>
-        </span>
-        <span class="truncate">Explore</span>
-      </button>
-      <button
-        class="flex items-center gap-2 rounded-lg py-1 text-left text-[12px] text-zinc-400 transition hover:bg-white/5 hover:text-white"
-        aria-label="New playlist or folder"
-        aria-haspopup="menu" aria-expanded={newMenuOpen}
-        onclick={openNewMenu}
-      >
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300">
-          <i class="ph ph-plus text-xl"></i>
-        </span>
-        <span class="truncate">New</span>
-      </button>
-    </div>
-  {/if}
+  <!-- Compact mode stacks navigation; expanded and drawer layouts share an icon row. -->
+  <nav aria-label="Main navigation" class="cherry-sidebar pointer-events-auto relative z-20 shrink-0 rounded-2xl p-2 {compact ? 'flex flex-col items-center gap-2' : 'flex flex-row gap-1'}">
+    <button
+      class="flex h-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white {compact ? 'w-10' : 'min-w-0 flex-1'}"
+      aria-label="Search" onclick={() => go('search')}
+      onmouseenter={(e) => showTip(e, 'Search')} onmouseleave={hideTip}>
+      <i class="{$searchOpen ? 'ph-fill' : 'ph'} ph-magnifying-glass" aria-hidden="true"></i>
+    </button>
+    <button
+      class="flex h-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white {compact ? 'w-10' : 'min-w-0 flex-1'}"
+      aria-label="Home" onclick={() => go('home')}
+      onmouseenter={(e) => showTip(e, 'Home')} onmouseleave={hideTip}>
+      <i class="{$pageStore.view === 'home' ? 'ph-fill' : 'ph'} ph-house" aria-hidden="true"></i>
+    </button>
+    <button
+      class="flex h-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white {compact ? 'w-10' : 'min-w-0 flex-1'}"
+      aria-label="Explore" onclick={() => go('explore')}
+      onmouseenter={(e) => showTip(e, 'Explore')} onmouseleave={hideTip}>
+      <i class="{$pageStore.view === 'explore' ? 'ph-fill' : 'ph'} ph-compass" aria-hidden="true"></i>
+    </button>
+  </nav>
 
-  <div class="relative flex min-h-0 flex-1 flex-col {compact ? 'mt-2' : ''}">
-    <!-- Fade the top so playlists trail off as they scroll up under the nav —
-         anchored behind the last button (like the account gradient). Hidden at
-         the very top so it never covers the first playlist. -->
+  <div class="cherry-sidebar pointer-events-auto relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl">
     <div
-      class="pointer-events-none absolute inset-x-0 -top-12 z-10 h-24 bg-gradient-to-b from-transparent via-[var(--color-popover)] to-transparent transition-opacity duration-200 {atTop
-        ? 'opacity-0'
-        : 'opacity-100'}"
-    ></div>
-    <div
+      role="region" aria-label="Playlists and folders"
       bind:this={listEl}
       use:overlayScrollbar={{ enabled: !compact }}
-      class="cherry-overlay-scroll flex min-h-0 flex-1 flex-col pb-2 {compact
-        ? 'items-stretch gap-2'
-        : 'gap-0.5'}"
-      role="list"
-      onscroll={updateBottom}
+      use:watchLibrarySize
+      class="cherry-overlay-scroll min-h-0 flex-1"
+      onscroll={() => listEl && updateScrollEdges(listEl)}
       ondragover={onDragOver}
       ondrop={onDrop}
       ondragend={endDrag}
     >
-    {#if !$authStore}
-      <p class="mx-2 py-2 text-[11px] leading-relaxed text-zinc-600">
-        Sign in with YouTube Music in Settings to load your playlists.
-      </p>
-    {:else if $libraryLoading && topItems.length === 0}
-      <p class="mx-2 py-2 text-[11px] text-zinc-600">Loading library…</p>
-    {:else if topItems.length === 0}
-      <div class="mx-2 py-2 text-[11px] leading-relaxed text-zinc-600">
-        <p>{$libraryLoading ? 'Loading library…' : 'No playlists loaded.'}</p>
-        {#if $libraryError}<p class="mt-1 text-rose-300/80">{$libraryError}</p>{/if}
-        {#if !$libraryLoading}
+      <div class="flex flex-col pb-2 {compact ? '' : 'gap-0.5 pt-1'}">
+          <div class="flex shrink-0 flex-col {compact ? 'items-center p-2' : ''}">
+        {#if compact}
           <button
-            class="mt-1 text-[var(--color-accent2)] underline disabled:opacity-40"
-            disabled={$libraryLoading}
-            onclick={() => refreshLibrary()}
+            class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label="New playlist or folder"
+            aria-haspopup="menu" aria-expanded={newMenuOpen}
+            onclick={openNewMenu}
+            onmouseenter={(e) => showTip(e, 'New playlist or folder')}
+            onmouseleave={hideTip}
           >
-            Retry
+            <i class="ph ph-plus text-xl"></i>
+          </button>
+        {:else}
+          <button class="{rowClass}" aria-label="New playlist or folder" aria-haspopup="menu" aria-expanded={newMenuOpen} onclick={openNewMenu}>
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/5 text-zinc-300"><i class="ph ph-plus text-xl" aria-hidden="true"></i></span>
+            <span>New</span>
           </button>
         {/if}
-      </div>
-    {:else}
-      {#each topItems as item, i (item.id)}
-        <div
-          class="relative"
-          data-top-id={item.id}
-          data-top-index={i}
-          animate:flip={{ duration: 220 }}
-        >
-          {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === i}
-            <span
-              class="pointer-events-none absolute inset-x-2 -top-0.5 z-10 h-0.5 rounded-full bg-[var(--color-accent)]"
-              transition:fade={{ duration: 120 }}
-            ></span>
-          {/if}
-          {#if item.type === 'folder'}
-            {@render folderBlock(item.folder, item.items, i)}
-          {:else if item.type === 'pin'}
-            {@render row(sidebarPinPreview(item.pin), i, null, -1, item.pin)}
+          </div>
+        <div role="list" aria-label="Library" class="flex flex-col {compact ? 'items-stretch gap-2' : 'gap-0.5'}">
+          {#if !$authStore}
+            <p class="mx-2 py-2 text-[11px] leading-relaxed text-zinc-600">
+              Sign in with YouTube Music in Settings to load your playlists.
+            </p>
+          {:else if $libraryLoading && topItems.length === 0}
+            <p class="mx-2 py-2 text-[11px] text-zinc-600">Loading library…</p>
+          {:else if topItems.length === 0}
+            <div class="mx-2 py-2 text-[11px] leading-relaxed text-zinc-600">
+              <p>{$libraryLoading ? 'Loading library…' : 'No playlists loaded.'}</p>
+              {#if $libraryError}<p class="mt-1 text-rose-300/80">{$libraryError}</p>{/if}
+              {#if !$libraryLoading}
+                <button
+                  class="mt-1 text-[var(--color-accent2)] underline disabled:opacity-40"
+                  disabled={$libraryLoading}
+                  onclick={() => refreshLibrary()}
+                >
+                  Retry
+                </button>
+              {/if}
+            </div>
           {:else}
-            {@render row(item.playlist, i, null, -1)}
+            {#each topItems as item, i (item.id)}
+              <div
+                class="relative"
+                data-top-id={item.id}
+                data-top-index={i}
+                animate:flip={{ duration: 220 }}
+              >
+                {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === i}
+                  <span
+                    class="pointer-events-none absolute inset-x-2 -top-0.5 z-10 h-0.5 rounded-full bg-[var(--color-accent)]"
+                    transition:fade={{ duration: 120 }}
+                  ></span>
+                {/if}
+                {#if item.type === 'folder'}
+                  {@render folderBlock(item.folder, item.items, i)}
+                {:else if item.type === 'pin'}
+                  {@render row(sidebarPinPreview(item.pin), i, null, -1, item.pin)}
+                {:else}
+                  {@render row(item.playlist, i, null, -1)}
+                {/if}
+              </div>
+            {/each}
+            {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === topItems.length}
+              <div
+                class="mx-2 h-0.5 shrink-0 rounded-full bg-[var(--color-accent)]"
+                transition:fade={{ duration: 120 }}
+              ></div>
+            {/if}
           {/if}
         </div>
-      {/each}
-      {#if (drop?.kind === 'top' || drop?.kind === 'pin') && drop?.index === topItems.length}
-        <div
-          class="mx-2 h-0.5 shrink-0 rounded-full bg-[var(--color-accent)]"
-          transition:fade={{ duration: 120 }}
-        ></div>
-      {/if}
-    {/if}
+      </div>
     </div>
+    <!-- Sibling overlays cover every scrolled row, including New and pin badges. -->
+    <div aria-hidden="true" data-library-fade="top"
+      class="pointer-events-none absolute inset-x-0 top-0 z-20 h-8 bg-gradient-to-b from-[var(--color-popover)] to-transparent transition-opacity duration-200 {atTop ? 'opacity-0' : 'opacity-100'}"
+    ></div>
+    <div
+      aria-hidden="true" data-library-fade="bottom"
+      class="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-8 bg-gradient-to-t from-[var(--color-popover)] to-transparent transition-opacity duration-200 {atBottom
+        ? 'opacity-0'
+        : 'opacity-100'}"
+    ></div>
   </div>
 
-  <!-- Fade the bottom of the rail so the list trails off, matching the top. -->
-  <div
-    class="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-20 bg-gradient-to-t from-[var(--color-popover)] via-[var(--color-popover)]/60 to-transparent transition-opacity duration-200 {atBottom
-      ? 'opacity-0'
-      : 'opacity-100'}"
-  ></div>
+  {#if !compact}
+    <div class="cherry-sidebar pointer-events-auto shrink-0 rounded-2xl" aria-label="Account">
+      <AccountButton expanded />
+    </div>
+  {/if}
+
 </aside>
 
 {#if newMenuOpen}

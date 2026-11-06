@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ create: vi.fn(), getInfo: vi.fn(), execute: vi.fn() }));
 vi.mock('youtubei.js', () => ({ Platform: { shim: {} }, Innertube: { create: mocks.create } }));
 vi.mock('./evaluator', () => ({ installEvaluator: () => {} }));
-import { getChannels, getInnertube, resetInnertubeClient, setActiveChannel } from './InnertubeClient';
+import { getAccountProfile, getChannels, getInnertube, resetInnertubeClient, setActiveChannel } from './InnertubeClient';
 import { cacheClear } from '$lib/infra/storage/cache';
 beforeEach(() => {
   resetInnertubeClient(); cacheClear(); vi.clearAllMocks(); setActiveChannel('');
@@ -27,4 +27,14 @@ it('retains channel identities from switch tokens even when has_channel is missi
   expect(channels[0]).toMatchObject({ name: 'Brand', pageId: 'brand-page', isChannel: true, isSelected: true });
   expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ account_index: 1 }));
   expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('on_behalf_of_user');
+});
+
+it('refreshes the personal profile instead of borrowing the first brand profile', async () => {
+  mocks.getInfo.mockResolvedValue([
+    { account_name: { text: 'Brand first' }, has_channel: true, endpoint: { payload: { supportedTokens: [{ pageIdToken: { pageId: 'brand' } }] } } },
+    { account_name: { text: 'Main account' }, has_channel: true },
+  ]);
+  const profile = await getAccountProfile({ kind: 'cookie', cookie: 'SID=test', savedAt: 0 });
+  expect(profile?.name).toBe('Main account');
+  expect(profile?.pageId).toBeUndefined();
 });

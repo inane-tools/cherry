@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, protocol, net, shell, safeStorage, session, Menu, Tray, nativeImage, nativeTheme, dialog } from 'electron';
 import { macMenuTemplate, windowChrome, installMacWindowControls } from './macos.mjs';
+import { windowControlLayout } from './window-controls.mjs';
 import { installTextMenu } from './text-menu.mjs';
 import { readFile, writeFile, rename, mkdir, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -225,6 +226,7 @@ const commands = {
   updater_download: () => updates.download(),
   updater_install: () => updates.install(),
   desktop_platform: () => process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
+  window_controls_layout: () => windowControlLayout(),
   'window:minimize': () => window.minimize(),
   'window:close': () => window.close(),
   'window:toggle-maximize': () => window.isMaximized() ? window.unmaximize() : window.maximize(),

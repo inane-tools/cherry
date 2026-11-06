@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const execute = vi.hoisted(() => vi.fn());
 vi.mock('youtubei.js', () => ({ Platform: { shim: {} }, Innertube: { create: async () => ({ actions: { execute } }) } }));
 vi.mock('./evaluator', () => ({ installEvaluator: () => {} }));
-vi.mock('$lib/infra/storage/cache', () => ({ cached: (_key: string, _ttl: number, load: () => unknown) => load(), cacheGet: vi.fn(), cacheSet: vi.fn() }));
+vi.mock('$lib/infra/storage/cache', () => ({ cached: (_key: string, _ttl: number, load: () => unknown) => load(), cacheRevision: () => 0, cacheGet: vi.fn(), cacheSet: vi.fn() }));
 import { getTrackAlbum, resetInnertubeClient } from './InnertubeClient';
 
 beforeEach(() => { resetInnertubeClient(); execute.mockReset(); });

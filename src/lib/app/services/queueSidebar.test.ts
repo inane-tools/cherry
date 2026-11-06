@@ -27,9 +27,9 @@ it('only shows the persistent queue when enabled and both rails fit', () => {
 
 it('makes use of the compact rail while reserving space for the page', () => {
   settingsStore.update((s) => ({ ...s, queueSidebar: true, compactSidebar: true }));
-  layoutWidth.set(916);
+  layoutWidth.set(932);
   expect(get(queueSidebarVisible)).toBe(true);
-  layoutWidth.set(915);
+  layoutWidth.set(931);
   expect(get(queueSidebarVisible)).toBe(false);
 });
 

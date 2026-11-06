@@ -27,6 +27,7 @@
     narrowLayout,
     sidebarDrawerOpen,
     playerExpanded,
+    compactPlayerHeight,
     startLayoutTracking,
     toggleSidebarDrawer,
     closeSidebarDrawer,
@@ -39,7 +40,7 @@
   import Sidebar from '$lib/ui/chrome/Sidebar.svelte';
   import PlayerBar from '$lib/ui/chrome/PlayerBar.svelte';
   import QueueSidebar from '$lib/ui/chrome/QueueSidebar.svelte';
-  import { queueSidebarVisible } from '$lib/app/services/queueSidebar';
+  import { queueSidebarVisible, QUEUE_SIDEBAR_WIDTH } from '$lib/app/services/queueSidebar';
   import AuthGate from '$lib/ui/components/AuthGate.svelte';
   import ContextMenu from '$lib/ui/components/ContextMenu.svelte';
   import PlaylistPickerDialog from '$lib/ui/components/PlaylistPickerDialog.svelte';
@@ -82,7 +83,7 @@
   // the sign-in button lives). When signed out these show a full-window gate
   // instead of partial content.
   $: signedOut = ready && !$authStore;
-  $: macInlineSidebar = isMacDesktop() && ready && !signedOut && !$narrowLayout;
+
   $: bannerPage = ['playlist', 'album', 'artist'].includes($pageStore.view)
     || ($pageStore.view === 'browse' && ['profile', 'mix'].includes($pageStore.entity.kind ?? ''));
 
@@ -226,40 +227,36 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions : only prevents the native menu -->
-<div use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} class:macos={isMacDesktop()}
+<div data-page-content use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} class:macos={isMacDesktop()}
   data-sidebar-layout={ready && !signedOut && !$narrowLayout ? ($settingsStore.compactSidebar ? 'compact' : 'expanded') : 'none'}
   style:--cherry-ui-scale={$renderedZoom}
+  style:--cherry-player-clearance={`${$compactPlayerHeight + 16}px`}
   oncontextmenu={suppressNativeContextMenu}>
   {#if !launched}
     <div class="absolute inset-0 z-[35] bg-[var(--color-surface)]" out:fade={{ duration: 300 }} aria-hidden="true"></div>
   {/if}
-  {#if macInlineSidebar}
-    <div class="cherry-topbar-backdrop cherry-topbar-backdrop-window" class:cherry-topbar-scrolled={pageScrolled} aria-hidden="true" transition:fade={{ duration: 160 }}></div>
-  {/if}
+  <div data-page-backdrop-host class="pointer-events-none absolute inset-0 -z-10 isolate overflow-hidden" aria-hidden="true"></div>
+  <Titlebar minimal={signedOut} scrolled={pageScrolled} narrow={$narrowLayout} {drawerVisible} onMenu={toggleSidebarDrawer} />
   <div class="flex min-h-0 flex-1">
-    <!-- Playlist rail: full window height, never covered by the top bar or player.
-         Hidden while signed out — there is no library to show, and the welcome
-         gate owns the whole page. -->
+    <!-- Both rails float between the full-window title bar and player. -->
     {#if ready && !signedOut && !$narrowLayout}
       <Sidebar />
     {/if}
-    <!-- Content column owns the translucent top bar and floating player;
-         horizontal clipping keeps their effects inside the column. -->
-    <div data-page-content class="relative flex min-w-0 flex-1 flex-col overflow-x-clip">
-      <div data-page-backdrop-host class="pointer-events-none absolute inset-0 isolate overflow-hidden" aria-hidden="true"></div>
-      <!-- On the welcome screen only the native window controls remain; the bar
-           itself stays draggable. -->
-      <Titlebar minimal={signedOut} scrolled={pageScrolled} showBackdrop={!macInlineSidebar} narrow={$narrowLayout} {drawerVisible} onMenu={toggleSidebarDrawer} />
+    <div class="relative flex min-w-0 flex-1 flex-col overflow-x-clip" style:margin-left="calc(-1 * var(--cherry-sidebar-inset, 0px))">
       <div class="flex min-h-0 flex-1">
       <div class="relative flex min-w-0 flex-1 flex-col">
       <main
+        style:--cherry-queue-inset={`${ready && !signedOut && $queueSidebarVisible ? QUEUE_SIDEBAR_WIDTH : 0}px`}
+        style:padding-right="calc(24px + var(--cherry-queue-inset))"
+        style:padding-left="calc(24px + var(--cherry-sidebar-inset, 0px))"
+        style:padding-bottom={$playerExpanded ? '6rem' : 'calc(var(--cherry-player-clearance, 104px) + 24px)'}
         bind:this={mainEl}
         onscroll={onPageScroll}
-        use:overlayScrollbar={{ topInset: 48 }}
+        use:overlayScrollbar={{ topInset: 48, rightInset: ready && !signedOut && $queueSidebarVisible ? QUEUE_SIDEBAR_WIDTH : 0 }}
         use:pageScroll
         class="cherry-overlay-scroll relative z-0 min-w-0 flex-1 px-6 {$playerExpanded
-          ? 'pt-16 pb-24'
-          : 'pt-12 pb-40'}"
+          ? 'pt-16'
+          : 'pt-12'}"
       >
         {#if ready}
           <div>
@@ -283,7 +280,6 @@
           </div>
         {/if}
       </main>
-      <PlayerBar />
 
 
       </div>
@@ -293,6 +289,8 @@
       </div>
     </div>
   </div>
+
+  <PlayerBar />
 
   <!-- Full-window sign-in gate.
        Covers the entire shell with a solid theme surface, including behind
@@ -310,13 +308,13 @@
   {#if ready && !signedOut && $narrowLayout && $sidebarDrawerOpen}
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div
-      class="absolute inset-0 z-30 bg-scrim/70 backdrop-blur-md"
+      class="absolute inset-0 z-[25] bg-scrim/70 backdrop-blur-md"
       role="presentation"
       onclick={closeSidebarDrawer}
       transition:fade={{ duration: 220 }}
     ></div>
     <div
-      class="absolute inset-0 z-30 shadow-[0_0_60px_rgba(0,0,0,0.6)]"
+      class="absolute inset-0 z-[25] shadow-[0_0_60px_rgba(0,0,0,0.6)]"
       transition:drawerSlide
       onoutroend={() => { if (!get(sidebarDrawerOpen)) drawerVisible = false; }}
     >

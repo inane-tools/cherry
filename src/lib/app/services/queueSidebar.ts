@@ -8,7 +8,7 @@ export const QUEUE_SIDEBAR_WIDTH = 320;
 export const queueSidebarVisible = derived(
   [layoutWidth, settingsStore],
   ([$width, $settings]) => {
-    const leftWidth = $settings.compactSidebar ? 56 : Math.min(440, Math.max(176, $settings.sidebarWidth || 240));
+    const leftWidth = $settings.compactSidebar ? 72 : Math.min(440, Math.max(176, $settings.sidebarWidth || 240));
     return $settings.queueSidebar && $width >= Math.max(820, leftWidth + QUEUE_SIDEBAR_WIDTH + 540);
   },
 );

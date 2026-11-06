@@ -4,12 +4,14 @@ import type { Page } from './navigation';
 import type { AlbumPage, ArtistPage } from '$lib/infra/ytmusic/InnertubeClient';
 vi.mock('./auth', () => ({ authStore: writable(null) }));
 vi.mock('./navigation', () => ({ openPage: vi.fn(), pageStore: writable<Page>({ view: 'home' }) }));
-vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ getArtistPage: vi.fn(), getAlbumPage: vi.fn(), getTrackAlbum: vi.fn() }));
+vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({ getActiveChannel: () => '', getArtistPage: vi.fn(), getAlbumPage: vi.fn(), getTrackAlbum: vi.fn() }));
 vi.mock('./contextMenu', () => ({ notify: vi.fn() }));
 import { pageStore, openPage } from './navigation';
 import { getAlbumPage, getArtistPage, getTrackAlbum } from '$lib/infra/ytmusic/InnertubeClient';
 import { loadAlbumPage, loadArtistPage, openTrackAlbum } from './catalog';
 import { notify } from './contextMenu';
+import { playlistAccountRevision } from './playlistAccount';
+import { albumPageStore, artistPageStore } from './catalog';
 const artist = { name: 'Artist', browseId: 'UCartist' };
 const details: ArtistPage = { title: 'Artist', thumbnails: [{ url: 'https://image.test/portrait' }], sections: [] };
 beforeEach(() => { vi.clearAllMocks(); pageStore.set({ view: 'artist', entity: artist }); });
@@ -69,4 +71,25 @@ it('does not put an old artist portrait into a different page', async () => {
   pageStore.set({ view: 'artist', entity: { name: 'Other', browseId: 'UCother' } });
   finish(details); await loading;
   expect(get(pageStore)).toEqual({ view: 'artist', entity: { name: 'Other', browseId: 'UCother' } });
+});
+
+it('ignores an artist response after the account changes, even when it changes back', async () => {
+  let finish!: (page: ArtistPage) => void;
+  vi.mocked(getArtistPage).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  const loading = loadArtistPage(artist);
+  playlistAccountRevision.update(value => value + 2);
+  finish(details); await loading;
+  expect(get(artistPageStore)).toBeNull();
+  expect(get(pageStore)).toEqual({ view: 'artist', entity: artist });
+});
+it('does not populate album contents after leaving the page', async () => {
+  const album = { browseId: 'MPRElate', title: 'Late', artists: [], thumbnails: [] };
+  pageStore.set({ view: 'album', entity: album });
+  let finish!: (page: AlbumPage) => void;
+  vi.mocked(getAlbumPage).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  const loading = loadAlbumPage(album);
+  pageStore.set({ view: 'home' });
+  finish({ title: 'Old', artists: [], thumbnails: [], tracks: [] }); await loading;
+  expect(get(albumPageStore)).toBeNull();
+  expect(get(pageStore)).toEqual({ view: 'home' });
 });

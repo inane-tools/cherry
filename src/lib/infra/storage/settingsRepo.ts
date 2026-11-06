@@ -24,6 +24,8 @@ export interface CherrySettings {
   discordStatusDisplay: 'details' | 'state' | 'name';
   /** Brand-channel page id whose YouTube Music library to use. */
   channelPageId: string;
+  /** Preserve an explicit personal-channel choice, whose page id is empty. */
+  channelSelectionExplicit: boolean;
   /** Sidebar pins; retain the original storage key for existing installs. */
   pinnedPlaylists: SidebarPin[];
   /** Pins and their order belong to the selected YouTube channel. */
@@ -105,6 +107,7 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   discordAppId: '',
   discordStatusDisplay: 'details',
   channelPageId: '',
+  channelSelectionExplicit: false,
   pinnedPlaylists: [],
   pinnedPlaylistsByChannel: {},
   recentPlaylists: [],

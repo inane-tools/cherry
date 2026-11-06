@@ -1,10 +1,9 @@
 // Playlist editing: create, add songs, remove songs, rename / re-describe.
 //
 // All of these are authenticated writes (see `InnertubeClient`). They are
-// applied **optimistically**: YouTube's read-after-write can lag, and a full
-// refetch of a long playlist (one request per ~100 tracks) is slow, so the
-// change is reflected locally at once and only the changed playlist's cache is
-// dropped — the next time it is opened it refetches from YouTube.
+// reflected locally after YouTube confirms the write. Reads can lag behind,
+// so confirmed additions are retained while the changed playlist refreshes.
+// Only that playlist's caches are invalidated.
 
 import { get } from 'svelte/store';
 import { authIdentity } from '$lib/infra/ytmusic/authContext';
@@ -20,7 +19,7 @@ import {
   setPlaylistCustomThumbnail,
   setPlaylistDescription,
 } from '$lib/infra/ytmusic/InnertubeClient';
-import { cacheClear } from '$lib/infra/storage/cache';
+import { cacheClear, cacheGet } from '$lib/infra/storage/cache';
 import { addPlaylistLocally, addablePlaylistsStore, renamePlaylistLocally } from './addablePlaylists';
 import { authStore } from './auth';
 import { notify } from './contextMenu';
@@ -82,12 +81,14 @@ async function addTracksOnce(playlist: Playlist, tracks: Track[]): Promise<boole
   const additions = tracks.filter((t) => t.videoId);
   if (additions.length === 0) return false;
   const { session, channel, current } = capturePlaylistAccount();
+  const baseline = get(openPlaylistStore)?.browseId === playlist.browseId
+    ? get(openPlaylistTracks) : cacheGet<Track[]>(`collection:${channel}:${playlist.browseId}`) ?? undefined;
   try {
     await addTracksToPlaylist(playlist.browseId, additions.map((t) => t.videoId), session);
     for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
     cacheClear(`library:${channel}:`);
     if (!current()) return true;
-    void refreshEditedPlaylist(playlist, additions).catch(error => console.warn('[cherry] playlist refresh failed:', error));
+    void refreshEditedPlaylist(playlist, additions, baseline).catch(error => console.warn('[cherry] playlist refresh failed:', error));
     notify(
       additions.length === 1
         ? `Added to ${playlist.title}`
@@ -116,9 +117,11 @@ export async function createNewPlaylist(title: string, tracks: Track[] = []): Pr
     if (!current()) return id;
     // Show it in the rail immediately; the next library refresh fills in the
     // real metadata (thumbnail/author) once YouTube returns it.
-    const optimistic: Playlist = { browseId: id, title: name, thumbnails: [] };
+    const optimistic: Playlist = { browseId: id, title: name, thumbnails: [], trackCount: 0 };
     recordLibraryPlaylist(optimistic);
     addPlaylistLocally(optimistic);
+    if (tracks.length) void refreshEditedPlaylist(optimistic, tracks, [])
+      .catch(error => console.warn('[cherry] new playlist refresh failed:', error));
     await prependSidebarItem(id);
     if (!current()) return id;
     notify(

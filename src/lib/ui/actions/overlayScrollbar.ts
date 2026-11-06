@@ -34,6 +34,8 @@ export interface OverlayScrollbarOptions {
   userScrollOnly?: boolean;
   /** Keep the vertical thumb below an overlaid top bar. */
   topInset?: number;
+  /** Keep the vertical track beside a floating right panel. */
+  rightInset?: number;
   axis?: 'x' | 'y';
 }
 
@@ -116,7 +118,7 @@ export function overlayScrollbar(node: HTMLElement, initial: OverlayScrollbarOpt
     track.hidden = !hasThumb;
     thumb.tabIndex = hasThumb ? 0 : -1;
     // Layout offsets keep the track aligned inside translated/scaled sheets.
-    track.style.left = `${node.offsetLeft + node.clientLeft + (horizontal ? 0 : node.clientWidth - 12)}px`;
+    track.style.left = `${node.offsetLeft + node.clientLeft + (horizontal ? 0 : Math.max(0, node.clientWidth - 12 - (options.rightInset ?? 0)))}px`;
     track.style.top = `${node.offsetTop + node.clientTop + (horizontal ? node.clientHeight - 12 : inset)}px`;
     track.style.width = `${horizontal ? viewport : 12}px`;
     track.style.height = `${horizontal ? 12 : length}px`;
@@ -273,7 +275,7 @@ export function overlayScrollbar(node: HTMLElement, initial: OverlayScrollbarOpt
 
   return {
     update(next: OverlayScrollbarOptions = {}): void {
-      if (next.enabled === options.enabled && next.topInset === options.topInset && next.userScrollOnly === options.userScrollOnly) return;
+      if (next.enabled === options.enabled && next.topInset === options.topInset && next.rightInset === options.rightInset && next.userScrollOnly === options.userScrollOnly) return;
       options = next;
       if (!enabled()) { endDrag(); clearHide(); thumb.classList.remove('is-visible'); }
       schedule();

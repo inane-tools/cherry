@@ -19,13 +19,14 @@ vi.mock('./settings', () => ({ settingsStore: writable({}) }));
 vi.mock('./folders', () => ({ prependSidebarItem: api.prepend }));
 vi.mock('./navigation', () => ({}));
 vi.mock('./platform', () => ({ errorMessage: () => 'Could not add to the playlist.', invokeStrict: api.upload }));
-vi.mock('$lib/infra/storage/cache', () => ({ cacheClear: vi.fn() }));
+vi.mock('$lib/infra/storage/cache', () => ({ cacheClear: vi.fn(), cacheGet: vi.fn(() => null) }));
 
 import { authStore } from './auth';
-import { addTracksTo, removeTrackFrom, setPlaylistImage, createNewPlaylist, updatePlaylistDetails } from './playlistEdit';
+import { addTracksTo, removeTrackFrom, setPlaylistImage, createNewPlaylist, saveTrack, updatePlaylistDetails } from './playlistEdit';
 import { addablePlaylistsStore } from './addablePlaylists';
 import { openPlaylistStore, openPlaylistTracks, playlistStore } from './playlists';
 import { activeChannelStore } from './channelProfile';
+import { settingsStore } from './settings';
 const playlist: Playlist = { browseId: 'PLtest', title: 'Test', thumbnails: [] };
 const track: Track = { videoId: 'song', title: 'Song', artists: [], thumbnails: [] };
 beforeEach(() => {
@@ -160,4 +161,16 @@ it('keeps an uploaded new-playlist cover rather than replacing it with a lagging
   expect(api.meta).not.toHaveBeenCalled();
   expect(get(playlistStore)[0].thumbnails).toEqual([{ url: 'data:image/png;base64,image-bytes' }]);
   expect(get(addablePlaylistsStore)[0].thumbnails).toEqual([{ url: 'data:image/png;base64,image-bytes' }]);
+});
+
+it('sends the default-playlist action through the shared confirmed refresh path', async () => {
+  settingsStore.update(settings => ({ ...settings, defaultPlaylistBrowseId: playlist.browseId }));
+  playlistStore.set([playlist]); openPlaylistStore.set(playlist); openPlaylistTracks.set([]);
+  await saveTrack(track);
+  expect(api.add).toHaveBeenCalledWith(playlist.browseId, [track.videoId], expect.anything());
+  expect(api.refresh).toHaveBeenCalledWith(playlist, [track], []);
+});
+it('retains initial songs when a newly created playlist has not appeared in reads yet', async () => {
+  expect(await createNewPlaylist('New', [track])).toBe('VLcreated');
+  expect(api.refresh).toHaveBeenCalledWith(expect.objectContaining({ browseId: 'VLcreated' }), [track], []);
 });

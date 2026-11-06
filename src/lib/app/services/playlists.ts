@@ -2,6 +2,7 @@ import { authIdentity } from '$lib/infra/ytmusic/authContext';
 import { get, writable } from 'svelte/store';
 import type { AccountProfile, Playlist, Track } from '$lib/core/models';
 import { isLikedPlaylist } from '$lib/core/models';
+import { PlaylistAdditions } from '$lib/core/playlistAdditions';
 import { getActiveChannel, getHomePage, getLibraryPlaylists, getPlaylistMeta, streamCollectionTracks } from '$lib/infra/ytmusic/InnertubeClient';
 import { withHomeProfile } from '$lib/core/listenAgain';
 import type { HomeSection, HomeFilter } from '$lib/infra/ytmusic/rawHome';
@@ -12,7 +13,7 @@ import { openPage, pageStore } from './navigation';
 import { enqueue, queueRevision } from './queue';
 import { playTracks, playTracksShuffled } from './player';
 import { rememberPlaylist } from './playlistShortcuts';
-import { playlistAccountRevision } from './playlistAccount';
+import { capturePlaylistAccount, playlistAccountRevision } from './playlistAccount';
 import { activeChannelStore } from './channelProfile';
 
 export const playlistStore = writable<Playlist[]>([]);
@@ -54,6 +55,8 @@ const channelLibraries = new Map<string, {
 }>();
 let libraryIdentity = '';
 let libraryChannel = '';
+const confirmedAdditions = new PlaylistAdditions();
+const additionKey = (browseId: string) => JSON.stringify([authIdentity(get(authStore)), getActiveChannel(), browseId]);
 
 /** Preserve server-confirmed writes until library reads catch up. */
 export function recordLibraryPlaylist(playlist: Playlist, patch: Partial<Playlist> = { title: playlist.title }): void {
@@ -67,6 +70,7 @@ export function recordLibraryPlaylist(playlist: Playlist, patch: Partial<Playlis
 }
 
 export function recordLibraryRemoval(browseId: string): void {
+  confirmedAdditions.clear(additionKey(browseId));
   libraryEdits.delete(browseId);
   libraryRemovals.add(browseId);
   playlistStore.update(list => list.filter(item => item.browseId !== browseId));
@@ -278,7 +282,11 @@ export async function reloadAll(): Promise<void> {
   if (request !== reloadSequence || authIdentity(get(authStore)) !== session) return;
   cacheClear(`library:${getActiveChannel()}:`);
   cacheClear(`home:${getActiveChannel()}:`);
-  await Promise.all([loadHome(), loadLibrary()]);
+  const open = get(openPlaylistStore);
+  const page = get(pageStore);
+  const refreshOpen = open && page.view === 'playlist' && page.entity.browseId === open.browseId;
+  if (refreshOpen) for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${getActiveChannel()}:${open.browseId}`);
+  await Promise.all([loadHome(), loadLibrary(), ...(refreshOpen ? [loadOpenPlaylist(open, { preserveContent: true })] : [])]);
 }
 
 /**
@@ -311,12 +319,16 @@ export function openPlaylist(playlist: Playlist): void {
  * shuffled). The playlist page is not navigated to, so this never disturbs
  * where the user is.
  */
+let playlistPlaySequence = 0;
 export async function playPlaylist(playlist: Playlist, shuffle = false): Promise<void> {
   const session = get(authStore);
   if (!session) return;
   const id = generation;
+  const request = ++playlistPlaySequence;
+  let playingRevision = queueRevision();
   let channel: string | undefined;
-  const stale = () => id !== generation || authIdentity(get(authStore)) !== authIdentity(session)
+  const stale = () => request !== playlistPlaySequence || queueRevision() !== playingRevision
+    || id !== generation || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   try {
     await initChannel();
@@ -326,7 +338,6 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
     // playlist begins playing immediately instead of after every page is read.
     let started = false;
     let seen = 0;
-    let playingRevision: number | undefined;
     const source = { kind: 'playlist' as const, title: playlist.title, browseId: playlist.browseId, thumbnails: playlist.thumbnails };
     await streamCollectionTracks(playlist.browseId, session, (partial) => {
       if (stale()) return;
@@ -415,13 +426,13 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
     const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done) => {
       if (stale()) return;
       if (preserve && !done) return;
-      openPlaylistTracks.set(visibleOpenTracks(partial));
+      openPlaylistTracks.set(confirmedAdditions.reconcile(additionKey(playlist.browseId), visibleOpenTracks(partial)));
       // The first page is enough to render and play; drop the skeleton while
       // the remaining pages keep streaming in.
       if (!done) openPlaylistLoading.set(false);
     });
     if (stale()) return;
-    const visible = visibleOpenTracks(tracks);
+    const visible = confirmedAdditions.reconcile(additionKey(playlist.browseId), visibleOpenTracks(tracks), true);
     openPlaylistTracks.set(visible);
     patchPlaylist(playlist.browseId, { trackCount: visible.length });
     if (visible.length === 0) {
@@ -448,6 +459,7 @@ function patchPlaylist(browseId: string, patch: Partial<Playlist>): void {
 
 /** Remove one confirmed entry without interrupting the playing queue. */
 export function recordPlaylistRemoval(playlist: Playlist, track: Track): void {
+  confirmedAdditions.remove(additionKey(playlist.browseId), track.videoId);
   if (get(openPlaylistStore)?.browseId === playlist.browseId) {
     removedOpenTracks.add(track);
     if (track.playlistEntryId) removedOpenEntries.add(track.playlistEntryId);
@@ -462,23 +474,27 @@ export function recordPlaylistRemoval(playlist: Playlist, track: Track): void {
 
 const editRefreshes = new Map<string, symbol>();
 /** Reconcile a successful add with this playlist's header and visible contents. */
-export async function refreshEditedPlaylist(playlist: Playlist, addedTracks: Track[]): Promise<void> {
-  const session = get(authStore);
+export async function refreshEditedPlaylist(playlist: Playlist, addedTracks: Track[], baseline?: Track[]): Promise<void> {
+  const account = capturePlaylistAccount();
+  const session = account.session;
   if (!session) return;
   const channel = getActiveChannel();
   const key = `${authIdentity(session)}::${channel}::${playlist.browseId}`;
   const revision = Symbol('playlist edit');
   editRefreshes.set(key, revision);
-  const stale = () => editRefreshes.get(key) !== revision || authIdentity(get(authStore)) !== authIdentity(session) || getActiveChannel() !== channel;
+  const stale = () => editRefreshes.get(key) !== revision || !account.current();
   for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
   cacheClear(`library:${channel}:`);
   const current = get(playlistStore).find(item => item.browseId === playlist.browseId) ?? playlist;
   // Liking is idempotent: the selected songs may already belong to this list.
   const liked = isLikedPlaylist(playlist.browseId);
+  const additionsKey = additionKey(playlist.browseId);
+  const open = get(openPlaylistStore)?.browseId === playlist.browseId;
+  confirmedAdditions.record(additionsKey, addedTracks, baseline ?? (open ? get(openPlaylistTracks) : []), liked);
   if (!liked && current.trackCount !== undefined) patchPlaylist(playlist.browseId, { trackCount: current.trackCount + addedTracks.length });
   try {
     if (get(openPlaylistStore)?.browseId === playlist.browseId) {
-      if (!liked) openPlaylistTracks.update(tracks => [...tracks, ...addedTracks.map(({ playlistEntryId: _sourceEntry, ...track }) => track)]);
+      openPlaylistTracks.update(tracks => confirmedAdditions.reconcile(additionsKey, tracks));
       await loadOpenPlaylist(get(openPlaylistStore)!, { preserveContent: true });
     } else {
       const meta = await getPlaylistMeta(playlist.browseId, session);
@@ -498,6 +514,7 @@ playlistAccountRevision.subscribe(() => {
   const identity = authIdentity(get(authStore));
   const channel = get(activeChannelStore)?.pageId ?? '';
   if (identity !== libraryIdentity) {
+    confirmedAdditions.clear();
     channelLibraries.clear();
   } else if (identity) {
     channelLibraries.set(libraryChannel, { playlists: get(playlistStore), edits: libraryEdits, removals: libraryRemovals });

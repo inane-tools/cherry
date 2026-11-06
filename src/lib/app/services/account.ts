@@ -80,8 +80,12 @@ export function initChannel(force = false): Promise<AccountProfile | null> {
     if (channels.length === 0) throw new Error('YouTube returned no account channels. Sign in again and finish on the YouTube Music page.');
     channelsStore.set(channels);
 
-    const savedPageId = getStore(settingsStore).channelPageId;
-    const saved = savedPageId ? channels.find((c) => c.pageId === savedPageId) : undefined;
+    const settings = getStore(settingsStore);
+    const savedPageId = settings.channelPageId;
+    // The personal channel deliberately has no delegated page id. An empty id
+    // must distinguish an explicit choice from a fresh install's auto-detect.
+    const saved = savedPageId || settings.channelSelectionExplicit
+      ? channels.find(c => (c.pageId ?? '') === savedPageId) : undefined;
 
     let chosen: AccountProfile | null = saved ?? channels.find(c => !!session.selectedChannelId && c.pageId === session.selectedChannelId) ?? null;
     if (!chosen) {
@@ -110,13 +114,13 @@ export function initChannel(force = false): Promise<AccountProfile | null> {
 export async function selectChannel(pageId: string): Promise<void> {
   const id = ++generation;
   inflight = null;
-  const profile = getStore(channelsStore).find((c) => c.pageId === pageId) ?? null;
+  const profile = getStore(channelsStore).find(c => (c.pageId ?? '') === pageId) ?? null;
   if (!profile) throw new Error('That channel is no longer available. Refresh your account channels and try again.');
   // Apply identity synchronously: no previous-brand controls or requests should
   // remain active while the settings write is waiting on disk/keychain.
   applyChannel(profile);
   initialized = true;
-  await updateSettings({ channelPageId: pageId });
+  await updateSettings({ channelPageId: pageId, channelSelectionExplicit: true });
   if (id !== generation) return;
 }
 

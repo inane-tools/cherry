@@ -11,6 +11,7 @@
     loadArtistPage,
   } from '$lib/app/services/catalog';
   import { pageStore } from '$lib/app/services/navigation';
+  import { playlistAccountRevision } from '$lib/app/services/playlistAccount';
   import { entriesOf, selectCarouselEntry, playCarouselEntry, openCarouselMenu } from '$lib/app/services/browse';
   import Carousel from '$lib/ui/components/Carousel.svelte';
   import ShelfHeading from '$lib/ui/components/ShelfHeading.svelte';
@@ -24,8 +25,10 @@
 
   // Load once per artist (Back restores the entity without a reload).
   let loadedId: string | null = null;
-  $: if (artist && (artist.browseId ?? '') !== loadedId) {
+  let loadedAccount = -1;
+  $: if (artist && ((artist.browseId ?? '') !== loadedId || $playlistAccountRevision !== loadedAccount)) {
     loadedId = artist.browseId ?? '';
+    loadedAccount = $playlistAccountRevision;
     void loadArtistPage(artist);
   }
 </script>

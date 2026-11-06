@@ -1,9 +1,8 @@
 <script lang="ts">
   import { getCurrentWindow } from '$lib/desktop/window';
   import { onMount, tick } from 'svelte';
-  import { isDesktop, isMacDesktop } from '$lib/app/services/platform';
+  import { isDesktop, isMacDesktop, invokeSafe } from '$lib/app/services/platform';
   import { settingsStore } from '$lib/app/services/settings';
-  import { authStore } from '$lib/app/services/auth';
   import { activeChannelStore } from '$lib/app/services/account';
   import { back, canGoBack, go, pageStore, type Page } from '$lib/app/services/navigation';
   import { thumbnailSources, type Thumbnail } from '$lib/core/models';
@@ -11,24 +10,14 @@
   import logoUrl from '$lib/assets/logo.png';
   import { fade } from '$lib/ui/transitions';
   import { updateStore } from '$lib/app/services/updates';
-  import { sidebarDrawerOpen } from '$lib/app/services/layout';
+  import { playerExpanded, sidebarDrawerOpen } from '$lib/app/services/layout';
   import { settingsOpen, searchOpen } from '$lib/app/services/overlays';
   import { homeSectionsStore, openPlaylistHeaderLoading, openPlaylistStore } from '$lib/app/services/playlists';
   import { repeatListening } from '$lib/core/profileSections';
   import { repeatListeningStore } from '$lib/app/services/profilePersonalization';
 
   import { homeGreeting as makeHomeGreeting } from '$lib/core/homeGreeting';
-  import AppMenu from '$lib/ui/components/AppMenu.svelte';
-  import { openProfile } from '$lib/app/services/browse';
-  import { releaseCodename } from '$lib/app/services/release';
-
-  let mainMenuOpen = false;
-  let mainMenuAnchor: HTMLButtonElement;
-  $: profileTarget = $homeSectionsStore.find(section => section.header?.profile)?.header?.profile
-    ?? ($activeChannelStore?.pageId?.startsWith('UC') ? { browseId: $activeChannelStore.pageId } : undefined);
-  function showProfile() {
-    if (profileTarget) openProfile(profileTarget, accountName, profile?.avatarUrl ? [{ url: profile.avatarUrl }] : []);
-  }
+  import AccountButton from '$lib/ui/components/AccountButton.svelte';
 
   let hour = new Date().getHours();
   let greetingSeed = { personal: 1, line: Math.random() };
@@ -96,6 +85,9 @@
 
   let windows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
   let macos = isMacDesktop();
+  type CaptionButton = 'minimize' | 'maximize' | 'close';
+  let controlLayout: { left: CaptionButton[]; right: CaptionButton[] } = { left: [], right: ['minimize', 'maximize', 'close'] };
+  $: hasLeftControls = $settingsStore.windowControls && (macos || (isDesktop() && controlLayout.left.length > 0));
   let maximized = false;
   onMount(() => {
     let disposed = false;
@@ -105,6 +97,10 @@
       const platform = await window.cherryDesktop?.invoke<string>('desktop_platform');
       windows = platform === 'windows';
       macos = platform === 'macos';
+      if (platform === 'linux') {
+        const layout = await invokeSafe<typeof controlLayout>('window_controls_layout');
+        if (!disposed && layout) controlLayout = layout;
+      }
       const win = getCurrentWindow();
       maximized = await win.isMaximized();
       const unlisten = await win.onResized(() => { void win.isMaximized().then(value => { if (!disposed) maximized = value; }); });
@@ -112,10 +108,6 @@
     })().catch(console.error);
     return () => { disposed = true; stop(); };
   });
-
-  $: profile = $activeChannelStore;
-  $: accountName = profile?.name || $authStore?.accountLabel || 'Guest';
-  $: initial = accountName.trim().charAt(0).toUpperCase() || 'G';
 
   if (isDesktop()) {
     void getCurrentWindow()
@@ -138,6 +130,22 @@
 
 </script>
 
+{#snippet captions(buttons: CaptionButton[])}
+  {#if buttons.length}
+    <div class="relative z-40 flex h-full shrink-0 items-stretch" class:win-caption={windows} data-desktop-drag-region>
+      {#each buttons as button}
+        <button class="caption-button flex w-[46px] items-center justify-center text-white {button === 'close' ? 'caption-close hover:bg-[#c42b1c]' : 'hover:bg-white/10'}"
+          title={button === 'minimize' ? 'Minimize' : button === 'close' ? 'Close' : maximized ? 'Restore' : 'Maximize'}
+          aria-label={button === 'minimize' ? 'Minimize' : button === 'close' ? 'Close' : maximized ? 'Restore' : 'Maximize'}
+          onclick={button === 'minimize' ? minimize : button === 'close' ? close : toggleMaximize}>
+          {#if windows}<span class="win-glyph" aria-hidden="true">{button === 'minimize' ? '\uE921' : button === 'close' ? '\uE8BB' : maximized ? '\uE923' : '\uE922'}</span>
+          {:else}<i class={button === 'minimize' ? 'ph ph-minus text-lg' : button === 'close' ? 'ph ph-x text-xl' : maximized ? 'ph ph-copy text-sm' : 'ph ph-square text-sm'} aria-hidden="true"></i>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
 <!-- The header is the OS window drag handle: dragging moves the window and a
      double-click maximizes/restores it. -->
 <!-- svelte-ignore a11y_no_static_element_interactions : header starts a native window drag -->
@@ -145,21 +153,29 @@
 <header
   data-desktop-drag-region
   class:macos
-  class="absolute inset-x-0 top-0 flex h-12 items-center gap-2 pl-2"
+  class:has-left-controls={hasLeftControls}
+  style:padding-left={macos && $settingsStore.windowControls ? 'var(--mac-titlebar-inset)' : undefined}
+  class="absolute inset-x-0 top-0 flex h-12 items-center gap-2"
 >
-  {#if !minimal && scrolled && showBackdrop}
+  {#if !minimal && (scrolled || $playerExpanded) && showBackdrop}
     <div class="cherry-topbar-backdrop" aria-hidden="true" transition:fade={{ duration: 160 }}></div>
+  {/if}
+  {#if isDesktop() && !macos && $settingsStore.windowControls && controlLayout.left.length}
+    {@render captions(controlLayout.left)}
   {/if}
   <!-- Navigation and page identity stay together in both sidebar layouts. -->
   {#if !minimal}
     <div class="cherry-topbar-navigation relative flex min-w-0 flex-1 items-center gap-2 {narrow && drawerVisible && !$settingsOpen && !$searchOpen ? 'z-40' : 'z-20'}">
+      <div class="cherry-topbar-back-slot flex h-full shrink-0 items-center justify-center">
       <button
         class="cherry-nav-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg leading-none text-white transition-colors disabled:cursor-default disabled:opacity-40"
-        title="Back" aria-label="Back" disabled={!$canGoBack} onclick={back}
+        title="Back" aria-label="Back" disabled={!$canGoBack && !$playerExpanded}
+        onclick={() => { if ($playerExpanded) playerExpanded.set(false); else back(); }}
       >
         <i class="ph ph-caret-left block leading-none" aria-hidden="true"></i>
       </button>
-      {#if narrow}
+      </div>
+      {#if narrow && !$playerExpanded}
         <button
           class="cherry-nav-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg leading-none text-white transition-colors"
           title={$sidebarDrawerOpen ? 'Close menu' : 'Open menu'} aria-label={$sidebarDrawerOpen ? 'Close menu' : 'Open menu'} aria-expanded={$sidebarDrawerOpen} onclick={onMenu}
@@ -188,7 +204,7 @@
   {/if}
 
   <!-- Right: account + native window controls. -->
-  <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {$settingsStore.windowControls || macos ? '' : 'pr-3'}">
+  <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {!macos && (!isDesktop() || !$settingsStore.windowControls || !controlLayout.right.length) ? 'pr-3' : ''}">
     {#if !minimal}
       {#if $updateStore.phase === 'available' || $updateStore.phase === 'ready'}
         <button
@@ -201,78 +217,29 @@
           <span>v{$updateStore.version}</span>
         </button>
       {/if}
-      <button
-        bind:this={mainMenuAnchor}
-        class="group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-transparent"
-        title={accountName}
-        aria-label="Main menu" aria-haspopup="menu" aria-expanded={mainMenuOpen}
-        onclick={() => mainMenuOpen = !mainMenuOpen}
-      >
-        {#if profile?.avatarUrl}
-          <img src={profile.avatarUrl} alt="" class="h-8 w-8 rounded-full bg-[var(--color-avatar)] object-cover" />
-        {:else}
-          <span class="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent2)] text-[11px] font-bold text-[#181818]">{initial}</span>
-        {/if}
-        <span
-          class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100"
-        >
-          <i class="ph ph-list text-base"></i>
-        </span>
-      </button>
+      {#if !$settingsStore.compactSidebar || narrow}
+        <AccountButton settingsIcon />
+      {:else}
+        <AccountButton />
+      {/if}
     {/if}
 
     {#if isDesktop() && !macos && $settingsStore.windowControls}
-      <!-- Native Windows caption buttons: Segoe system glyphs
-           (E921 minimise, E922 maximise, E923 restore, E8BB close).
-           `z-40` keeps them clickable above the sign-in gate, which covers the
-           rest of the window. -->
-      <div class="relative z-40 flex h-full items-stretch" class:win-caption={windows} data-desktop-drag-region>
-        <button
-          class="flex w-[46px] items-center justify-center text-white hover:bg-white/10"
-          title="Minimize"
-          aria-label="Minimize"
-          onclick={minimize}
-        >
-          {#if windows}<span class="win-glyph" aria-hidden="true">&#xE921;</span>{:else}<i class="ph ph-minus text-lg" aria-hidden="true"></i>{/if}
-        </button>
-        <button
-          class="flex w-[46px] items-center justify-center text-white hover:bg-white/10"
-          title={maximized ? 'Restore' : 'Maximize'}
-          aria-label={maximized ? 'Restore' : 'Maximize'}
-          onclick={toggleMaximize}
-        >
-          {#if windows}<span class="win-glyph" aria-hidden="true">{maximized ? '\uE923' : '\uE922'}</span>{:else}<i class="{maximized ? 'ph ph-copy' : 'ph ph-square'} text-sm" aria-hidden="true"></i>{/if}
-        </button>
-        <button
-          class="flex w-[46px] items-center justify-center text-white hover:bg-[#c42b1c]"
-          title="Close"
-          aria-label="Close"
-          onclick={close}
-        >
-          {#if windows}<span class="win-glyph" aria-hidden="true">&#xE8BB;</span>{:else}<i class="ph ph-x text-xl" aria-hidden="true"></i>{/if}
-        </button>
-      </div>
+      {@render captions(controlLayout.right)}
     {/if}
   </div>
 </header>
 
-{#if mainMenuOpen && !minimal}
-  <AppMenu anchor={mainMenuAnchor} label="Main menu" branded footer={`v${__APP_VERSION__} · ${releaseCodename(__APP_VERSION__)}`}
-    onclose={() => mainMenuOpen = false}
-    items={[
-      { label: 'Settings', icon: 'ph ph-gear-six', action: () => go('settings') },
-      { label: 'Your profile', icon: 'ph ph-user', avatar: profile?.avatarUrl, disabled: !profileTarget, action: showProfile },
-      { label: 'Quit Cherry', icon: 'ph ph-sign-out', disabled: !isDesktop(), action: close },
-    ]} />
-{/if}
-
 <style>
+  .cherry-topbar-back-slot { width: 40px; justify-content: flex-end; }
+  header.has-left-controls .cherry-topbar-back-slot { width: 32px; }
+  .caption-close:hover { color: white; }
+
   header.macos {
-    padding-left: var(--mac-titlebar-inset);
     padding-right: 16px;
     gap: 16px;
   }
-  header.macos .cherry-topbar-navigation { gap: 12px; }
+  header.macos .cherry-topbar-navigation { gap: 8px; }
   header.macos .cherry-topbar-identity { gap: 10px; }
   header.macos .cherry-topbar-actions { gap: 12px; }
 </style>

@@ -30,7 +30,7 @@ import type {
 import { signingCookieHeader, accountIndex, authIdentity } from './authContext';
 import { isLikedPlaylist } from '$lib/core/models';
 import { CherryError, isRegionRestricted } from '$lib/core/errors';
-import { cacheGet, cacheSet, cached } from '$lib/infra/storage/cache';
+import { cacheGet, cacheSet, cacheRevision, cached } from '$lib/infra/storage/cache';
 import { mapAlbum, mapArtistRef, mapCardShelfResult, mapPlaylist, mapTrack } from './mappers';
 import { scanAddablePlaylists, scanLibrary } from './rawLibrary';
 import { scanHome, scanPageHeader, homeContinuation, scanHomeFilters, isNoiseSegment, type HomeSection, type HomeFilter } from './rawHome';
@@ -740,7 +740,7 @@ async function runLibraryPlaylists(session: AuthSession, onPage?: (playlists: Pl
 /** Real account identity + avatar for the top bar (cookie sessions only). */
 export async function getAccountProfile(session: AuthSession): Promise<AccountProfile | null> {
   const channels = await getChannels(session);
-  const active = channels.find((c) => c.pageId === getActiveChannel());
+  const active = channels.find(c => (c.pageId ?? '') === getActiveChannel());
   return active ?? channels[0] ?? null;
 }
 
@@ -787,7 +787,7 @@ async function runGetChannels(session: AuthSession): Promise<AccountProfile[]> {
     const tokens: AnyNode[] = item?.endpoint?.payload?.supportedTokens ?? [];
     const pageId: string | undefined = tokens
       .map((t) => t?.pageIdToken?.pageId)
-      .find((id) => typeof id === 'string');
+      .find((id) => typeof id === 'string' && id.length > 0);
     profiles.push({
       name: String(name),
       handle: handle ? String(handle) : undefined,
@@ -1074,6 +1074,7 @@ export async function streamCollectionTracks(
   onPage: (tracks: Track[], done: boolean) => void,
 ): Promise<Track[]> {
   const key = `collection:${getActiveChannel()}:${browseId}`;
+  const revision = cacheRevision();
   const cachedTracks = cacheGet<Track[]>(key);
   if (cachedTracks) {
     onPage(cachedTracks, true);
@@ -1114,7 +1115,7 @@ export async function streamCollectionTracks(
   }
 
   emit(true);
-  cacheSet(key, all, TTL.playlist);
+  if (!container?.has_continuation && revision === cacheRevision()) cacheSet(key, all, TTL.playlist);
   return all;
 }
 

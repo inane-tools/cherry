@@ -37,6 +37,9 @@ const PERSIST_PRIORITY = /^(collection:|library:|channels:)/;
 
 const memory = new Map<string, MemoryEntry>();
 const inflight = new Map<string, Promise<unknown>>();
+let revision = 0;
+/** Progressive loaders must not repopulate a cache cleared during their request. */
+export const cacheRevision = () => revision;
 
 function now(): number {
   return Date.now();
@@ -183,6 +186,7 @@ export function cached<T>(key: string, ttlMs: number, loader: () => Promise<T>, 
 
 /** Drop cached entries, optionally only those under a prefix. */
 export function cacheClear(prefix = ''): void {
+  revision++;
   // Detach old loaders too: a refresh must issue a new request, and an old
   // response must not repopulate entries that were explicitly cleared.
   for (const key of [...inflight.keys()]) {

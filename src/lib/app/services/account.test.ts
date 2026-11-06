@@ -8,7 +8,7 @@ vi.mock('./auth', async () => {
 });
 vi.mock('./settings', async () => {
   const { writable } = await import('svelte/store');
-  return { settingsStore: writable({ channelPageId: 'a' }), updateSettings: vi.fn(async () => undefined) };
+  return { settingsStore: writable({ channelPageId: 'a', channelSelectionExplicit: false }), updateSettings: vi.fn(async () => undefined) };
 });
 vi.mock('$lib/infra/ytmusic/InnertubeClient', () => ({
   getChannels: vi.fn(), pickPrimaryChannel: vi.fn(async () => null),
@@ -25,7 +25,7 @@ const profile: AccountProfile = { name: 'Channel A', pageId: 'a', isChannel: tru
 
 beforeEach(() => {
   vi.clearAllMocks();
-  settingsStore.update(settings => ({ ...settings, channelPageId: 'a' }));
+  settingsStore.update(settings => ({ ...settings, channelPageId: 'a', channelSelectionExplicit: false }));
   authStore.set(null);
   authStore.set(session);
   vi.mocked(api.getChannels).mockResolvedValue([profile]);
@@ -96,4 +96,31 @@ it('reinitializes channels when the account slot changes with the same cookies',
  authStore.set({...session,accountIndex:1});
  expect(get(service.activeChannelStore)).toBeNull();
  expect(get(service.channelsStore)).toEqual([]);
+});
+
+it('switches to the personal channel when its delegated page id is absent', async () => {
+  const personal: AccountProfile = { name: 'Main account', isChannel: true };
+  service.channelsStore.set([profile, personal]);
+  await service.selectChannel('');
+  expect(get(service.activeChannelStore)).toEqual(personal);
+  expect(api.setActiveChannel).toHaveBeenLastCalledWith('');
+  expect(updateSettings).toHaveBeenLastCalledWith({ channelPageId: '', channelSelectionExplicit: true });
+});
+it('keeps an explicit personal selection on forced refresh and session restore', async () => {
+  const personal: AccountProfile = { name: 'Main account', isChannel: true };
+  settingsStore.update(settings => ({ ...settings, channelPageId: '', channelSelectionExplicit: true }));
+  vi.mocked(api.getChannels).mockResolvedValue([profile, personal]);
+  await service.initChannel(true);
+  expect(get(service.activeChannelStore)).toEqual(personal);
+  authStore.set(null); authStore.set(session);
+  await service.initChannel();
+  expect(get(service.activeChannelStore)).toEqual(personal);
+  expect(api.pickPrimaryChannel).not.toHaveBeenCalled();
+});
+it('still auto-detects a channel on a fresh installation', async () => {
+  settingsStore.update(settings => ({ ...settings, channelPageId: '', channelSelectionExplicit: false }));
+  vi.mocked(api.pickPrimaryChannel).mockResolvedValueOnce(profile);
+  await service.initChannel();
+  expect(api.pickPrimaryChannel).toHaveBeenCalledWith(session);
+  expect(get(service.activeChannelStore)).toEqual(profile);
 });

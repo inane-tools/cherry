@@ -36,9 +36,22 @@
   $: if (entries) queueMicrotask(measure);
   function watchSize(node: HTMLDivElement) {
     if (presentation !== 'carousel') return;
-    const observer = new ResizeObserver(measure);
+    const wrapper = node.parentElement!;
+    const shell = node.closest('.cherry-shell');
+    const update = () => {
+      if (shell) {
+        const bounds = shell.getBoundingClientRect();
+        const rect = wrapper.getBoundingClientRect();
+        node.style.setProperty('--cherry-carousel-left-bleed', `${Math.max(0, rect.left - bounds.left)}px`);
+        node.style.setProperty('--cherry-carousel-right-bleed', `${Math.max(0, bounds.right - rect.right)}px`);
+      }
+      measure();
+    };
+    const observer = new ResizeObserver(update);
     observer.observe(node);
-    measure();
+    observer.observe(wrapper);
+    if (shell) observer.observe(shell);
+    update();
     return { destroy: () => observer.disconnect() };
   }
 
@@ -46,7 +59,10 @@
     if (!scroller) return;
     const first = scroller.firstElementChild as HTMLElement | null;
     const step = (first?.offsetWidth ?? 160) + (layout === 'songs' ? 16 : 12);
-    const count = Math.max(1, Math.floor(scroller.clientWidth / step));
+    const styles = getComputedStyle(scroller);
+    const queueInset = Number.parseFloat(styles.getPropertyValue('--cherry-carousel-right-bleed') || styles.getPropertyValue('--cherry-queue-inset')) || 0;
+    const sidebarInset = Number.parseFloat(styles.getPropertyValue('--cherry-carousel-left-bleed') || styles.getPropertyValue('--cherry-sidebar-inset')) || 0;
+    const count = Math.max(1, Math.floor((scroller.clientWidth - queueInset - sidebarInset) / step));
     scroller.scrollBy({ left: direction * step * count, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
   async function nextPage() {
@@ -55,8 +71,8 @@
   }
 </script>
 
-<!-- Bleed to the right edge and compensate for cards' inner padding on the
-     left, keeping artwork aligned with headings while retaining hover padding. -->
+<!-- Extend the scroll viewport behind the floating rails; leading/trailing
+     padding keeps the first and last cards accessible beside the panels. -->
 <div class="group/carousel relative {presentation === 'carousel' ? '-mr-6' : '-mr-2'} {layout === 'buttons' ? '' : '-ml-2'}">
   {#if presentation === 'carousel' && (!atStart || !atEnd || onLoadMore)}
   <button
@@ -78,6 +94,11 @@
   {/if}
 
   <div bind:this={scroller} use:watchSize onscroll={measure}
+    style:width={presentation === 'carousel' ? 'calc(100% + var(--cherry-carousel-right-bleed, var(--cherry-queue-inset, 0px)) + var(--cherry-carousel-left-bleed, var(--cherry-sidebar-inset, 0px)))' : undefined}
+    style:margin-left={presentation === 'carousel' ? 'calc(-1 * var(--cherry-carousel-left-bleed, var(--cherry-sidebar-inset, 0px)))' : undefined}
+    style:padding-left={presentation === 'carousel' ? 'var(--cherry-carousel-left-bleed, var(--cherry-sidebar-inset, 0px))' : undefined}
+    style:scroll-padding-left={presentation === 'carousel' ? 'var(--cherry-carousel-left-bleed, var(--cherry-sidebar-inset, 0px))' : undefined}
+    style:padding-right={presentation === 'carousel' ? 'calc(24px + var(--cherry-carousel-right-bleed, var(--cherry-queue-inset, 0px)))' : undefined}
     data-page-scroll-key={presentation === 'carousel' ? scrollKey : undefined}
     style:grid-template-rows={presentation === 'carousel' && rowLayout ? `repeat(${Math.max(1, Math.min(6, rows))}, minmax(0, auto))` : undefined}
     style:grid-template-columns={presentation === 'grid' ? 'repeat(auto-fill, minmax(min(100%, 9rem), 1fr))' : undefined}

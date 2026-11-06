@@ -5,6 +5,31 @@ import type { CarouselEntry } from '../../src/lib/ui/components/carouselTypes';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('pages by the unobstructed width when carousels bleed to both window edges', async () => {
+  let resize = () => {};
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  const target = document.createElement('div'); target.className = 'cherry-shell'; document.body.append(target);
+  target.getBoundingClientRect = () => ({ left: 0, right: 1500 } as DOMRect);
+  const entries: CarouselEntry[] = Array.from({ length: 12 }, (_, index) => ({ key: `s:${index}`, title: `Song ${index}`, kind: 'song', thumbnails: [] }));
+  const component = mount(Carousel, { target, props: { entries, onSelect: vi.fn(), onPlay: vi.fn() } });
+  try {
+    await tick();
+    const viewport = target.querySelector<HTMLElement>('.cherry-carousel')!;
+    viewport.parentElement!.getBoundingClientRect = () => ({ left: 312, right: 1180 } as DOMRect);
+    Object.defineProperty(viewport, 'clientWidth', { value: 1500 });
+    Object.defineProperty(viewport, 'scrollWidth', { value: 2400 });
+    Object.defineProperty(viewport.firstElementChild, 'offsetWidth', { value: 160 });
+    viewport.scrollBy = vi.fn();
+    resize(); await tick();
+    target.querySelector<HTMLButtonElement>('[aria-label="Scroll right"]')!.click();
+    expect(viewport.scrollBy).toHaveBeenLastCalledWith({ left: 860, behavior: 'auto' });
+    viewport.parentElement!.getBoundingClientRect = () => ({ left: 88, right: 1500 } as DOMRect);
+    resize(); await tick();
+    target.querySelector<HTMLButtonElement>('[aria-label="Scroll right"]')!.click();
+    expect(viewport.scrollBy).toHaveBeenLastCalledWith({ left: 1376, behavior: 'auto' });
+  } finally { await unmount(component); target.remove(); }
+});
+
 it.each(['cards', 'songs', 'buttons'] as const)('opens context menus in the %s layout without triggering selection', async layout => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   const target = document.createElement('div'); document.body.appendChild(target);
@@ -44,7 +69,7 @@ it.each(['grid', 'list'] as const)('keeps open, play and context actions in %s c
   } finally { await unmount(component); target.remove(); }
 });
 
-it('keeps carousel paging on the arrows with no scrollbar or manual scroll viewport', async () => {
+it.each([[0, 0], [320, 0], [0, 72], [320, 240]])('pages through the accessible carousel width with %ipx queue and %ipx sidebar', async (queueInset, sidebarInset) => {
   let resize = () => {};
   vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
   const target = document.createElement('div'); document.body.append(target);
@@ -53,8 +78,10 @@ it('keeps carousel paging on the arrows with no scrollbar or manual scroll viewp
   try {
     await tick();
     const viewport = target.querySelector<HTMLElement>('.cherry-carousel')!;
-    Object.defineProperty(viewport, 'clientWidth', { value: 400 });
-    Object.defineProperty(viewport, 'scrollWidth', { value: 1000 });
+    viewport.style.setProperty('--cherry-queue-inset', `${queueInset}px`);
+    viewport.style.setProperty('--cherry-sidebar-inset', `${sidebarInset}px`);
+    Object.defineProperty(viewport, 'clientWidth', { value: 400 + queueInset + sidebarInset });
+    Object.defineProperty(viewport, 'scrollWidth', { value: 1000 + queueInset + sidebarInset });
     Object.defineProperty(viewport.firstElementChild, 'offsetWidth', { value: 160 });
     viewport.scrollBy = vi.fn();
     resize(); await tick();

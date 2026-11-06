@@ -4,7 +4,7 @@
   import { artwork } from '$lib/ui/actions/artwork';
   import { preloadArtwork } from '$lib/ui/actions/preloadArtwork';
   import { playerStore, toggle, next, prev, seekTo, setVolume, setMuted, toggleShuffle } from '$lib/app/services/player';
-  import { shuffleMode, upNext } from '$lib/app/services/queue';
+  import { currentItem, shuffleMode, upNext } from '$lib/app/services/queue';
   import { bestThumbnail, hiResThumbnail, thumbnailSources, expandedArtworkSources, trackDisplayArtists, type Track } from '$lib/core/models';
   import { openContextMenu } from '$lib/app/services/contextMenu';
   import { trackMenu } from '$lib/app/services/menus';
@@ -22,6 +22,7 @@
   import QueueHeader from './QueueHeader.svelte';
   import RepeatButton from '$lib/ui/components/RepeatButton.svelte';
   import { lyricsStore } from '$lib/app/services/lyrics';
+  import { createLyricsPrompt } from '$lib/app/services/lyricsPrompt';
   import LyricsView from '$lib/ui/components/LyricsView.svelte';
   import PlaybackExtras from '$lib/ui/components/PlaybackExtras.svelte';
   import VideoControls from '$lib/ui/components/VideoControls.svelte';
@@ -29,12 +30,19 @@
   import PlaybackIcon from '$lib/ui/components/PlaybackIcon.svelte';
   import SleepTimerButton from '$lib/ui/components/SleepTimerButton.svelte';
 
+  import { compactPlayerHeight, closeSidebarDrawer } from '$lib/app/services/layout';
+
   let upNextOpen = false;
   let volOpen = false;
-  let compactPlayerHeight = 88;
-  const COMPACT_PLAYER_INSET = 16;
+  const lyricsPrompt = createLyricsPrompt();
+  const untimedPromptVisible = lyricsPrompt.visible;
+  $: lyricsPrompt.update($currentItem?.queueId ?? st.track?.videoId ?? '',
+    !$playerExpanded && !$videoMode && $settingsStore.lyricsEnabled
+    && $lyricsStore.status === 'ready' && !!$lyricsStore.data && !$lyricsStore.data.synced);
+  onDestroy(() => lyricsPrompt.destroy());
+  const COMPACT_PLAYER_INSET = 8;
   function measureCompactPlayer(node: HTMLElement) {
-    const measure = () => { compactPlayerHeight = node.offsetHeight; };
+    const measure = () => { compactPlayerHeight.set(node.offsetHeight); };
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     measure();
@@ -268,6 +276,7 @@
   }
 
   function expand() {
+    closeSidebarDrawer();
     upNextOpen = false;
     playerExpanded.set(true);
   }
@@ -288,11 +297,9 @@
 </div>
 
 {#if $playerExpanded}
-  <!-- Full-screen now-playing card. It is a floating card *below* the top bar
-       (never underneath it) over a dimmed content column, so the sidebar and top
-       bar stay accessible. -->
+  <!-- The expanded card sits below the full-window title bar. -->
   <div
-    class="absolute inset-0 z-20 bg-scrim/40 backdrop-blur-sm"
+    class="absolute inset-x-0 bottom-0 top-12 z-20 bg-scrim/40 backdrop-blur-sm"
     in:fade={{ duration: 150 }}
     out:fade={{ duration: 150 }}
   ></div>
@@ -573,10 +580,10 @@
   <footer
     transition:compactFly
     use:measureCompactPlayer
-    class="compact-player-shell cherry-playerbar pointer-events-auto absolute inset-x-3 z-30 rounded-3xl"
+    class="compact-player-shell cherry-playerbar pointer-events-auto absolute inset-x-2 z-30 rounded-2xl"
     style:bottom={`${COMPACT_PLAYER_INSET}px`}
   >
-    {#if !$videoMode && $settingsStore.lyricsEnabled && st.track && $lyricsStore.status === 'ready' && $lyricsStore.data}
+    {#if !$videoMode && $settingsStore.lyricsEnabled && st.track && $lyricsStore.status === 'ready' && $lyricsStore.data && ($lyricsStore.data.synced || $untimedPromptVisible)}
       <div transition:fly={{ y: 8, duration: 180 }} class="absolute bottom-full left-1/2 mb-2 w-max max-w-[min(36rem,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-[var(--color-popover)] shadow-lg"><LyricsView /></div>
     {/if}
     <div class="compact-player-content">
@@ -739,7 +746,7 @@
 {/if}
 
 <!-- Queue panel, shared by the bar and the full-screen card. -->
-<UpNextPanel open={upNextOpen && !$playerExpanded} bottom={compactPlayerHeight + COMPACT_PLAYER_INSET + 8} onClose={() => (upNextOpen = false)} />
+<UpNextPanel open={upNextOpen && !$playerExpanded} bottom={$compactPlayerHeight + COMPACT_PLAYER_INSET + 8} onClose={() => (upNextOpen = false)} />
 </div>
 
 <style>

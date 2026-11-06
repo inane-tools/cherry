@@ -9,6 +9,7 @@
     openArtist,
   } from '$lib/app/services/catalog';
   import { pageStore } from '$lib/app/services/navigation';
+  import { playlistAccountRevision } from '$lib/app/services/playlistAccount';
   import { playTracks, playTracksShuffled } from '$lib/app/services/player';
   import { shuffleMode } from '$lib/app/services/queue';
   import TrackList from '$lib/ui/components/TrackList.svelte';
@@ -38,8 +39,10 @@
 
   // Load once per album (Back restores the entity without a reload).
   let loadedId: string | null = null;
-  $: if (album && album.browseId !== loadedId) {
+  let loadedAccount = -1;
+  $: if (album && (album.browseId !== loadedId || $playlistAccountRevision !== loadedAccount)) {
     loadedId = album.browseId;
+    loadedAccount = $playlistAccountRevision;
     void loadAlbumPage(album);
   }
 

@@ -23,7 +23,7 @@ const { authStore } = await import('./auth');
 const { initChannel } = await import('./account');
 const api = await import('$lib/infra/ytmusic/InnertubeClient');
 const service = await import('./playlists');
-const { clearQueue, queueItems } = await import('./queue');
+const { clearQueue, setQueue, queueItems } = await import('./queue');
 const { playTracks } = await import('./player');
 const session: AuthSession = { kind: 'cookie', cookie: 'SID=account', savedAt: 0 };
 const playlist = (title: string): Playlist => ({ title, browseId: title, thumbnails: [] });
@@ -384,4 +384,77 @@ it('keeps known playlist artwork when opening a queue source without artwork', a
   const newer = [{ url: 'https://image.test/new-cover' }];
   service.openPlaylist({ ...known, thumbnails: newer });
   expect(get(pageStore)).toMatchObject({ view: 'playlist', entity: { thumbnails: newer } });
+});
+
+it('does not start a late playlist response over a newer queue', async () => {
+  let onPage!: (tracks: Track[], done: boolean) => void;
+  const stream = deferred<Track[]>();
+  vi.mocked(api.streamCollectionTracks).mockImplementationOnce((_id, _session, callback) => {
+    onPage = callback; return stream.promise;
+  });
+  const loading = service.playPlaylist(playlist('slow'));
+  await settle();
+  const newer: Track = { videoId: 'newer', title: 'Newer', artists: [], thumbnails: [] };
+  setQueue([newer]);
+  onPage([{ ...newer, videoId: 'old' }], true);
+  stream.resolve([]); await loading;
+  expect(playTracks).not.toHaveBeenCalled();
+  expect(get(queueItems).map(item => item.track.videoId)).toEqual(['newer']);
+});
+it('keeps the newest playlist play request when responses arrive out of order', async () => {
+  const callbacks: Array<(tracks: Track[], done: boolean) => void> = [];
+  const streams = [deferred<Track[]>(), deferred<Track[]>()];
+  vi.mocked(api.streamCollectionTracks).mockImplementation((_id, _session, callback) => {
+    callbacks.push(callback); return streams[callbacks.length - 1].promise;
+  });
+  const first = service.playPlaylist(playlist('old')); await settle();
+  const second = service.playPlaylist(playlist('new')); await settle();
+  const song: Track = { videoId: 'new', title: 'New', artists: [], thumbnails: [] };
+  callbacks[1]([song], true); streams[1].resolve([song]); await second;
+  callbacks[0]([{ ...song, videoId: 'old' }], true); streams[0].resolve([]); await first;
+  expect(playTracks).toHaveBeenCalledExactlyOnceWith([song], 0, expect.objectContaining({ title: 'new' }));
+});
+
+it('keeps the latest confirmed song through stale reads, reopening and a second addition', async () => {
+  const target = { ...playlist('VLLAG'), trackCount: 1 };
+  const song = (videoId: string): Track => ({ videoId, title: videoId, artists: [], thumbnails: [] });
+  const old = song('old'), first = song('first'), second = song('second');
+  service.playlistStore.set([target]);
+  service.openPlaylistStore.set(target); service.openPlaylistTracks.set([old]);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([old]);
+  await service.refreshEditedPlaylist(target, [first]);
+  expect(get(service.openPlaylistTracks).map(t => t.videoId)).toEqual(['old', 'first']);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([old, first]);
+  await service.refreshEditedPlaylist(target, [second]);
+  expect(get(service.openPlaylistTracks).map(t => t.videoId)).toEqual(['old', 'first', 'second']);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([old, first]);
+  await service.loadOpenPlaylist(target);
+  expect(get(service.openPlaylistTracks).map(t => t.videoId)).toEqual(['old', 'first', 'second']);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([old, first, second]);
+  await service.loadOpenPlaylist(target);
+  expect(get(service.openPlaylistTracks)).toHaveLength(3);
+});
+it('keeps an addition made while another playlist was open until the target catches up', async () => {
+  const target = playlist('CLOSED');
+  const added: Track = { videoId: 'new', title: 'New', artists: [], thumbnails: [] };
+  service.openPlaylistStore.set(playlist('OTHER')); service.openPlaylistTracks.set([]);
+  vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce(null);
+  await service.refreshEditedPlaylist(target, [added]);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([]);
+  await service.loadOpenPlaylist(target);
+  expect(get(service.openPlaylistTracks)).toEqual([added]);
+  expect(get(service.openPlaylistError)).toBeNull();
+});
+it('refreshing playlists also refreshes the open playlist contents without changing playback', async () => {
+  const { pageStore } = await import('./navigation');
+  const target = playlist('REFRESH');
+  const added: Track = { videoId: 'new', title: 'New', artists: [], thumbnails: [] };
+  pageStore.set({ view: 'playlist', entity: target });
+  service.openPlaylistStore.set(target); service.openPlaylistTracks.set([]);
+  vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([added]);
+  const queue = get(queueItems);
+  await service.refreshLibrary();
+  expect(api.streamCollectionTracks).toHaveBeenCalledWith(target.browseId, session, expect.any(Function));
+  expect(get(service.openPlaylistTracks)).toEqual([added]);
+  expect(get(queueItems)).toBe(queue);
 });

@@ -9,9 +9,9 @@ import {
   type AlbumPage,
   type ArtistPage,
 } from '$lib/infra/ytmusic/InnertubeClient';
-import { authStore } from './auth';
 import { openPage, pageStore } from './navigation';
 import { notify } from './contextMenu';
+import { capturePlaylistAccount } from './playlistAccount';
 
 export type { AlbumPage, ArtistPage };
 
@@ -38,33 +38,40 @@ export function openAlbum(album: Album): void {
 }
 
 export async function openTrackAlbum(track: Track): Promise<void> {
+  const account = capturePlaylistAccount();
   try {
-    const album = track.album?.browseId ? track.album : await getTrackAlbum(track.videoId, get(authStore));
+    const album = track.album?.browseId ? track.album : await getTrackAlbum(track.videoId, account.session);
+    if (!account.current()) return;
     if (!album?.browseId) { notify('No album available for this song'); return; }
     // A song's performers/composers need not be the album's credited artist.
     // Let the album response supply that line rather than showing a wrong hint.
     openAlbum({ browseId: album.browseId, title: album.name, artists: [], thumbnails: track.thumbnails });
-  } catch { notify('Could not load the album'); }
+  } catch { if (account.current()) notify('Could not load the album'); }
 }
 
 let artistSeq = 0;
 
 export async function loadArtistPage(artist: ArtistRef): Promise<void> {
   const id = ++artistSeq;
+  const account = capturePlaylistAccount();
+  const current = () => {
+    const page = get(pageStore);
+    return id === artistSeq && account.current() && page.view === 'artist' && page.entity.browseId === artist.browseId;
+  };
   openArtistStore.set(artist);
   artistPageStore.set(null);
   artistError.set(null);
   artistLoading.set(true);
   try {
-    const page = await getArtistPage(artist.browseId ?? '', get(authStore));
-    if (id !== artistSeq) return;
+    const page = await getArtistPage(artist.browseId ?? '', account.session);
+    if (!current()) return;
     artistPageStore.set(page);
     if (page?.thumbnails?.length) {
       pageStore.update(current => current.view === 'artist' && current.entity.browseId === artist.browseId
         ? { ...current, entity: { ...current.entity, thumbnails: page.thumbnails } } : current);
     }
   } catch (e) {
-    if (id === artistSeq) artistError.set(e instanceof Error ? e.message : String(e));
+    if (current()) artistError.set(e instanceof Error ? e.message : String(e));
   } finally {
     if (id === artistSeq) artistLoading.set(false);
   }
@@ -74,13 +81,18 @@ let albumSeq = 0;
 
 export async function loadAlbumPage(album: Album): Promise<void> {
   const id = ++albumSeq;
+  const account = capturePlaylistAccount();
+  const current = () => {
+    const page = get(pageStore);
+    return id === albumSeq && account.current() && page.view === 'album' && page.entity.browseId === album.browseId;
+  };
   openAlbumStore.set(album);
   albumPageStore.set(null);
   albumError.set(null);
   albumLoading.set(true);
   try {
-    const page = await getAlbumPage(album.browseId, get(authStore));
-    if (id !== albumSeq) return;
+    const page = await getAlbumPage(album.browseId, account.session);
+    if (!current()) return;
     albumPageStore.set(page);
     const resolved: Album = { ...album, title: page.title || album.title,
       artists: page.artists, year: page.year,
@@ -89,7 +101,7 @@ export async function loadAlbumPage(album: Album): Promise<void> {
     pageStore.update(current => current.view === 'album' && current.entity.browseId === album.browseId
       ? { ...current, entity: resolved } : current);
   } catch (e) {
-    if (id === albumSeq) albumError.set(e instanceof Error ? e.message : String(e));
+    if (current()) albumError.set(e instanceof Error ? e.message : String(e));
   } finally {
     if (id === albumSeq) albumLoading.set(false);
   }

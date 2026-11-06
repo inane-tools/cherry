@@ -4,6 +4,40 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-11-06
+
+Nemuro.
+
+### Changed
+
+- The title bar spans the full window. The sidebar is split into floating
+  navigation and library panels, and the floating player spans the full bottom edge.
+- Home and Explore carousels extend to the window edges behind both floating
+  sidebars. The sidebar and sidebar queue backgrounds no longer use blur.
+- Back navigation uses a regular left inset; macOS traffic lights and left-aligned
+  Linux controls retain their own space.
+- The expanded sidebar has a separate account section below the library, with
+  Settings accessible from the top-right corner.
+- Expanded and drawer navigation share an icon row with Search, Home and Explore.
+  New scrolls with the library in every sidebar layout. Sidebar fades follow actual overflow and resize
+  with the window, streamed playlists and folder expansion.
+- The compact player’s untimed-lyrics prompt fades away after five seconds for
+  each song. Lyrics remain accessible from the lyrics button.
+- Linux caption buttons follow GNOME/GTK or KDE button placement and order when
+  those desktop preferences are available.
+
+### Fixed
+
+- Settings and Search block sidebar resizing and cancel an active resize drag.
+- Confirmed playlist additions stay visible while YouTube's reads catch up,
+  including default-playlist saves, the playlist picker, bulk adds and new playlists.
+  Refresh also reloads the open playlist; older streams cannot restore invalidated caches.
+- Switching to a main account without a delegated brand ID works and stays selected
+  after refreshing the library or restarting. Account-switch failures are shown in Settings.
+- Late album/artist responses cannot repopulate a page after leaving or switching accounts.
+  Open album and artist pages reload for the selected account.
+- Slow playlist playback requests cannot replace a newer queue or playlist selection.
+
 ## [2.1.1] — 2026-10-31
 
 Mombetsu.

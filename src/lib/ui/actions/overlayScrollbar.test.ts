@@ -41,6 +41,15 @@ function pointer(target: EventTarget, type: string, x: number, y: number, id = 1
   Object.defineProperty(event, 'pointerId', { value: id }); target.dispatchEvent(event);
 }
 
+it('keeps the page scrollbar accessible beside a floating panel and restores it when closed', () => {
+  const f = fixture();
+  f.dimensions.width = 1000;
+  f.action.update({ rightInset: 320 }); flush();
+  expect(f.track.style.left).toBe('678px');
+  f.action.update({ rightInset: 0 }); flush();
+  expect(f.track.style.left).toBe('998px');
+});
+
 it('keeps its geometry outside the scrolling content and respects the top bar inset', () => {
   const f = fixture({ topInset: 48 });
   expect(f.node.querySelector('.cherry-sb-thumb')).toBeNull();

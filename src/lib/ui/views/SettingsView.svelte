@@ -321,8 +321,13 @@
   $: initial = name.charAt(0).toUpperCase() || 'Y';
 
   async function chooseChannel(pageId: string) {
-    await selectChannel(pageId);
-    await reloadAll();
+    if (busy) return;
+    busy = true; error = ''; message = '';
+    try {
+      await selectChannel(pageId);
+      await reloadAll();
+    } catch (e) { error = e instanceof Error ? e.message : String(e); }
+    finally { busy = false; }
   }
 
   function stopPolling() {
@@ -567,8 +572,9 @@
           <div class="flex flex-col gap-0.5">
             {#each $channelsStore.filter((c) => c.isChannel) as channel}
               <button
-                class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors {$activeChannelStore?.pageId ===
-                channel.pageId
+                disabled={busy}
+                class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors disabled:opacity-50 {$activeChannelStore && ($activeChannelStore.pageId ?? '') ===
+                (channel.pageId ?? '')
                   ? 'bg-[var(--color-accent)]/15 text-white'
                   : 'text-zinc-400 hover:bg-white/5'}"
                 onclick={() => chooseChannel(channel.pageId ?? '')}
@@ -581,7 +587,7 @@
                   {/if}
                 </span>
                 <span class="min-w-0 flex-1 truncate">{channel.name}</span>
-                {#if $activeChannelStore?.pageId === channel.pageId}
+                {#if $activeChannelStore && ($activeChannelStore.pageId ?? '') === (channel.pageId ?? '')}
                   <i class="ph ph-check text-sm text-[var(--color-accent2)]"></i>
                 {/if}
               </button>

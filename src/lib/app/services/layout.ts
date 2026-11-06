@@ -14,6 +14,8 @@ export const layoutWidth = writable(0);
 export const sidebarDrawerOpen = writable(false);
 /** Whether the player bar is expanded into the bottom card. */
 export const playerExpanded = writable(false);
+/** Measured compact player height, shared by both floating rails. */
+export const compactPlayerHeight = writable(88);
 export const expandedPlayerPanel = writable<'art' | 'lyrics' | 'queue'>('art');
 
 export function closeSidebarDrawer(): void {
