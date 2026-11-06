@@ -23,8 +23,8 @@ Nemuro.
   with the window, streamed playlists and folder expansion.
 - The compact player’s untimed-lyrics prompt fades away after five seconds for
   each song. Lyrics remain accessible from the lyrics button.
-- Linux caption buttons follow GNOME/GTK or KDE button placement and order when
-  those desktop preferences are available.
+- The full-width title bar respects native Linux controls on either side and
+  macOS traffic lights, including changes to app scaling and control visibility.
 
 ### Fixed
 
@@ -37,6 +37,28 @@ Nemuro.
 - Late album/artist responses cannot repopulate a page after leaving or switching accounts.
   Open album and artist pages reload for the selected account.
 - Slow playlist playback requests cannot replace a newer queue or playlist selection.
+
+## [2.1.2] — 2026-11-01
+
+Mombetsu.
+
+### Fixed
+
+- Linux titlebar controls use the desktop's button layout and icon theme. Show
+  window controls applies immediately while retaining the page and playback.
+- Linux window corners remain rounded when controls change; maximized and
+  fullscreen windows use square corners.
+- Linux media-player widgets can set shuffle and repeat, with queue settings
+  synchronized back to the desktop through MPRIS.
+- Linux/macOS titlebar spacing accounts for the full left-side control group,
+  sidebar width and UI zoom. The top-right menu remains clickable with the large
+  queue open.
+- Linux/macOS scrolling titlebar blur gains a subtle tint. Expanded sidebars
+  keep the blur over the content column, with a light divider at the sidebar edge.
+  Compact sidebars retain the full-width topbar treatment without a divider.
+
+Windows retains its existing window controls, titlebar styling and media-session
+behavior. A broader titlebar redesign is deferred to the 2.2 series.
 
 ## [2.1.1] — 2026-10-31
 

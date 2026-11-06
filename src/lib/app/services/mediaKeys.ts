@@ -1,7 +1,10 @@
-// OS media actions use Chromium Media Session through the desktop adapter.
+// OS actions use Linux MPRIS or Chromium Media Session through the desktop adapter.
 
 import { listen } from '$lib/desktop/event';
 import { next, prev, toggle, playerStore, seekTo, setVolume } from './player';
+import { setShuffle, setRepeat } from './queue';
+import { updateSettings } from './settings';
+import type { RepeatMode } from '$lib/core/models';
 import { isDesktop } from './platform';
 import { get } from 'svelte/store';
 
@@ -36,6 +39,18 @@ export async function startMediaKeyListener(): Promise<void> {
 
   // Events that carry a payload (the media card's scrubber and volume).
   await Promise.all([
+    ...(window.cherryDesktop?.platform === 'linux' ? [
+    listen<{ shuffle: boolean }>('media-key://shuffle', (event) => {
+      if (typeof event.payload.shuffle !== 'boolean') return;
+      setShuffle(event.payload.shuffle);
+      void updateSettings({ shuffle: event.payload.shuffle });
+    }).catch(() => undefined),
+    listen<{ repeat: RepeatMode }>('media-key://repeat', (event) => {
+      if (!['off', 'all', 'one'].includes(event.payload.repeat)) return;
+      setRepeat(event.payload.repeat);
+      void updateSettings({ repeat: event.payload.repeat });
+    }).catch(() => undefined),
+    ] : []),
     listen<{ positionSecs: number }>('media-key://seek', (event) => {
       seekTo(event.payload.positionSecs);
     }).catch(() => undefined),

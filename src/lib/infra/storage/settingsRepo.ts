@@ -47,7 +47,7 @@ export interface CherrySettings {
   compactSidebar: boolean;
   /** Keep the queue in a right sidebar when there is room. */
   queueSidebar: boolean;
-  /** Show caption buttons, using GTK buttons on Linux and native decorations on macOS. */
+  /** Show caption buttons, using system-themed controls on Linux and native decorations on macOS. */
   windowControls: boolean;
   /** Width of the expanded sidebar in pixels (user-resizable by dragging). */
   sidebarWidth: number;

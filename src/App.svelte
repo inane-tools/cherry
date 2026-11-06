@@ -21,7 +21,8 @@
   import { startShortcuts } from '$lib/app/services/shortcuts';
   import { openDevTools } from '$lib/app/services/devtools';
   import { startAppearance } from '$lib/app/services/appearance';
-  import { isMacDesktop } from '$lib/app/services/platform';
+  import { isMacDesktop, isLinuxDesktop } from '$lib/app/services/platform';
+  import { nativeTitlebar, trackNativeTitlebar } from '$lib/app/services/nativeTitlebar';
   import { renderedZoom, startZoom } from '$lib/app/services/zoom';
   import {
     narrowLayout,
@@ -105,6 +106,7 @@
 
   // Fresh pages start at the top; Back/Forward restores feed positions.
   onMount(() => {
+    const stopTitlebar = trackNativeTitlebar();
     const stopLyrics = startLyrics();
     const stopRadio = startRadioRefill();
     const stopUpdates = startUpdateChecks();
@@ -129,6 +131,7 @@
     // Player / navigation shortcuts (Space, arrows, Ctrl+F, …).
     const stopShortcuts = startShortcuts();
     return () => {
+      stopTitlebar();
       stopLyrics();
       stopRadio();
       stopUpdates();
@@ -227,9 +230,11 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions : only prevents the native menu -->
-<div data-page-content use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} class:macos={isMacDesktop()}
+<div data-page-content use:accentWash={{ enabled: !bannerPage }} class="cherry-shell relative isolate flex h-full flex-col text-zinc-100" class:has-page-banner={bannerPage} class:macos={isMacDesktop()} class:native-chrome={isMacDesktop() || isLinuxDesktop()}
   data-sidebar-layout={ready && !signedOut && !$narrowLayout ? ($settingsStore.compactSidebar ? 'compact' : 'expanded') : 'none'}
   style:--cherry-ui-scale={$renderedZoom}
+  style:--native-controls-left={`${$nativeTitlebar.left}px`}
+  style:--native-controls-right={`${$nativeTitlebar.right}px`}
   style:--cherry-player-clearance={`${$compactPlayerHeight + 16}px`}
   oncontextmenu={suppressNativeContextMenu}>
   {#if !launched}

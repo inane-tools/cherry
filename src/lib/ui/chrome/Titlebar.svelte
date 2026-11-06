@@ -1,7 +1,8 @@
 <script lang="ts">
   import { getCurrentWindow } from '$lib/desktop/window';
   import { onMount, tick } from 'svelte';
-  import { isDesktop, isMacDesktop, invokeSafe } from '$lib/app/services/platform';
+  import { isDesktop, isMacDesktop, isLinuxDesktop } from '$lib/app/services/platform';
+  import { nativeTitlebar, trackTitlebarOffset } from '$lib/app/services/nativeTitlebar';
   import { settingsStore } from '$lib/app/services/settings';
   import { activeChannelStore } from '$lib/app/services/account';
   import { back, canGoBack, go, pageStore, type Page } from '$lib/app/services/navigation';
@@ -85,9 +86,9 @@
 
   let windows = typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent);
   let macos = isMacDesktop();
+  let linux = isLinuxDesktop();
   type CaptionButton = 'minimize' | 'maximize' | 'close';
-  let controlLayout: { left: CaptionButton[]; right: CaptionButton[] } = { left: [], right: ['minimize', 'maximize', 'close'] };
-  $: hasLeftControls = $settingsStore.windowControls && (macos || (isDesktop() && controlLayout.left.length > 0));
+  $: hasLeftControls = $settingsStore.windowControls && (macos || (linux && $nativeTitlebar.left > 0));
   let maximized = false;
   onMount(() => {
     let disposed = false;
@@ -97,10 +98,7 @@
       const platform = await window.cherryDesktop?.invoke<string>('desktop_platform');
       windows = platform === 'windows';
       macos = platform === 'macos';
-      if (platform === 'linux') {
-        const layout = await invokeSafe<typeof controlLayout>('window_controls_layout');
-        if (!disposed && layout) controlLayout = layout;
-      }
+      linux = platform === 'linux';
       const win = getCurrentWindow();
       maximized = await win.isMaximized();
       const unlisten = await win.onResized(() => { void win.isMaximized().then(value => { if (!disposed) maximized = value; }); });
@@ -151,17 +149,16 @@
 <!-- svelte-ignore a11y_no_static_element_interactions : header starts a native window drag -->
 <!-- Navigation sits below modal backdrops; account/window controls stay above. -->
 <header
+  use:trackTitlebarOffset
   data-desktop-drag-region
   class:macos
   class:has-left-controls={hasLeftControls}
-  style:padding-left={macos && $settingsStore.windowControls ? 'var(--mac-titlebar-inset)' : undefined}
+  class:linux-native={linux}
+  style:padding-left={hasLeftControls ? macos ? 'var(--mac-titlebar-inset)' : 'calc(var(--native-controls-left, 0px) + 8px)' : undefined}
   class="absolute inset-x-0 top-0 flex h-12 items-center gap-2"
 >
   {#if !minimal && (scrolled || $playerExpanded) && showBackdrop}
     <div class="cherry-topbar-backdrop" aria-hidden="true" transition:fade={{ duration: 160 }}></div>
-  {/if}
-  {#if isDesktop() && !macos && $settingsStore.windowControls && controlLayout.left.length}
-    {@render captions(controlLayout.left)}
   {/if}
   <!-- Navigation and page identity stay together in both sidebar layouts. -->
   {#if !minimal}
@@ -204,7 +201,7 @@
   {/if}
 
   <!-- Right: account + native window controls. -->
-  <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {!macos && (!isDesktop() || !$settingsStore.windowControls || !controlLayout.right.length) ? 'pr-3' : ''}">
+  <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {!macos && (!isDesktop() || !$settingsStore.windowControls || linux) ? 'pr-3' : ''}">
     {#if !minimal}
       {#if $updateStore.phase === 'available' || $updateStore.phase === 'ready'}
         <button
@@ -224,8 +221,8 @@
       {/if}
     {/if}
 
-    {#if isDesktop() && !macos && $settingsStore.windowControls}
-      {@render captions(controlLayout.right)}
+    {#if isDesktop() && windows && $settingsStore.windowControls}
+      {@render captions(['minimize', 'maximize', 'close'])}
     {/if}
   </div>
 </header>
@@ -234,6 +231,7 @@
   .cherry-topbar-back-slot { width: 40px; justify-content: flex-end; }
   header.has-left-controls .cherry-topbar-back-slot { width: 32px; }
   .caption-close:hover { color: white; }
+  header.linux-native { padding-right: var(--native-controls-right, 0px); }
 
   header.macos {
     padding-right: 16px;

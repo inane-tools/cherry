@@ -30,6 +30,7 @@
     "dmg:icon": "node scripts/dmg-icon.mjs"
   },
   "dependencies": {
+    "@jellybrick/mpris-service": "2.2.4",
     "electron-updater": "6.8.9"
   },
   "devDependencies": {
@@ -170,7 +171,7 @@
         "--share=network",
         "--device=dri",
         "--talk-name=org.freedesktop.Notifications",
-        "--own-name=org.mpris.MediaPlayer2.chromium.*",
+        "--own-name=org.mpris.MediaPlayer2.cherry",
         "--filesystem=xdg-run/discord-ipc-0",
         "--filesystem=xdg-run/app/com.discordapp.Discord:ro",
         "--talk-name=org.freedesktop.secrets",

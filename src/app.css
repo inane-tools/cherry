@@ -111,6 +111,7 @@ body {
 /* A shallow wash uses the same restrained accent tint as the player bar. */
 .cherry-shell {
   --shell-wash-strength: 12%;
+  --chrome-tint: color-mix(in srgb, var(--color-popover) 85%, transparent);
   background-color: var(--color-surface);
   background-image: linear-gradient(
     to bottom,
