@@ -5,6 +5,7 @@
   import openaiMark from '$lib/assets/openai.svg?raw';
   import codexMark from '$lib/assets/codex.svg?raw';
   import deepseekMark from '$lib/assets/deepseek.svg?raw';
+  import anthropicMark from '$lib/assets/anthropic.svg?raw';
 
   export let openExternal: (url: string) => Promise<void>;
 
@@ -25,11 +26,17 @@
   <h3 id="contributors-heading" class="text-[14px] font-semibold tracking-tight text-white">Contributors</h3>
   <ul class="mt-3 space-y-4 text-[11px] leading-relaxed text-zinc-400">
     <li class="flex items-center gap-2.5">
-      {@render contributorMarks(githubMark, claudeMark)}
+      {@render contributorMarks(anthropicMark, claudeMark)}
       <div class="min-w-0">
-        <a class="text-[12px] font-semibold text-zinc-300 transition-colors hover:text-white"
-          href="https://github.com/jannuary/cherry" onclick={(event) => follow(event, 'https://github.com/jannuary/cherry')}>Jannuary &amp; Claude</a>
-        <p class="mt-0.5">Audited the original Tauri build of Cherry and committed the sleep timer, repeat button, keyboard shortcuts and tests.</p>
+        <p class="text-[12px] font-semibold text-zinc-300">Claude Code <span class="font-normal text-zinc-400">(Claude Opus 5.5)</span></p>
+        <p class="mt-0.5">Programming since v2.2.1.</p>
+      </div>
+    </li>
+    <li class="flex items-center gap-2.5">
+      {@render contributorMarks(openaiMark, codexMark)}
+      <div class="min-w-0">
+        <p class="text-[12px] font-semibold text-zinc-300">OpenAI Codex <span class="font-normal text-zinc-400">(GPT-6.1 Sol)</span></p>
+        <p class="mt-0.5">Programming from v1.5 to v2.2.</p>
       </div>
     </li>
     <li class="flex items-center gap-2.5">
@@ -40,10 +47,11 @@
       </div>
     </li>
     <li class="flex items-center gap-2.5">
-      {@render contributorMarks(openaiMark, codexMark)}
+      {@render contributorMarks(githubMark, claudeMark)}
       <div class="min-w-0">
-        <p class="text-[12px] font-semibold text-zinc-300">OpenAI Codex <span class="font-normal text-zinc-400">(GPT-6.1 Sol)</span></p>
-        <p class="mt-0.5">Programming since v1.5.</p>
+        <a class="text-[12px] font-semibold text-zinc-300 transition-colors hover:text-white"
+          href="https://github.com/jannuary/cherry" onclick={(event) => follow(event, 'https://github.com/jannuary/cherry')}>Jannuary &amp; Claude</a>
+        <p class="mt-0.5">Audited the original Tauri build of Cherry and committed the sleep timer, repeat button, keyboard shortcuts and tests.</p>
       </div>
     </li>
   </ul>

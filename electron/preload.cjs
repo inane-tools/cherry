@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const events = new Set([
-  'updater-state', 'updater-state', 'window-resized', 'window-focus', 'tray://action',
+  'updater-state', 'window-resized', 'window-focus', 'tray://action',
   'media-key://playpause', 'media-key://play', 'media-key://pause', 'media-key://toggle', 'media-key://next', 'media-key://prev',
   'media-key://shuffle', 'media-key://repeat',
   'media-key://stop', 'media-key://seek', 'media-key://seek-by', 'media-key://volume',

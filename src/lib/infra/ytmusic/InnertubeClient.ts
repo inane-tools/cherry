@@ -908,6 +908,12 @@ export interface AlbumPage {
   tracks: Track[];
 }
 
+// Results cut short by a failed continuation. They are still returned (a partial
+// list is playable) but must never be cached: the playlist page shares the
+// collection cache key and would show the short list, and its count, for the
+// whole TTL.
+const truncatedResults = new WeakSet<object>();
+
 export async function getAlbumPage(
   browseId: string,
   session?: AuthSession | null,
@@ -924,6 +930,7 @@ export async function getAlbumPage(
     let artist: ArtistRef | undefined;
     let year: string | undefined;
     let tracks: Track[] = [];
+    let complete = true;
     try {
       const album = await client.music.getAlbum(browseId);
       const info: AnyNode = album?.header;
@@ -942,8 +949,9 @@ export async function getAlbumPage(
         };
       }
       if (info?.year) year = String(info.year);
-      const rows = await loadAllRows(album);
-      tracks = rows
+      const loaded = await loadAllRows(album);
+      complete = loaded.complete;
+      tracks = loaded.rows
         .map((row) => mapTrack(row))
         .filter((track: Track | null): track is Track => Boolean(track));
     } catch (e) {
@@ -951,6 +959,7 @@ export async function getAlbumPage(
       // eslint-disable-next-line no-console
       console.warn('[cherry] typed album failed, using generic expander', e);
       tracks = await getCollectionTracks(browseId, session);
+      complete = !truncatedResults.has(tracks);
     }
 
     const art = header?.thumbnails ?? [];
@@ -978,7 +987,7 @@ export async function getAlbumPage(
       };
     });
 
-    return {
+    const page: AlbumPage = {
       title: header?.title ?? '',
       subtitle: header?.subtitle,
       description: header?.description,
@@ -987,7 +996,9 @@ export async function getAlbumPage(
       year: albumYear,
       tracks: filled,
     };
-  });
+    if (!complete) truncatedResults.add(page);
+    return page;
+  }, { shouldCache: (page) => !truncatedResults.has(page) });
 }
 
 /**
@@ -1000,7 +1011,7 @@ export async function getAlbumPage(
  * to their first hundred tracks. Measured on a large public playlist: 10 pages,
  * 1067 tracks.
  */
-async function loadAllRows(container: AnyNode): Promise<AnyNode[]> {
+async function loadAllRows(container: AnyNode): Promise<{ rows: AnyNode[]; complete: boolean }> {
   const rows: AnyNode[] = [...(container?.contents ?? container?.items ?? [])];
   let current = container;
   // Guard against a runaway continuation loop.
@@ -1016,8 +1027,9 @@ async function loadAllRows(container: AnyNode): Promise<AnyNode[]> {
     if (next.length === 0) break;
     rows.push(...next);
   }
-  return rows;
+  return { rows, complete: !current?.has_continuation };
 }
+
 
 export async function getCollectionTracks(
   browseId: string,
@@ -1031,7 +1043,7 @@ export async function getCollectionTracks(
     `collection:${getActiveChannel()}:${browseId}`,
     TTL.playlist,
     () => runCollectionTracks(browseId, session),
-    { shouldCache: (tracks) => tracks.length > 0 },
+    { shouldCache: (tracks) => tracks.length > 0 && !truncatedResults.has(tracks) },
   );
 }
 
@@ -1045,12 +1057,13 @@ async function runCollectionTracks(
     const container = isAlbum
       ? await client.music.getAlbum(browseId)
       : await client.music.getPlaylist(browseId);
-    const rows = await loadAllRows(container);
+    const { rows, complete } = await loadAllRows(container);
     const tracks: Track[] = [];
     for (const row of rows) {
       const track = mapTrack(row);
       if (track) tracks.push(track);
     }
+    if (!complete) truncatedResults.add(tracks);
     return tracks;
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -1071,13 +1084,15 @@ async function runCollectionTracks(
 export async function streamCollectionTracks(
   browseId: string,
   session: AuthSession | null | undefined,
-  onPage: (tracks: Track[], done: boolean) => void,
+  /** `complete` (only meaningful with `done`) is false when a continuation
+   *  failed and the list is shorter than the playlist. */
+  onPage: (tracks: Track[], done: boolean, complete?: boolean) => void,
 ): Promise<Track[]> {
   const key = `collection:${getActiveChannel()}:${browseId}`;
   const revision = cacheRevision();
   const cachedTracks = cacheGet<Track[]>(key);
   if (cachedTracks) {
-    onPage(cachedTracks, true);
+    onPage(cachedTracks, true, true);
     return cachedTracks;
   }
 
@@ -1095,7 +1110,7 @@ export async function streamCollectionTracks(
       if (track) all.push(track);
     }
   };
-  const emit = (done: boolean) => onPage([...all], done);
+  const emit = (done: boolean, complete = false) => onPage([...all], done, complete);
 
   addRows(container?.contents ?? container?.items ?? []);
   emit(false);
@@ -1114,8 +1129,9 @@ export async function streamCollectionTracks(
     emit(false);
   }
 
-  emit(true);
-  if (!container?.has_continuation && revision === cacheRevision()) cacheSet(key, all, TTL.playlist);
+  const complete = !container?.has_continuation;
+  emit(true, complete);
+  if (complete && revision === cacheRevision()) cacheSet(key, all, TTL.playlist);
   return all;
 }
 

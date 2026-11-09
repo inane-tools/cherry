@@ -474,12 +474,16 @@ export async function next(): Promise<void> {
 
 export async function prev(): Promise<void> {
   const el = ensureAudio();
-  if (el.currentTime > 3) {
-    el.currentTime = 0;
+  // A restored or still-loading track has no source, so the element's clock
+  // reads 0 even when the UI shows a later position.
+  const attached = !!el.getAttribute('src') && mediaQueueId === get(currentItem)?.queueId;
+  const position = attached ? el.currentTime : get(playerStore).positionSeconds;
+  if (position > 3) {
+    seekTo(0);
     return;
   }
   if (step(-1)) await loadCurrent(true);
-  else el.currentTime = 0;
+  else seekTo(0);
 }
 
 /**
@@ -623,24 +627,30 @@ export function seekBy(deltaSeconds: number): void {
  * restores the volume immediately and keeps playing.
  */
 export function fadeOutAndPause(durationMs: number, signal?: AbortSignal): Promise<void> {
-  const el = ensureAudio();
-  const start = el.volume;
+  ensureAudio();
   const steps = Math.max(1, Math.round(durationMs / 100));
+  // Each queue entry gets a fresh media element, so a song change during the
+  // fade swaps `audio`. Always act on the current element and the user's stored
+  // level; holding the first element let the next song play on at full volume.
+  const restore = () => { if (audio) audio.volume = get(playerStore).volume; };
   return new Promise((resolve) => {
     let n = 0;
     const timer = setInterval(() => {
       if (signal?.aborted) {
         clearInterval(timer);
-        el.volume = start;
+        restore();
         resolve();
         return;
       }
       n++;
-      el.volume = start * Math.max(0, 1 - n / steps);
+      if (audio) audio.volume = get(playerStore).volume * Math.max(0, 1 - n / steps);
       if (n >= steps) {
         clearInterval(timer);
-        el.pause();
-        el.volume = start;
+        // A next track that is still resolving would autoplay after a bare
+        // pause(); toggle() cancels the pending load and leaves it paused.
+        if (get(playerStore).status === 'loading') void toggle();
+        else audio?.pause();
+        restore();
         resolve();
       }
     }, durationMs / steps);

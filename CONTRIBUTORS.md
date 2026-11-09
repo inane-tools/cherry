@@ -11,6 +11,9 @@ Cherry is built by [inane.tools](https://inane.tools).
   preserved in this repository's history.
 - **Codex** (OpenAI) — code review, playback and sign-out fixes, regression
   tests and UI refinements.
+- **Claude Code** (Anthropic, Claude Opus 5.5) — programming since 2.2.1:
+  sleep timer, playback, scrobbling and playlist reliability fixes with
+  regression tests.
 
 Additional thanks to the open-source projects listed in **Settings → About →
 Open Source & Contributors**, and in [README.md](README.md).

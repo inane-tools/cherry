@@ -130,6 +130,11 @@ function onState(state: PlaybackState): void {
   }
   lastPosition = position;
   const playing = state.status === 'playing';
+  // A restored queue begins the track paused at launch; date the play from
+  // when listening actually starts, not from when the app opened.
+  if (playing && !wasPlaying && listenedSeconds === 0 && !scrobbled) {
+    startedAt = Math.floor(Date.now() / 1000) - Math.max(0, Math.round(position));
+  }
   // Send "now playing" on the transition into playing (and on a fresh track).
   if (playing && (changed || !wasPlaying) && (get(settingsStore).lastfmNowPlaying ?? true)) {
     void nowPlaying(track);

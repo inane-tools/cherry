@@ -56,6 +56,22 @@ const channelLibraries = new Map<string, {
 let libraryIdentity = '';
 let libraryChannel = '';
 const confirmedAdditions = new PlaylistAdditions();
+// Server-confirmed removals, by playlist entry id. The per-load sets below only
+// cover the load that was on screen; a refresh after another edit, or reopening
+// the playlist, can read the old contents and brought the song back. Kept until
+// a complete read no longer returns the entry (ids are unique per entry, so one
+// that reappears after that was re-added elsewhere and is shown again).
+const confirmedRemovals = new Map<string, Set<string>>();
+function withoutConfirmedRemovals(key: string, tracks: Track[], complete = false): Track[] {
+  const removed = confirmedRemovals.get(key);
+  if (!removed) return tracks;
+  if (complete) {
+    const present = new Set(tracks.map(track => track.playlistEntryId));
+    for (const id of removed) if (!present.has(id)) removed.delete(id);
+    if (!removed.size) confirmedRemovals.delete(key);
+  }
+  return tracks.filter(track => !track.playlistEntryId || !removed.has(track.playlistEntryId));
+}
 const additionKey = (browseId: string) => JSON.stringify([authIdentity(get(authStore)), getActiveChannel(), browseId]);
 
 /** Preserve server-confirmed writes until library reads catch up. */
@@ -71,6 +87,7 @@ export function recordLibraryPlaylist(playlist: Playlist, patch: Partial<Playlis
 
 export function recordLibraryRemoval(browseId: string): void {
   confirmedAdditions.clear(additionKey(browseId));
+  confirmedRemovals.delete(additionKey(browseId));
   libraryEdits.delete(browseId);
   libraryRemovals.add(browseId);
   playlistStore.update(list => list.filter(item => item.browseId !== browseId));
@@ -341,7 +358,8 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
     const source = { kind: 'playlist' as const, title: playlist.title, browseId: playlist.browseId, thumbnails: playlist.thumbnails };
     await streamCollectionTracks(playlist.browseId, session, (partial) => {
       if (stale()) return;
-      const fresh = partial.slice(seen);
+      // Count raw positions, then drop entries this session already removed.
+      const fresh = withoutConfirmedRemovals(additionKey(playlist.browseId), partial.slice(seen));
       seen = partial.length;
       if (fresh.length === 0) return;
       if (!started) {
@@ -366,7 +384,8 @@ export async function playPlaylist(playlist: Playlist, shuffle = false): Promise
 let openSeq = 0;
 let removedOpenTracks = new Set<Track>();
 let removedOpenEntries = new Set<string>();
-function visibleOpenTracks(tracks: Track[]): Track[] {
+function visibleOpenTracks(key: string, tracks: Track[], complete = false): Track[] {
+  tracks = withoutConfirmedRemovals(key, tracks, complete);
   if (!removedOpenTracks.size && !removedOpenEntries.size) return tracks;
   return tracks.filter(track => !removedOpenTracks.has(track) && !(track.playlistEntryId && removedOpenEntries.has(track.playlistEntryId)));
 }
@@ -397,6 +416,7 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
   openPlaylistLoading.set(!preserve);
   let channel: string | undefined;
   let headerStarted = false;
+  let complete = true;
   const stale = () => id !== openSeq || authIdentity(get(authStore)) !== authIdentity(session)
     || (channel !== undefined && channel !== getActiveChannel());
   try {
@@ -423,18 +443,23 @@ export async function loadOpenPlaylist(playlist: Playlist, options: { preserveCo
       }
     }).catch(error => console.warn('[cherry] playlist header could not be loaded:', error))
       .finally(() => { if (!stale()) openPlaylistHeaderLoading.set(false); });
-    const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done) => {
+    const tracks = await streamCollectionTracks(playlist.browseId, session, (partial, done, whole) => {
+      if (done) complete = whole !== false;
       if (stale()) return;
       if (preserve && !done) return;
-      openPlaylistTracks.set(confirmedAdditions.reconcile(additionKey(playlist.browseId), visibleOpenTracks(partial)));
+      const key = additionKey(playlist.browseId);
+      openPlaylistTracks.set(confirmedAdditions.reconcile(key, visibleOpenTracks(key, partial)));
       // The first page is enough to render and play; drop the skeleton while
       // the remaining pages keep streaming in.
       if (!done) openPlaylistLoading.set(false);
     });
     if (stale()) return;
-    const visible = confirmedAdditions.reconcile(additionKey(playlist.browseId), visibleOpenTracks(tracks), true);
+    const key = additionKey(playlist.browseId);
+    const visible = confirmedAdditions.reconcile(key, visibleOpenTracks(key, tracks, complete), true);
     openPlaylistTracks.set(visible);
-    patchPlaylist(playlist.browseId, { trackCount: visible.length });
+    // A failed continuation leaves a short list; keep the count YouTube reported
+    // rather than overwriting it with however many pages happened to load.
+    if (complete) patchPlaylist(playlist.browseId, { trackCount: visible.length });
     if (visible.length === 0) {
       openPlaylistError.set('This playlist has no playable tracks.');
     }
@@ -459,7 +484,13 @@ function patchPlaylist(browseId: string, patch: Partial<Playlist>): void {
 
 /** Remove one confirmed entry without interrupting the playing queue. */
 export function recordPlaylistRemoval(playlist: Playlist, track: Track): void {
-  confirmedAdditions.remove(additionKey(playlist.browseId), track.videoId);
+  const key = additionKey(playlist.browseId);
+  confirmedAdditions.remove(key, track.videoId);
+  if (track.playlistEntryId) {
+    const removed = confirmedRemovals.get(key) ?? new Set<string>();
+    removed.add(track.playlistEntryId);
+    confirmedRemovals.set(key, removed);
+  }
   if (get(openPlaylistStore)?.browseId === playlist.browseId) {
     removedOpenTracks.add(track);
     if (track.playlistEntryId) removedOpenEntries.add(track.playlistEntryId);
@@ -515,6 +546,7 @@ playlistAccountRevision.subscribe(() => {
   const channel = get(activeChannelStore)?.pageId ?? '';
   if (identity !== libraryIdentity) {
     confirmedAdditions.clear();
+    confirmedRemovals.clear();
     channelLibraries.clear();
   } else if (identity) {
     channelLibraries.set(libraryChannel, { playlists: get(playlistStore), edits: libraryEdits, removals: libraryRemovals });

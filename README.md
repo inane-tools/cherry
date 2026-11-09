@@ -79,7 +79,8 @@ Restart Electron after changing the main process or preload. For the rest, see
 
 Cherry is developed with LLMs, guided by [inane.tools](https://inane.tools).
 DeepSeek v4.1 Flash generated much of the original code through 1.4. Codex with
-GPT-6.1 Sol has contributed since 1.4.2.
+GPT-6.1 Sol contributed from 1.4.2 to 2.2. Claude Code with Claude Opus 5.5 has
+contributed since 2.2.1.
 
 Thanks to [jannuary](https://github.com/jannuary/cherry), whose fork contributed
 Claude-authored fixes, tests, keyboard shortcuts and the sleep timer. Those

@@ -187,3 +187,20 @@ describe('pause and now-playing lifecycle', () => {
     expect(nowPlaying).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('scrobble timestamp', () => {
+  it('dates a restored track from when playback starts, not from app launch', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000_000);
+      // Restored at launch: paused at 40s.
+      __test.onState(state(40, 'paused'));
+      // The user presses play an hour later.
+      vi.setSystemTime(1_000_000_000 + 3_600_000);
+      __test.onState(state(40));
+      listen(50, 40); await settle();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].timestamp).toBe(1_000_000 + 3600 - 40);
+    } finally { vi.useRealTimers(); }
+  });
+});

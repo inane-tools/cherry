@@ -4,6 +4,24 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] — 2026-11-10
+
+Nemuro.
+
+### Fixed
+
+- The sleep timer pauses the song that is actually playing when the track changes
+  during its fade-out, and a next song still loading when the fade ends stays paused.
+- Previous restarts a restored song shown past three seconds instead of skipping
+  back to the song before it.
+- Last.fm scrobbles of a restored song are dated from when playback starts, not
+  from when the app opened.
+- A playlist or album that only partly loads (a later page failed) is no longer
+  cached as the whole list, so reopening it fetches every song again, and its
+  song count is not lowered to the number that loaded.
+- A song removed from a playlist no longer reappears, or plays, when the playlist
+  is refreshed or reopened before YouTube's reads catch up.
+
 ## [2.2.0] — 2026-11-06
 
 Nemuro.

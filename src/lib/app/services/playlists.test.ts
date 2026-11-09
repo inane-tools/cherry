@@ -252,6 +252,18 @@ it('restores edit controls from the playlist header even when the menu omitted i
   const { addPlaylistLocally } = await import('./addablePlaylists');
   await vi.waitFor(() => expect(addPlaylistLocally).toHaveBeenCalledWith(expect.objectContaining({ browseId: 'VLNEW', title: 'Owned' })));
 });
+it('keeps the known song count when a playlist only partly loads', async () => {
+  const song = (videoId: string): Track => ({ videoId, title: videoId, artists: [], thumbnails: [] });
+  service.playlistStore.set([{ ...playlist('VLBIG'), trackCount: 300 }]);
+  vi.mocked(api.streamCollectionTracks).mockImplementationOnce(async (_id, _session, onPage) => {
+    onPage([song('a')], false);
+    onPage([song('a'), song('b')], true, false);
+    return [song('a'), song('b')];
+  });
+  await service.loadOpenPlaylist(playlist('VLBIG'));
+  expect(get(service.openPlaylistTracks)).toHaveLength(2);
+  expect(get(service.playlistStore)[0].trackCount).toBe(300);
+});
 it('does not infer ownership from a regular playlist header', async () => {
   vi.mocked(api.getPlaylistMeta).mockResolvedValueOnce({ title: 'Saved' });
   vi.mocked(api.streamCollectionTracks).mockResolvedValueOnce([]);
@@ -314,6 +326,50 @@ it('does not resurrect a removed entry while later playlist pages are still stre
   response.resolve([first, second, third]); await loading;
   expect(get(service.openPlaylistTracks)).toEqual([first, third]);
   expect(get(service.openPlaylistStore)?.trackCount).toBe(2);
+});
+
+describe('confirmed removals while reads lag', () => {
+  const song = (playlistEntryId: string): Track => ({ videoId: playlistEntryId, title: playlistEntryId, artists: [], thumbnails: [], playlistEntryId });
+  const keep = song('keep'), gone = song('gone');
+  async function openWith(target: Playlist, tracks: Track[], options?: { preserveContent?: boolean }) {
+    vi.mocked(api.streamCollectionTracks).mockImplementationOnce(async (_id, _session, onPage) => { onPage(tracks, true, true); return tracks; });
+    await service.loadOpenPlaylist(target, options);
+  }
+
+  it('keeps a removed entry hidden when a reload still returns it', async () => {
+    const target = playlist('LAG');
+    await openWith(target, [keep, gone]);
+    service.recordPlaylistRemoval(target, gone);
+    // A refresh after another edit (or reopening) can read the old contents.
+    await openWith(target, [{ ...keep }, { ...gone }], { preserveContent: true });
+    expect(get(service.openPlaylistTracks).map(t => t.playlistEntryId)).toEqual(['keep']);
+    await openWith(playlist('OTHER'), []);
+    await openWith(target, [{ ...keep }, { ...gone }]);
+    expect(get(service.openPlaylistTracks).map(t => t.playlistEntryId)).toEqual(['keep']);
+    expect(get(service.openPlaylistStore)?.trackCount).toBe(1);
+  });
+
+  it('stops filtering once a complete read no longer has the entry', async () => {
+    const target = playlist('CAUGHTUP');
+    await openWith(target, [keep, gone]);
+    service.recordPlaylistRemoval(target, gone);
+    await openWith(target, [{ ...keep }]);
+    // Entry ids are unique per playlist entry; if YouTube shows it again the
+    // removal was undone elsewhere and must not stay hidden forever.
+    await openWith(target, [{ ...keep }, { ...gone }]);
+    expect(get(service.openPlaylistTracks).map(t => t.playlistEntryId)).toEqual(['keep', 'gone']);
+  });
+
+  it('does not play a removed entry from a lagging read', async () => {
+    const target = playlist('PLAYLAG');
+    await openWith(target, [keep, gone]);
+    service.recordPlaylistRemoval(target, gone);
+    vi.mocked(api.streamCollectionTracks).mockImplementationOnce(async (_id, _session, onPage) => {
+      onPage([{ ...keep }, { ...gone }], true, true); return [keep, gone];
+    });
+    await service.playPlaylist(target);
+    expect(vi.mocked(playTracks).mock.calls[0][0].map(t => t.playlistEntryId)).toEqual(['keep']);
+  });
 });
 
 it('ignores creator metadata from a playlist that has been replaced', async () => {

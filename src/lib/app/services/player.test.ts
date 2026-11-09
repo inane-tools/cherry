@@ -762,3 +762,74 @@ it('cues an empty queue without autoplaying or resolving streams', () => {
   expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
   expect(pending).toHaveLength(0);
 });
+
+describe('sleep timer fade', () => {
+  it('pauses the current song when a track change happens during the fade', async () => {
+    vi.useFakeTimers();
+    try {
+      player.setVolume(0.8);
+      const first = player.playTracks([track('a'), track('b')]);
+      await flush(); pending[0].resolve('https://media/a'); await first;
+      const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      old.dispatchEvent(new Event('play'));
+      old.dispatchEvent(new Event('playing'));
+      const fade = player.fadeOutAndPause(1000);
+      await vi.advanceTimersByTimeAsync(300);
+      // Song a ends mid-fade; b gets a fresh media element.
+      old.dispatchEvent(new Event('ended'));
+      await flush(); pending[1].resolve('https://media/b'); await flush();
+      const current = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      expect(current).not.toBe(old);
+      current.dispatchEvent(new Event('play'));
+      vi.mocked(HTMLMediaElement.prototype.pause).mockClear();
+      await vi.advanceTimersByTimeAsync(400);
+      expect(current.volume).toBeLessThan(0.8);
+      await vi.advanceTimersByTimeAsync(400); await fade;
+      expect(vi.mocked(HTMLMediaElement.prototype.pause).mock.contexts).toContain(current);
+      expect(current.volume).toBeCloseTo(0.8);
+    } finally {
+      vi.useRealTimers();
+      await player.stopPlayback();
+    }
+  });
+
+  it('cancels a next track that is still loading when the fade ends', async () => {
+    vi.useFakeTimers();
+    try {
+      const first = player.playTracks([track('a'), track('b')]);
+      await flush(); pending[0].resolve('https://media/a'); await first;
+      const old = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+      old.dispatchEvent(new Event('play'));
+      const fade = player.fadeOutAndPause(500);
+      old.dispatchEvent(new Event('ended'));
+      await flush();
+      expect(get(player.playerStore).status).toBe('loading');
+      await vi.advanceTimersByTimeAsync(600); await fade;
+      expect(get(player.playerStore).status).toBe('paused');
+      const plays = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+      pending[1].resolve('https://media/b'); await flush();
+      expect(vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length).toBe(plays);
+    } finally {
+      vi.useRealTimers();
+      await player.stopPlayback();
+    }
+  });
+});
+
+describe('previous track', () => {
+  it('restarts a restored track at a later position instead of skipping back', async () => {
+    const first = player.playTracks([track('a'), track('b')]);
+    await flush(); pending[0].resolve('https://media/a'); await first;
+    const next = player.next(); await flush(); pending[1].resolve('https://media/b'); await next;
+    // Simulate the restored/unloaded state: no source, UI at 2:00.
+    const el = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLMediaElement;
+    el.removeAttribute('src');
+    player.playerStore.update(p => ({ ...p, status: 'paused', positionSeconds: 120 }));
+    await player.prev();
+    const st = get(player.playerStore);
+    expect(st.track?.videoId).toBe('b');
+    expect(st.positionSeconds).toBe(0);
+    expect(pending).toHaveLength(2);
+    await player.stopPlayback();
+  });
+});

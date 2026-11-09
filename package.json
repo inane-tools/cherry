@@ -1,6 +1,6 @@
 {
   "name": "cherry",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "private": true,
   "description": "Cherry — a desktop YouTube Music player",
   "type": "module",
