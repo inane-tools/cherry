@@ -656,8 +656,6 @@ async function main() {
         const zoom = document.querySelector('input[aria-label="UI zoom"]');
         if (!zoom) throw Error('UI zoom control missing');
         const previousZoom = zoom.value;
-        const appearance = [...document.querySelectorAll('h2')].find(node => node.textContent === 'Appearance')?.closest('section');
-        appearance?.querySelector('[role="button"]').click();
         try {
           for (const value of [0.5, 1, 2]) {
             const scale = value * 1.1;
@@ -689,7 +687,9 @@ async function main() {
       const heading = [...document.querySelectorAll('h2')].find(node => node.textContent === 'Integrations');
       const integrations = heading?.closest('section');
       if (!integrations) throw Error('Integrations settings missing');
-      integrations.querySelector('[role="button"]').click();
+      // Integrations starts collapsed; open it the way a user would.
+      const integrationsHeader = integrations.querySelector('[role="button"][aria-expanded]');
+      if (integrationsHeader?.getAttribute('aria-expanded') === 'false') integrationsHeader.click();
       await new Promise(resolve => setTimeout(resolve, 250));
       const discordSwitch = integrations.querySelector('button[role="switch"][aria-label="Discord"]');
       if (!discordSwitch || discordSwitch.disabled || discordSwitch.closest('[inert]')) throw Error('Discord integration cannot be enabled');
