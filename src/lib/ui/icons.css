@@ -39,14 +39,14 @@
 .ph.ph-arrow-square-out:before {
   content: "\e5de";
 }
+.ph.ph-arrow-up:before {
+  content: "\e08e";
+}
 .ph.ph-arrow-up-right:before {
   content: "\e092";
 }
 .ph.ph-bookmark-simple:before {
   content: "\e0ea";
-}
-.ph.ph-browser:before {
-  content: "\e0f4";
 }
 .ph.ph-caret-down:before {
   content: "\e136";
@@ -99,9 +99,6 @@
 .ph.ph-download-simple:before {
   content: "\e20c";
 }
-.ph.ph-drop:before {
-  content: "\e210";
-}
 .ph.ph-film-strip:before {
   content: "\e792";
 }
@@ -128,9 +125,6 @@
 }
 .ph.ph-info:before {
   content: "\e2ce";
-}
-.ph.ph-layout:before {
-  content: "\e6d6";
 }
 .ph.ph-list:before {
   content: "\e2f0";
@@ -195,6 +189,9 @@
 .ph.ph-shuffle:before {
   content: "\e422";
 }
+.ph.ph-sidebar-simple:before {
+  content: "\ec24";
+}
 .ph.ph-sign-out:before {
   content: "\e42a";
 }
@@ -219,6 +216,9 @@
 .ph.ph-square:before {
   content: "\e45e";
 }
+.ph.ph-squares-four:before {
+  content: "\e464";
+}
 .ph.ph-sun:before {
   content: "\e472";
 }
@@ -239,6 +239,9 @@
 }
 .ph.ph-warning-circle:before {
   content: "\e4e2";
+}
+.ph.ph-waveform:before {
+  content: "\e802";
 }
 .ph.ph-x:before {
   content: "\e4f6";
@@ -286,14 +289,14 @@
 .ph-fill.ph-arrow-square-out:before {
   content: "\e5de";
 }
+.ph-fill.ph-arrow-up:before {
+  content: "\e08e";
+}
 .ph-fill.ph-arrow-up-right:before {
   content: "\e092";
 }
 .ph-fill.ph-bookmark-simple:before {
   content: "\e0ea";
-}
-.ph-fill.ph-browser:before {
-  content: "\e0f4";
 }
 .ph-fill.ph-caret-down:before {
   content: "\e136";
@@ -346,9 +349,6 @@
 .ph-fill.ph-download-simple:before {
   content: "\e20c";
 }
-.ph-fill.ph-drop:before {
-  content: "\e210";
-}
 .ph-fill.ph-film-strip:before {
   content: "\e792";
 }
@@ -375,9 +375,6 @@
 }
 .ph-fill.ph-info:before {
   content: "\e2ce";
-}
-.ph-fill.ph-layout:before {
-  content: "\e6d6";
 }
 .ph-fill.ph-list:before {
   content: "\e2f0";
@@ -442,6 +439,9 @@
 .ph-fill.ph-shuffle:before {
   content: "\e422";
 }
+.ph-fill.ph-sidebar-simple:before {
+  content: "\ec24";
+}
 .ph-fill.ph-sign-out:before {
   content: "\e42a";
 }
@@ -466,6 +466,9 @@
 .ph-fill.ph-square:before {
   content: "\e45e";
 }
+.ph-fill.ph-squares-four:before {
+  content: "\e464";
+}
 .ph-fill.ph-sun:before {
   content: "\e472";
 }
@@ -486,6 +489,9 @@
 }
 .ph-fill.ph-warning-circle:before {
   content: "\e4e2";
+}
+.ph-fill.ph-waveform:before {
+  content: "\e802";
 }
 .ph-fill.ph-x:before {
   content: "\e4f6";
@@ -548,6 +554,14 @@
   content: "\e5df";
   margin-left: -1em;
 }
+.ph-duotone.ph-arrow-up:before {
+  content: "\e08e";
+  opacity: 0.2;
+}
+.ph-duotone.ph-arrow-up:after {
+  content: "\e08f";
+  margin-left: -1em;
+}
 .ph-duotone.ph-arrow-up-right:before {
   content: "\e092";
   opacity: 0.2;
@@ -562,14 +576,6 @@
 }
 .ph-duotone.ph-bookmark-simple:after {
   content: "\e0eb";
-  margin-left: -1em;
-}
-.ph-duotone.ph-browser:before {
-  content: "\e0f4";
-  opacity: 0.2;
-}
-.ph-duotone.ph-browser:after {
-  content: "\e0f5";
   margin-left: -1em;
 }
 .ph-duotone.ph-caret-down:before {
@@ -708,14 +714,6 @@
   content: "\e20d";
   margin-left: -1em;
 }
-.ph-duotone.ph-drop:before {
-  content: "\e210";
-  opacity: 0.2;
-}
-.ph-duotone.ph-drop:after {
-  content: "\e211";
-  margin-left: -1em;
-}
 .ph-duotone.ph-film-strip:before {
   content: "\e792";
   opacity: 0.2;
@@ -786,14 +784,6 @@
 }
 .ph-duotone.ph-info:after {
   content: "\e2cf";
-  margin-left: -1em;
-}
-.ph-duotone.ph-layout:before {
-  content: "\e6d6";
-  opacity: 0.2;
-}
-.ph-duotone.ph-layout:after {
-  content: "\e6d7";
   margin-left: -1em;
 }
 .ph-duotone.ph-list:before {
@@ -964,6 +954,14 @@
   content: "\e423";
   margin-left: -1em;
 }
+.ph-duotone.ph-sidebar-simple:before {
+  content: "\ec24";
+  opacity: 0.2;
+}
+.ph-duotone.ph-sidebar-simple:after {
+  content: "\ec25";
+  margin-left: -1em;
+}
 .ph-duotone.ph-sign-out:before {
   content: "\e42a";
   opacity: 0.2;
@@ -1028,6 +1026,14 @@
   content: "\e45f";
   margin-left: -1em;
 }
+.ph-duotone.ph-squares-four:before {
+  content: "\e464";
+  opacity: 0.2;
+}
+.ph-duotone.ph-squares-four:after {
+  content: "\e465";
+  margin-left: -1em;
+}
 .ph-duotone.ph-sun:before {
   content: "\e472";
   opacity: 0.2;
@@ -1082,6 +1088,14 @@
 }
 .ph-duotone.ph-warning-circle:after {
   content: "\e4e3";
+  margin-left: -1em;
+}
+.ph-duotone.ph-waveform:before {
+  content: "\e802";
+  opacity: 0.2;
+}
+.ph-duotone.ph-waveform:after {
+  content: "\e803";
   margin-left: -1em;
 }
 .ph-duotone.ph-x:before {

@@ -109,7 +109,7 @@
     <div
       use:floatingMenu
       use:overlayScrollbar
-      class="cherry-overlay-scroll fixed z-[60] rounded-xl bg-[var(--color-elevated)] p-1 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+      class="cherry-overlay-scroll fixed z-[60] rounded-xl cherry-glass p-1 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
       role="listbox"
       in:fly={{ y: -4, duration: 160 }}
       out:fade={{ duration: 110 }}

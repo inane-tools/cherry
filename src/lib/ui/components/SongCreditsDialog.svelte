@@ -28,7 +28,7 @@
   >
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div
-      class="flex max-h-[82vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
+      class="flex max-h-[82vh] w-full max-w-md flex-col overflow-hidden rounded-2xl cherry-glass shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
       role="dialog"
       aria-modal="true"
       aria-label="Song credits"

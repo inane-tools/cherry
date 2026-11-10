@@ -179,7 +179,7 @@
     <!-- App overlays a full-window AuthGate when signed out; nothing to render. -->
   {:else}
   <form
-    class={compact ? 'flex shrink-0 items-center gap-3 rounded-full bg-[var(--color-popover)] px-5 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : 'flex items-center gap-2'}
+    class={compact ? 'flex shrink-0 items-center gap-3 rounded-full cherry-glass px-5 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : 'flex items-center gap-2'}
     onsubmit={(e) => {
       e.preventDefault();
       requestSearch(q);
@@ -229,7 +229,7 @@
   </form>
 
   {#if !compact || q.trim() || loading || error || results}
-  <div bind:this={resultPanel} use:overlayScrollbar class={compact ? 'cherry-overlay-scroll min-h-0 overflow-y-auto rounded-[2rem] bg-[var(--color-popover)] px-4 pb-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : ''}>
+  <div bind:this={resultPanel} use:overlayScrollbar class={compact ? 'cherry-overlay-scroll min-h-0 overflow-y-auto rounded-[2rem] cherry-glass px-4 pb-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)]' : ''}>
   {#if q.trim() && !pastedLink}
     <div class="flex flex-wrap gap-2 pb-1 pt-4" role="group" aria-label="Search filters">
       {#each SEARCH_FILTERS as filter}

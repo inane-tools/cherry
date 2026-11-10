@@ -14,7 +14,8 @@
   import { clearPageVisitCache } from '$lib/app/services/pageVisit';
   import { homeSectionsStore, loadHome, loadLibrary, reloadAll } from '$lib/app/services/playlists';
   import { warmProfileGreetings } from '$lib/app/services/profilePersonalization';
-  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback } from '$lib/app/services/player';
+  import { warmup, setDiscordAppId, startPresenceKeepAlive, applyStoredPlaybackSettings, restorePlayback, playerStore, videoMode, videoSurface } from '$lib/app/services/player';
+  import Visualizer from '$lib/ui/components/Visualizer.svelte';
   import { startMediaKeyListener } from '$lib/app/services/mediaKeys';
   import { startTray } from '$lib/app/services/tray';
   import { startScrobbling } from '$lib/app/services/scrobble';
@@ -76,6 +77,7 @@
     const scrolled = (event.currentTarget as HTMLElement).scrollTop > 0;
     if (pageScrolled !== scrolled) pageScrolled = scrolled;
   }
+
 
   // Mirror the stored UI zoom level onto the renderer.
   startZoom();
@@ -240,6 +242,17 @@
   {#if !launched}
     <div class="absolute inset-0 z-[35] bg-[var(--color-surface)]" out:fade={{ duration: 300 }} aria-hidden="true"></div>
   {/if}
+  {#if ready && !signedOut && $settingsStore.videoBackground && $videoMode && !$playerExpanded}
+    <!-- Experimental: the music video plays behind the window while the player
+         is collapsed; expanding the player moves it back into the player. -->
+    <div use:videoSurface class="cherry-video-backdrop pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true"></div>
+  {/if}
+  {#if ready && !signedOut && $settingsStore.visualizerEnabled && !$videoMode}
+    <!-- Experimental music visualizer, behind everything in the window. -->
+    <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+      <Visualizer active={$playerStore.status === 'playing'} />
+    </div>
+  {/if}
   <div data-page-backdrop-host class="pointer-events-none absolute inset-0 -z-10 isolate overflow-hidden" aria-hidden="true"></div>
   <Titlebar minimal={signedOut} scrolled={pageScrolled} narrow={$narrowLayout} {drawerVisible} onMenu={toggleSidebarDrawer} />
   <div class="flex min-h-0 flex-1">
@@ -350,7 +363,7 @@
       transition:fly|global={{ y: -12, duration: 240 }}
     >
       <div
-        class="flex w-max max-w-[36rem] items-center gap-3 rounded-xl bg-[var(--color-popover)] px-4 py-3 text-sm font-semibold text-white shadow-lg"
+        class="flex w-max max-w-[36rem] items-center gap-3 rounded-xl cherry-glass px-4 py-3 text-sm font-semibold text-white shadow-lg"
       >
         <i class="ph ph-info shrink-0 text-base text-[var(--color-accent)]" aria-hidden="true"></i>
         <span class="min-w-0 break-words">{notice}</span>

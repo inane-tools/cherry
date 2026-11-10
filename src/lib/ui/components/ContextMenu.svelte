@@ -111,7 +111,7 @@
     use:menuHost
     use:overlayScrollbar
     data-context-menu
-    class="cherry-overlay-scroll fixed z-[60] flex max-h-[calc(100vh-1rem)] min-w-[13rem] max-w-[calc(100vw-1rem)] flex-col rounded-xl bg-[var(--color-elevated)]/98 p-1 shadow-[0_18px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl outline-none"
+    class="cherry-overlay-scroll fixed z-[60] flex max-h-[calc(100vh-1rem)] min-w-[13rem] max-w-[calc(100vw-1rem)] flex-col rounded-xl cherry-glass p-1 shadow-[0_18px_50px_rgba(0,0,0,0.6)] outline-none"
     style="left: {x}px; top: {y}px;"
     role="menu"
     tabindex="-1"
@@ -119,7 +119,7 @@
     out:menuReveal={{ duration: 100, distance: 2, scale: 0.99 }}
   >
     {#if shortcuts.length}
-      <div data-shortcuts class="sticky z-10 flex shrink-0 items-center gap-1 bg-[var(--color-elevated)] p-1 {shortcutsBelow ? 'bottom-0 order-last mt-1 border-t border-white/10 pt-2' : 'top-0 mb-1 border-b border-white/10 pb-2'}">
+      <div data-shortcuts class="flex shrink-0 items-center gap-1 p-1 {shortcutsBelow ? 'order-last mt-1 border-t border-white/10 pt-2' : 'mb-1 border-b border-white/10 pb-2'}">
         {#each shortcuts as item}
           <button class="cherry-nav-button flex h-9 min-w-9 flex-1 items-center justify-center rounded-lg text-zinc-200 transition-colors hover:text-white focus-visible:bg-white/10 disabled:cursor-default disabled:opacity-40"
             role="menuitem" disabled={item.disabled} title={item.label} aria-label={item.label} onclick={() => run(item)}>

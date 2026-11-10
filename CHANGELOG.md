@@ -4,6 +4,51 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] — 2026-11-10
+
+Nayoro.
+
+### Changed
+
+- Settings is wider and opens as one page with section chips (Account,
+  Appearance, Player, Integrations, Data, Shortcuts, About) that jump to and
+  follow the section in view. Player follows Appearance; Integrations,
+  keyboard shortcuts and the open-source list start collapsed and open when
+  their chip is used.
+- Appearance shows its choices as previews: theme thumbnails (including a split
+  System preview), the current song's artwork for song-art accents, full and
+  covers-only sidebar layouts, and small examples beside each surface toggle.
+- Everything that floats shares one blurred glass surface that keeps the theme
+  and accent tint: the navigation, library, account and queue panels, the player
+  bar (with its accent gradient) and its popovers, menus, dropdowns,
+  notifications, search and the remaining dialogs. Settings and the new
+  playlist, new folder and edit details sheets stay opaque. Reduced-transparency settings use near-solid surfaces.
+  With gradients turned off, the light-theme player bar is now flat too.
+- With the compact sidebar (and window controls on the right), the back button
+  sits over the sidebar's icon column and the page title lines up with the
+  page content.
+- The account moved from the top bar to its own panel at the bottom of the
+  sidebar (and the narrow-layout drawer): the avatar in the compact sidebar, and
+  the avatar with name and handle in the full one.
+  Its menu holds Settings, your profile and Quit. Available updates appear there
+  too, and the avatar gets a yellow ring and arrow badge instead of the top-bar
+  badge.
+- The player scrubber sits on a darker inset that stands out from the bar.
+- The expanded player dims the window all the way up, behind the top bar.
+
+### Added
+
+- Experimental music visualizer (Settings → Player, off by default) behind the
+  window, in the accent colours: a spectrum flower that pulses with the bass and
+  spins with the mids, rings that burst out on beats and sparks on the treble,
+  all spiralling outward through a zooming feedback echo. It fades out when
+  playback pauses and stays off with reduced motion and in video mode. Desktop
+  audio is now requested in CORS mode from Cherry's own media proxy so it can be
+  read; playback itself is unchanged.
+- Experimental music video in the background (Settings → Player, off by
+  default): in video mode the video plays dimmed behind the window while the
+  player is collapsed, and moves back into the player when it is expanded.
+
 ## [2.2.1] — 2026-11-10
 
 Nemuro.

@@ -68,7 +68,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 <div class="fixed inset-0 z-[90] flex items-center justify-center bg-scrim/60 p-4" onclick={(event) => { if (event.target === event.currentTarget) close(); }}>
   <div bind:this={sheet} role="dialog" aria-modal="true" aria-label="Import from Tauri" aria-busy={busy}
-    use:overlayScrollbar tabindex="-1" class="cherry-overlay-scroll max-h-full w-full max-w-lg rounded-2xl bg-[var(--color-popover)] text-white shadow-xl">
+    use:overlayScrollbar tabindex="-1" class="cherry-overlay-scroll max-h-full w-full max-w-lg rounded-2xl cherry-glass text-white shadow-xl">
     {#if !busy && !result}
       <DialogHeader title="Import from Tauri" onClose={close} />
     {:else}

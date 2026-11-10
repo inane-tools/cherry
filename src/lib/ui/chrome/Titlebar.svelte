@@ -1,16 +1,15 @@
 <script lang="ts">
   import { getCurrentWindow } from '$lib/desktop/window';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { isDesktop, isMacDesktop, isLinuxDesktop } from '$lib/app/services/platform';
   import { nativeTitlebar, trackTitlebarOffset } from '$lib/app/services/nativeTitlebar';
   import { settingsStore } from '$lib/app/services/settings';
   import { activeChannelStore } from '$lib/app/services/account';
-  import { back, canGoBack, go, pageStore, type Page } from '$lib/app/services/navigation';
+  import { back, canGoBack, pageStore, type Page } from '$lib/app/services/navigation';
   import { thumbnailSources, type Thumbnail } from '$lib/core/models';
   import { artwork } from '$lib/ui/actions/artwork';
   import logoUrl from '$lib/assets/logo.png';
   import { fade } from '$lib/ui/transitions';
-  import { updateStore } from '$lib/app/services/updates';
   import { playerExpanded, sidebarDrawerOpen } from '$lib/app/services/layout';
   import { settingsOpen, searchOpen } from '$lib/app/services/overlays';
   import { homeSectionsStore, openPlaylistHeaderLoading, openPlaylistStore } from '$lib/app/services/playlists';
@@ -18,7 +17,6 @@
   import { repeatListeningStore } from '$lib/app/services/profilePersonalization';
 
   import { homeGreeting as makeHomeGreeting } from '$lib/core/homeGreeting';
-  import AccountButton from '$lib/ui/components/AccountButton.svelte';
 
   let hour = new Date().getHours();
   let greetingSeed = { personal: 1, line: Math.random() };
@@ -64,12 +62,6 @@
   $: heading = describePage($pageStore, homeGreeting);
   $: headingArtwork = thumbnailSources(heading.thumbnails, 64);
   $: loadingHeading = $pageStore.view === 'playlist' && $openPlaylistStore?.browseId === $pageStore.entity.browseId && $openPlaylistHeaderLoading;
-
-  async function showUpdates() {
-    go('settings');
-    await tick();
-    document.getElementById('cherry-updates')?.scrollIntoView({ block: 'center' });
-  }
 
   /**
    * Signed-out / welcome view: keep only the native window controls (and the
@@ -202,25 +194,6 @@
 
   <!-- Right: account + native window controls. -->
   <div class="cherry-topbar-actions relative z-40 ml-auto flex h-full shrink-0 items-center justify-end gap-2 {!macos && (!isDesktop() || !$settingsStore.windowControls || linux) ? 'pr-3' : ''}">
-    {#if !minimal}
-      {#if $updateStore.phase === 'available' || $updateStore.phase === 'ready'}
-        <button
-          class="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-accent)]/15 px-2.5 text-[11px] font-semibold text-white hover:bg-[var(--color-accent)]/25 focus-visible:outline-2 focus-visible:outline-[var(--color-accent)]"
-          title={`Cherry ${$updateStore.version} ${$updateStore.phase === 'ready' ? 'is ready to install' : 'is available'}`}
-          aria-label={`Cherry ${$updateStore.version} ${$updateStore.phase === 'ready' ? 'ready to install' : 'available'}`}
-          onclick={showUpdates}
-        >
-          <i class="ph-fill ph-arrow-circle-up text-base text-[var(--color-accent)]" aria-hidden="true"></i>
-          <span>v{$updateStore.version}</span>
-        </button>
-      {/if}
-      {#if !$settingsStore.compactSidebar || narrow}
-        <AccountButton settingsIcon />
-      {:else}
-        <AccountButton />
-      {/if}
-    {/if}
-
     {#if isDesktop() && windows && $settingsStore.windowControls}
       {@render captions(['minimize', 'maximize', 'close'])}
     {/if}
@@ -230,6 +203,15 @@
 <style>
   .cherry-topbar-back-slot { width: 40px; justify-content: flex-end; }
   header.has-left-controls .cherry-topbar-back-slot { width: 32px; }
+  /* Compact sidebar without left-side window controls (Windows, most Linux):
+     the back button sits over the sidebar's icon column and the page title
+     starts on the content's left edge, so the top-left lines up with the
+     layout below instead of hugging the window edge. */
+  :global(.cherry-shell[data-sidebar-layout='compact']) header:not(.has-left-controls) .cherry-topbar-navigation { gap: 24px; }
+  :global(.cherry-shell[data-sidebar-layout='compact']) header:not(.has-left-controls) .cherry-topbar-back-slot {
+    width: var(--cherry-sidebar-inset, 40px);
+    justify-content: center;
+  }
   .caption-close:hover { color: white; }
   header.linux-native { padding-right: var(--native-controls-right, 0px); }
 

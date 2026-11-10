@@ -31,7 +31,7 @@
 {#if open}
   <div
     data-upnext-panel
-    class="absolute right-3 z-40 flex max-h-[72vh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl bg-[var(--color-popover)] shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
+    class="absolute right-3 z-40 flex max-h-[72vh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl cherry-glass shadow-[0_30px_80px_rgba(0,0,0,0.72)]"
     style:bottom={`${bottom}px`}
     in:fly={{ y: 8, duration: 200 }}
     out:fade={{ duration: 120 }}

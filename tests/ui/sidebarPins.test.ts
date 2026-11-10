@@ -44,7 +44,11 @@ it.each([[false, false], [true, false], [true, true]])('shows mixed pins and ico
     expect(nav.textContent?.trim()).toBe('');
     expect(nav.classList.contains('flex-col')).toBe(compact && !forceFull);
     expect(nav.classList.contains('flex-row')).toBe(!compact || forceFull);
-    expect(!!target.querySelector('[aria-label="Account"]')).toBe(!compact || forceFull);
+    // The account sits at the bottom in every layout: a tile in the compact
+    // rail, a row with details (and its caret) in the full layout and drawer.
+    const account = target.querySelector('[aria-label="Account"]')!;
+    expect(account.querySelector('button[aria-label="Main menu"]')).not.toBeNull();
+    expect(!!account.querySelector('.ph-caret-up')).toBe(!compact || forceFull);
     const create = target.querySelector('[aria-label="New playlist or folder"]')!;
     expect(!!create.closest('[aria-label="Playlists and folders"]')).toBe(true);
     expect(nav.contains(create)).toBe(false);

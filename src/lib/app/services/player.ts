@@ -74,11 +74,25 @@ async function playbackDeadline<T>(request: Promise<T>, ms: number, message: str
 }
 export const videoResolution = writable<number | null>(null);
 let videoHost: HTMLElement | null = null;
+// Surfaces stack: the newest one shows the video (e.g. the window backdrop
+// while the player is collapsed) and the element returns to the previous one
+// when it unmounts. Moving a connected media element does not interrupt it.
+const videoHosts: HTMLElement[] = [];
+function attachVideo(): void {
+  videoHost = videoHosts.at(-1) ?? null;
+  if (audio instanceof HTMLVideoElement && videoHost && audio.parentElement !== videoHost) videoHost.appendChild(audio);
+}
 /** Reparent the same media element; expanding/collapsing never creates a second clock. */
 export function videoSurface(node: HTMLElement) {
-  videoHost = node;
-  if (audio instanceof HTMLVideoElement) node.appendChild(audio);
-  return { destroy() { if (videoHost === node) videoHost = null; } };
+  videoHosts.push(node);
+  attachVideo();
+  return {
+    destroy() {
+      const at = videoHosts.lastIndexOf(node);
+      if (at >= 0) videoHosts.splice(at, 1);
+      attachVideo();
+    },
+  };
 }
 export async function setVideoMode(enabled: boolean, autoplay?: boolean): Promise<void> {
   if (get(videoPreferred) === enabled) return;
@@ -178,6 +192,11 @@ function cancelPauseClear(): void {
   }
   // Resuming (or loading/stopping) lifts the suppression.
   statusSuppressed = false;
+}
+
+/** The element currently playing, for read-only taps such as the visualizer. */
+export function currentMediaElement(): HTMLMediaElement | null {
+  return audio;
 }
 
 function ensureAudio(): HTMLMediaElement {
@@ -869,7 +888,13 @@ async function loadCurrent(autoplay: boolean, refreshStream = false, restricted 
       if (stale()) return;
     } else {
       const source = new URL(stream.url);
-      el.src = source.hostname === 'googlevideo.com' || source.hostname.endsWith('.googlevideo.com') ? mediaProxyUrl(source).href : source.href;
+      const src = source.hostname === 'googlevideo.com' || source.hostname.endsWith('.googlevideo.com') ? mediaProxyUrl(source).href : source.href;
+      // The desktop media proxy answers with CORS headers. Requesting it in CORS
+      // mode keeps the audio readable (the visualizer taps it); a direct CDN URL
+      // has no such headers and must stay a plain no-CORS load or it would fail.
+      if (src.startsWith('cherry-media:')) el.crossOrigin = 'anonymous';
+      else el.removeAttribute('crossorigin');
+      el.src = src;
     }
     applyPendingResume(el, videoId);
     if (track.durationSeconds) {

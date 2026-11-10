@@ -148,14 +148,77 @@ body {
   backdrop-filter: blur(10px);
 }
 
-/* Player bar: a subtle accent tint that follows the theme's (tinted) surface. */
-.cherry-playerbar {
+/* Experimental: the music video behind the window while the player is
+   collapsed, dimmed like the visualizer so the page stays readable. */
+.cherry-video-backdrop {
+  opacity: 0.4;
+}
+.cherry-video-backdrop video {
+  object-fit: cover;
+}
+html.light .cherry-video-backdrop {
+  opacity: 0.3;
+}
+
+/* Experimental visualizer behind the window. Strong enough to feel, quiet
+   enough that text over it stays readable; it fades away when music pauses. */
+.cherry-visualizer {
+  opacity: 0;
+  transition: opacity 900ms cubic-bezier(0.37, 0, 0.63, 1);
+}
+/* Shapes leave dark gaps between them; a stronger wash would hide grey text. */
+.cherry-visualizer.showing {
+  opacity: 0.5;
+}
+html.light .cherry-visualizer.showing {
+  opacity: 0.25;
+}
+
+/* Settings: the shell's shallow accent wash at the top of the dialog. */
+.cherry-dialog-wash {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent);
+}
+html.light .cherry-dialog-wash {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent);
+}
+html.no-gradients .cherry-dialog-wash {
+  background: none;
+}
+/* Settings section chips: no bar at rest; once scrolled, the same dissolving
+   tint and blur as the top bar keeps them readable over content. */
+.cherry-chip-bar.scrolled::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -16px;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-popover) 94%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+}
+
+/* Player bar: the floating-panel glass (below) with its subtle accent tint
+   towards the bottom edge. The glass is painted on a layer behind the content
+   rather than on the bar itself: an element with a backdrop filter becomes the
+   backdrop root for its descendants, so the lyrics, volume and sleep-timer
+   popovers inside the bar could not blur the page behind them. */
+.cherry-playerbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
   background: linear-gradient(
     180deg,
-    var(--color-popover) 0%,
-    var(--color-popover) 35%,
-    color-mix(in srgb, var(--color-accent) 12%, var(--color-popover)) 100%
+    color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent) 0%,
+    color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent) 35%,
+    color-mix(in srgb, color-mix(in srgb, var(--color-accent) 12%, var(--color-popover)) var(--glass-tint), transparent) 100%
   );
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
 }
 
 /* Optional (Settings → Appearance): flat solid surfaces instead of the accent
@@ -163,16 +226,40 @@ body {
 html.no-gradients .cherry-shell {
   background-image: none;
 }
-html.no-gradients .cherry-playerbar {
-  background: var(--color-popover);
+/* In video mode the expanded player is see-through so the video frame beneath
+   it shows; the glass layer would blur the video. */
+.cherry-playerbar.video-mode::before {
+  display: none;
+}
+html.no-gradients .cherry-playerbar::before {
+  background: color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent);
 }
 
-/* Sidebar surface: the player bar's dark tone (flat, no gradient), a touch
-   translucent against the underlying theme surface. */
-.cherry-sidebar {
-  background: color-mix(in srgb, var(--color-popover) 85%, transparent);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+/* Glass: the surface for everything that floats (side panels, player bar,
+   menus, popovers, toasts and dialogs). The popover tone, which follows the
+   theme and surface tint, over a strong blur of whatever is behind it. The
+   tint is translucent enough for the blur to read; with reduced transparency
+   it falls back to a dense flat tint. */
+:root {
+  --glass-tint: 72%;
+  --glass-blur: 32px;
+}
+.cherry-sidebar,
+.cherry-glass {
+  background: color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-tint: 96%;
+  }
+  .cherry-sidebar,
+  .cherry-glass,
+  .cherry-playerbar::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* Thin, sleek custom scrollbars: no arrow buttons, clean overlay thumb. */
@@ -414,13 +501,16 @@ html.light body {
 html.light .cherry-shell {
   --shell-wash-strength: 5%;
 }
-html.light .cherry-playerbar {
+html.light .cherry-playerbar::before {
   background: linear-gradient(
     180deg,
-    var(--color-popover) 0%,
-    var(--color-popover) 55%,
-    color-mix(in srgb, var(--color-accent) 5%, var(--color-popover)) 100%
+    color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent) 0%,
+    color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent) 55%,
+    color-mix(in srgb, color-mix(in srgb, var(--color-accent) 5%, var(--color-popover)) var(--glass-tint), transparent) 100%
   );
+}
+html.light.no-gradients .cherry-playerbar::before {
+  background: color-mix(in srgb, var(--color-popover) var(--glass-tint), transparent);
 }
 
 /* Scrollbars and sliders paint their own colours (not tokens). */

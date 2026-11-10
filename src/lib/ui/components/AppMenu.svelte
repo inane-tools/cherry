@@ -91,7 +91,7 @@
 
 <div bind:this={menu} use:floating use:overlayScrollbar role="menu" aria-label={label}
   onkeydown={key} tabindex="-1" data-app-menu
-  class="cherry-overlay-scroll fixed z-[90] w-56 max-w-[calc(100vw-1rem)] rounded-2xl bg-[var(--color-elevated)] p-1.5 text-zinc-200 shadow-[0_12px_36px_rgba(0,0,0,0.3)] outline-none"
+  class="cherry-overlay-scroll fixed z-[90] w-56 max-w-[calc(100vw-1rem)] rounded-2xl cherry-glass p-1.5 text-zinc-200 shadow-[0_12px_36px_rgba(0,0,0,0.3)] outline-none"
   style="-webkit-app-region: no-drag"
   in:fly={{ y: -6, duration: 180 }} out:fly={{ y: -3, duration: 100 }}>
   {#each items as item}

@@ -297,15 +297,17 @@
 </div>
 
 {#if $playerExpanded}
-  <!-- The expanded card sits below the full-window title bar. -->
+  <!-- The expanded card sits below the full-window title bar; its dimming
+       reaches the top of the window, under the floating top-bar controls. -->
   <div
-    class="absolute inset-x-0 bottom-0 top-12 z-20 bg-scrim/40 backdrop-blur-sm"
+    class="absolute inset-0 z-[19] bg-scrim/40 backdrop-blur-sm"
     in:fade={{ duration: 150 }}
     out:fade={{ duration: 150 }}
   ></div>
   <div
     style:background={$videoMode ? ($videoReady ? 'transparent' : '#000') : undefined}
     use:videoControls={{ enabled: $videoMode && $videoReady && st.status === 'playing' && $expandedPlayerPanel === 'art' && !$playbackBuffering && !fullscreenError }}
+    class:video-mode={$videoMode}
     class="expanded-player cherry-playerbar absolute inset-x-3 bottom-0 top-14 z-30 flex flex-col overflow-hidden rounded-t-3xl shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
     oncontextmenu={onTrackContext}
     role="presentation"
@@ -550,7 +552,7 @@
         </button>
         <div
           use:frameOpacity={{ visible: volOpen, duration: 150 }}
-          class="absolute bottom-full left-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
+          class="absolute bottom-full left-0 z-10 flex w-9 justify-center rounded-lg cherry-glass px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
             ? 'pointer-events-auto opacity-100'
             : 'pointer-events-none opacity-0'}"
         >
@@ -584,11 +586,11 @@
     style:bottom={`${COMPACT_PLAYER_INSET}px`}
   >
     {#if !$videoMode && $settingsStore.lyricsEnabled && st.track && $lyricsStore.status === 'ready' && $lyricsStore.data && ($lyricsStore.data.synced || $untimedPromptVisible)}
-      <div transition:fly={{ y: 8, duration: 180 }} class="absolute bottom-full left-1/2 mb-2 w-max max-w-[min(36rem,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-[var(--color-popover)] shadow-lg"><LyricsView /></div>
+      <div transition:fly={{ y: 8, duration: 180 }} class="absolute bottom-full left-1/2 mb-2 w-max max-w-[min(36rem,calc(100%-1rem))] -translate-x-1/2 overflow-hidden rounded-xl cherry-glass shadow-lg"><LyricsView /></div>
     {/if}
     <div class="compact-player-content">
       <div
-        class="compact-player-info relative flex min-w-0 items-center gap-3 rounded-xl bg-[var(--chrome-control-background)] px-2"
+        class="compact-player-info relative flex min-w-0 items-center gap-3 rounded-xl px-2"
         style:background={$settingsStore.tintedBackground ? 'color-mix(in srgb, var(--color-surface) 92%, var(--color-white) 8%)' : undefined}
       >
         <div class="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
@@ -720,7 +722,7 @@
 
           <div
             use:frameOpacity={{ visible: volOpen, duration: 150 }}
-            class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg bg-[var(--color-popover)] px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
+            class="absolute bottom-full right-0 z-10 flex w-9 justify-center rounded-lg cherry-glass px-2 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)] transition-opacity duration-150 {volOpen
               ? 'pointer-events-auto opacity-100'
               : 'pointer-events-none opacity-0'}"
           >
@@ -760,7 +762,8 @@
     gap: 12px;
     padding: 10px 16px;
   }
-  .compact-player-info { grid-area: info; height: 52px; }
+  /* A darker inset than the glass bar around it, so the scrubber track stands out. */
+  .compact-player-info { grid-area: info; height: 52px; background: color-mix(in srgb, var(--color-surface) 62%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-white) 6%, transparent); }
   .player-accent-gradient { background-image: linear-gradient(180deg, var(--color-accent), var(--color-accent2)); }
   .compact-player-info:has(.compact-info-seek:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 2px; }
   .compact-info-seek { appearance: none; -webkit-appearance: none; background: transparent; }

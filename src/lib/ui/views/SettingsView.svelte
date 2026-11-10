@@ -1,7 +1,7 @@
 <script lang="ts">
   import Spinner from '$lib/ui/components/Spinner.svelte';
   import CommunityCredits from '$lib/ui/components/CommunityCredits.svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
   import {
     authStore,
@@ -26,7 +26,7 @@
   import { addablePlaylistsStore, loadAddablePlaylists } from '$lib/app/services/addablePlaylists';
   import { beginAuth, completeAuth } from '$lib/app/services/lastfm';
   import { openDevTools, reloadFrontend, toggleDeveloperOptions } from '$lib/app/services/devtools';
-  import { refreshDiscord } from '$lib/app/services/player';
+  import { playerStore, refreshDiscord } from '$lib/app/services/player';
   import { clearAllData, clearCache, formatCacheSize } from '$lib/app/services/maintenance';
   import { DISCLAIMER } from '$lib/app/services/gate';
   import { errorMessage, isDesktop } from '$lib/app/services/platform';
@@ -187,10 +187,72 @@
     { value: 'dark', label: 'Dark', icon: 'ph ph-moon' },
   ];
   const ACCENT_SOURCE_OPTIONS: { value: 'song' | 'custom'; label: string; icon: string }[] = [
-    { value: 'song', label: 'Song Art', icon: 'ph-duotone ph-vinyl-record' },
+    { value: 'song', label: 'Song art', icon: 'ph-duotone ph-vinyl-record' },
     { value: 'custom', label: 'Custom', icon: 'ph-duotone ph-paint-bucket' },
   ];
   const ACCENT_PRESETS = ['#ff4d5e', '#ff8a5c', '#8b5cf6', '#22c55e', '#0ea5e9', '#f5a524'];
+  const SIDEBAR_OPTIONS = [
+    { compact: false, label: 'Full', icon: 'ph ph-sidebar-simple' },
+    { compact: true, label: 'Covers only', icon: 'ph ph-squares-four' },
+  ];
+  // Fixed colours: the previews show each theme as it looks, whatever theme is
+  // active (Tailwind neutrals are remapped in light mode).
+  const THEME_PREVIEW = {
+    dark: { surface: '#050505', panel: '#161616', art: '#262626', text: '#3f3f46' },
+    light: { surface: '#f4f4f5', panel: '#ffffff', art: '#e4e4e7', text: '#d4d4d8' },
+  };
+  // The song-art tile shows the artwork the accent is currently taken from.
+  $: previewArt = $playerStore.track?.thumbnails?.[0]?.url ?? '';
+
+  // ── Section chips ───────────────────────────────────────────────
+  const SECTIONS = [
+    { id: 'settings-account', label: 'Account' },
+    { id: 'settings-appearance', label: 'Appearance' },
+    { id: 'settings-player', label: 'Player' },
+    { id: 'settings-integrations', label: 'Integrations' },
+    { id: 'settings-data', label: 'Data' },
+    { id: 'settings-shortcuts', label: 'Shortcuts' },
+    { id: 'settings-about', label: 'About' },
+  ];
+  let activeSection = SECTIONS[0].id;
+  /** Collapsible sections, closed until opened or jumped to. */
+  let openSections: Record<string, boolean> = { 'settings-integrations': false, 'settings-shortcuts': false };
+  let chipsScrolled = false;
+  let chipBar: HTMLElement | undefined;
+  let scroller: HTMLElement | null = null;
+
+  /** The section whose top has passed under the chip bar is the current one. */
+  function syncActiveSection(): void {
+    if (!scroller || !chipBar) return;
+    chipsScrolled = scroller.scrollTop > 0;
+    const line = chipBar.getBoundingClientRect().bottom + 8;
+    let current = SECTIONS[0].id;
+    for (const section of SECTIONS) {
+      const node = scroller.querySelector<HTMLElement>(`#${section.id}`);
+      if (node && node.getBoundingClientRect().top <= line) current = section.id;
+    }
+    // At the very bottom the last sections may never reach the line.
+    if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) current = SECTIONS[SECTIONS.length - 1].id;
+    activeSection = current;
+  }
+
+  function jumpTo(id: string): void {
+    const node = scroller?.querySelector<HTMLElement>(`#${id}`);
+    // Jumping to a collapsed section opens it; its top stays put while it grows.
+    if (id in openSections) openSections[id] = true;
+    if (!scroller || !node || !chipBar) return;
+    const offset = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - chipBar.offsetHeight;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollTo({ top: scroller.scrollTop + offset, behavior: reduce ? 'auto' : 'smooth' });
+    activeSection = id;
+  }
+
+  onMount(() => {
+    scroller = chipBar?.closest<HTMLElement>('.cherry-overlay-scroll') ?? null;
+    if (!scroller) return;
+    scroller.addEventListener('scroll', syncActiveSection, { passive: true });
+    return () => scroller?.removeEventListener('scroll', syncActiveSection);
+  });
 
   const DISCORD_STATUS_OPTIONS = [
     { value: 'details', label: 'Song title' },
@@ -466,15 +528,53 @@
   onDestroy(stopPolling);
 </script>
 
-<div class="mx-auto max-w-3xl">
-  <header class="mb-6">
+{#snippet themePreview(mode: 'system' | 'light' | 'dark')}
+  <span class="relative block h-16 overflow-hidden rounded-lg" aria-hidden="true">
+    {#each mode === 'system' ? (['light', 'dark'] as const) : [mode] as part (part)}
+      {@const colors = THEME_PREVIEW[part]}
+      <span
+        class="absolute inset-0 flex gap-1 p-1.5"
+        style:background={colors.surface}
+        style:clip-path={mode === 'system' && part === 'dark' ? 'polygon(100% 0, 100% 100%, 0 100%)' : undefined}
+      >
+        <span class="flex w-1/4 flex-col gap-1 rounded-[5px] p-1" style:background={colors.panel}>
+          {#each [0, 1, 2] as row (row)}<span class="h-1 rounded-full" style:background={colors.text}></span>{/each}
+        </span>
+        <span class="flex flex-1 flex-col gap-1">
+          <span class="h-1.5 w-2/5 rounded-full bg-[var(--color-accent)]"></span>
+          <span class="flex flex-1 gap-1">
+            {#each [0, 1, 2] as card (card)}<span class="flex-1 rounded-[4px]" style:background={colors.art}></span>{/each}
+          </span>
+        </span>
+      </span>
+    {/each}
+  </span>
+{/snippet}
+
+<div class="relative mx-auto max-w-4xl">
+  <!-- The same shallow accent wash as the app shell, scrolling with the page. -->
+  <div class="cherry-dialog-wash pointer-events-none absolute -inset-x-6 -top-6 h-56" aria-hidden="true"></div>
+  <header class="relative mb-3">
     <h1 class="text-[26px] font-extrabold tracking-tight text-white sm:text-[32px]">Settings</h1>
-    <p class="mt-1 text-[12px] text-zinc-500">Account, integrations and app data.</p>
   </header>
+
+  <!-- Sticky offsets are measured inside the scroller's 24px padding, so -top-6
+       pins the bar flush with the dialog's top edge. -->
+  <nav bind:this={chipBar} class="cherry-chip-bar sticky -top-6 z-[5] -mx-6 mb-3 pb-4 pl-6 pr-14 pt-3" class:scrolled={chipsScrolled} aria-label="Settings sections">
+    <div class="flex flex-wrap gap-2">
+      {#each SECTIONS as section (section.id)}
+        <button
+          class="shrink-0 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors {activeSection === section.id ? 'bg-white text-black' : 'cherry-nav-button text-zinc-200'}"
+          aria-current={activeSection === section.id ? 'true' : undefined}
+          onclick={() => jumpTo(section.id)}
+        >{section.label}</button>
+      {/each}
+    </div>
+  </nav>
 
   <div class="flex flex-col gap-3">
     <!-- Account -->
-    <SettingsSection title={name} description={`${profile?.handle ? `${profile.handle} · ` : ''}${$playlistStore.length} playlists`}>
+    <SettingsSection id="settings-account" title={name} description={`${profile?.handle ? `${profile.handle} · ` : ''}${$playlistStore.length} playlists`}>
       <span slot="leading" class="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[var(--color-avatar)]">
         {#if profile?.avatarUrl}
           <img src={profile.avatarUrl} alt="" class="h-full w-full object-cover" />
@@ -627,11 +727,266 @@
       {/if}
     </SettingsSection>
 
+    <!-- Appearance -->
+    <SettingsSection
+      id="settings-appearance"
+      title="Appearance"
+    >
+      <div class="flex flex-col gap-6">
+        <div>
+          <p class="mb-2 text-[12px] font-semibold text-zinc-200">Theme</p>
+          <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
+            {#each THEME_OPTIONS as option (option.value)}
+              {@const selected = $settingsStore.theme === option.value}
+              <button
+                role="radio"
+                aria-checked={selected}
+                class="group rounded-xl p-1.5 text-left transition-colors {selected ? 'bg-white/[0.06] ring-2 ring-[var(--color-accent)]' : 'bg-white/[0.03] hover:bg-white/[0.06]'}"
+                onclick={() => updateSettings({ theme: option.value })}
+              >
+                {@render themePreview(option.value)}
+                <span class="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] font-medium transition-colors {selected ? 'text-white' : 'text-zinc-400 group-hover:text-white'}">
+                  <i class={option.icon} aria-hidden="true"></i>{option.label}
+                </span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="grid gap-6 sm:grid-cols-2">
+          <div>
+            <p class="mb-2 text-[12px] font-semibold text-zinc-200">Accent colour</p>
+            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Accent colour source">
+              {#each ACCENT_SOURCE_OPTIONS as option (option.value)}
+                {@const selected = $settingsStore.accentSource === option.value}
+                <button
+                  role="radio"
+                  aria-checked={selected}
+                  class="group rounded-xl p-1.5 text-left transition-colors {selected ? 'bg-white/[0.06] ring-2 ring-[var(--color-accent)]' : 'bg-white/[0.03] hover:bg-white/[0.06]'}"
+                  onclick={() => updateSettings({ accentSource: option.value })}
+                >
+                  <span class="flex h-12 items-center justify-center gap-2 rounded-lg bg-white/[0.04]" aria-hidden="true">
+                    {#if option.value === 'song'}
+                      <span class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md bg-[var(--color-art)]">
+                        {#if previewArt}
+                          <img src={previewArt} alt="" class="h-full w-full object-cover" />
+                        {:else}
+                          <i class="ph-duotone ph-vinyl-record text-lg text-zinc-500"></i>
+                        {/if}
+                      </span>
+                      <span class="flex flex-col gap-1">
+                        <span class="h-2 w-6 rounded-full bg-[var(--color-accent)]"></span>
+                        <span class="h-2 w-4 rounded-full bg-[var(--color-accent2)]"></span>
+                      </span>
+                    {:else}
+                      {#each ACCENT_PRESETS.slice(0, 4) as preset (preset)}
+                        <span class="h-3.5 w-3.5 rounded-full" style:background={preset}></span>
+                      {/each}
+                    {/if}
+                  </span>
+                  <span class="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] font-medium transition-colors {selected ? 'text-white' : 'text-zinc-400 group-hover:text-white'}">
+                    <i class={option.icon} aria-hidden="true"></i>{option.label}
+                  </span>
+                </button>
+              {/each}
+            </div>
+            {#if $settingsStore.accentSource === 'custom'}
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  type="color"
+                  value={$settingsStore.accentColor}
+                  oninput={(e) => previewAccent((e.currentTarget as HTMLInputElement).value)}
+                  onchange={(e) => commitAccent((e.currentTarget as HTMLInputElement).value)}
+                  class="h-8 w-10 cursor-pointer rounded-md border border-white/10 bg-transparent"
+                  aria-label="Accent colour"
+                />
+                <div class="flex items-center gap-1.5">
+                  {#each ACCENT_PRESETS as preset (preset)}
+                    <button
+                      class="h-6 w-6 rounded-full border border-white/15 transition-transform hover:scale-110"
+                      style="background: {preset}"
+                      title={preset}
+                      aria-label={`Accent ${preset}`}
+                      onclick={() => updateSettings({ accentColor: preset })}
+                    ></button>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <div>
+            <p class="mb-2 text-[12px] font-semibold text-zinc-200">Sidebar</p>
+            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Sidebar layout">
+              {#each SIDEBAR_OPTIONS as option (option.label)}
+                {@const selected = !!$settingsStore.compactSidebar === option.compact}
+                <button
+                  role="radio"
+                  aria-checked={selected}
+                  class="group rounded-xl p-1.5 text-left transition-colors {selected ? 'bg-white/[0.06] ring-2 ring-[var(--color-accent)]' : 'bg-white/[0.03] hover:bg-white/[0.06]'}"
+                  onclick={() => updateSettings({ compactSidebar: option.compact })}
+                >
+                  <span class="flex h-12 gap-1 rounded-lg bg-white/[0.04] p-1" aria-hidden="true">
+                    <span class="flex shrink-0 flex-col gap-1 rounded-[5px] bg-white/[0.08] p-1 {option.compact ? 'w-4 items-center' : 'w-2/5'}">
+                      {#each [0, 1, 2] as row (row)}
+                        {#if option.compact}
+                          <span class="h-2 w-2 rounded-[2px] bg-white/20"></span>
+                        {:else}
+                          <span class="flex items-center gap-1"><span class="h-2 w-2 shrink-0 rounded-[2px] bg-white/20"></span><span class="h-1 flex-1 rounded-full bg-white/15"></span></span>
+                        {/if}
+                      {/each}
+                    </span>
+                    <span class="flex-1 rounded-[5px] bg-white/[0.03]"></span>
+                  </span>
+                  <span class="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] font-medium transition-colors {selected ? 'text-white' : 'text-zinc-400 group-hover:text-white'}">
+                    <i class={option.icon} aria-hidden="true"></i>{option.label}
+                  </span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p class="mb-1 text-[12px] font-semibold text-zinc-200">Surfaces</p>
+          <div class="grid gap-x-6 sm:grid-cols-2">
+            <label class="flex items-center gap-3 py-1.5">
+              <span class="h-7 w-11 shrink-0 rounded-md ring-1 ring-inset ring-white/10" style:background="linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 40%, var(--color-surface)), var(--color-surface) 85%)" aria-hidden="true"></span>
+              <span class="flex-1 text-[12px] text-zinc-300">Accent gradients</span>
+              <Toggle checked={$settingsStore.gradientsEnabled} label="Background gradients" onchange={(value) => updateSettings({ gradientsEnabled: value })} />
+            </label>
+            <label class="flex items-center gap-3 py-1.5">
+              <span class="h-7 w-11 shrink-0 rounded-md ring-1 ring-inset ring-white/10" style:background="color-mix(in srgb, var(--color-accent) 16%, var(--color-surface))" aria-hidden="true"></span>
+              <span class="flex-1 text-[12px] text-zinc-300">Tint surfaces with accent</span>
+              <Toggle checked={$settingsStore.tintedBackground} label="Tinted surfaces" onchange={(value) => updateSettings({ tintedBackground: value })} />
+            </label>
+            <label class="flex items-center gap-3 py-1.5">
+              <span class="relative h-7 w-11 shrink-0 rounded-md bg-[var(--color-surface)] ring-1 ring-inset ring-white/10" aria-hidden="true"><span class="absolute inset-y-1 right-1 w-3 rounded-[3px] bg-white/15"></span></span>
+              <span class="flex-1 text-[12px] text-zinc-300">Always show queue when there’s room</span>
+              <Toggle checked={$settingsStore.queueSidebar} label="Always show queue (when there’s room)" onchange={(value) => updateSettings({ queueSidebar: value })} />
+            </label>
+            <label class="flex items-center gap-3 py-1.5">
+              <span class="flex h-7 w-11 shrink-0 items-start justify-end gap-[3px] rounded-md bg-[var(--color-surface)] p-1.5 ring-1 ring-inset ring-white/10" aria-hidden="true">
+                {#each [0, 1, 2] as dot (dot)}<span class="h-1 w-1.5 rounded-full bg-white/30"></span>{/each}
+              </span>
+              <span class="flex-1 text-[12px] text-zinc-300">Show window controls</span>
+              <Toggle checked={$settingsStore.windowControls} label="Show window controls" onchange={(value) => updateSettings({ windowControls: value })} />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-[12px] font-semibold text-zinc-200">Zoom</span>
+            <span class="text-[11px] tabular-nums text-zinc-500">{Math.round(zoomValue * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min={ZOOM_MIN}
+            max={ZOOM_MAX}
+            step={ZOOM_STEP}
+            value={zoomValue}
+            style="--fill: {zoomFillPercent(zoomValue)}%"
+            class="cherry-range cherry-range-always w-full"
+            aria-label="UI zoom"
+            oninput={(e) => {
+              zoomDraft = Number((e.currentTarget as HTMLInputElement).value);
+              applyZoom(zoomDraft);
+            }}
+            onchange={() => {
+              if (zoomDraft !== null) {
+                void updateSettings({ uiZoom: zoomDraft });
+                zoomDraft = null;
+              }
+            }}
+          />
+          <!-- Visible step markers, aligned to the handle's travel (half a thumb
+               in from each end). -->
+          <div class="pointer-events-none mt-1.5 flex justify-between px-[6px]">
+            {#each ZOOM_STEPS as step (step)}
+              <span
+                class="h-1.5 w-px rounded-full {Math.abs(step - zoomValue) < ZOOM_STEP / 2
+                  ? 'bg-[var(--color-accent2)]'
+                  : 'bg-white/15'}"
+              ></span>
+            {/each}
+          </div>
+        </div>
+      </div>
+    </SettingsSection>
+
+    <!-- Player -->
+    <SettingsSection
+      id="settings-player"
+      title="Player"
+      description="Lyrics, video and player controls."
+    >
+      <div class="flex flex-col gap-5">
+        <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Playback</div>
+          <label class="mb-3 flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-fill ph-microphone-stage shrink-0 text-sm text-zinc-500"></i>Show lyrics when available</span>
+            <Toggle checked={$settingsStore.lyricsEnabled} label="Show lyrics when available" onchange={(value) => updateSettings({ lyricsEnabled: value })} />
+          </label>
+          <label class="mb-3 flex items-center justify-between gap-4">
+            <span class="text-[12px] text-zinc-300" title="Tries LRCLIB first, then YouTube Music. Uses song details without sign-in data.">Use LRCLIB for lyrics</span>
+            <Toggle checked={$settingsStore.lyricsLookupEnabled} label="Prefer LRCLIB lyrics before YouTube Music" onchange={(value) => updateSettings({ lyricsLookupEnabled: value })} />
+          </label>
+          <label class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-film-strip shrink-0 text-sm text-zinc-500"></i>Letterbox videos</span>
+            <Toggle checked={$settingsStore.videoLetterboxing} label="Show full videos with black letterboxing"
+              onchange={(value) => updateSettings({ videoLetterboxing: value })} />
+          </label>
+          <label class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300">
+              <i class="ph-duotone ph-waveform shrink-0 text-sm text-zinc-500" aria-hidden="true"></i>Music visualizer in the background
+              <span class="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400">Experimental</span>
+            </span>
+            <Toggle checked={$settingsStore.visualizerEnabled} label="Music visualizer in the background"
+              onchange={(value) => updateSettings({ visualizerEnabled: value })} />
+          </label>
+          <label class="flex items-center justify-between gap-4">
+            <span class="flex items-center gap-2 text-[12px] text-zinc-300">
+              <i class="ph-duotone ph-film-strip shrink-0 text-sm text-zinc-500" aria-hidden="true"></i>Music video in the background
+              <span class="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-zinc-400">Experimental</span>
+            </span>
+            <Toggle checked={$settingsStore.videoBackground} label="Music video in the background"
+              onchange={(value) => updateSettings({ videoBackground: value })} />
+          </label>
+        </div>
+
+        <div>
+          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Player buttons</div>
+          <div class="flex flex-wrap items-center gap-2">
+            {#each PLAYER_BUTTONS as button (button.key)}
+              <button
+                type="button"
+                class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors {$settingsStore[
+                  button.key
+                ]
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1] hover:text-white'}"
+                title={`${$settingsStore[button.key] ? 'Hide' : 'Show'} ${button.label}`}
+                aria-label={`${$settingsStore[button.key] ? 'Hide' : 'Show'} ${button.label}`}
+                aria-pressed={$settingsStore[button.key]}
+                onclick={() =>
+                  updateSettings({ [button.key]: !$settingsStore[button.key] } as Partial<CherrySettings>)}
+              >
+                <i class="{$settingsStore[button.key] && button.key !== 'playerShowQueue' ? 'ph-fill' : 'ph'} {button.icon} text-xl leading-none"></i>
+              </button>
+            {/each}
+          </div>
+        </div>
+      </div>
+    </SettingsSection>
+
     <!-- Integrations -->
     <SettingsSection
+      id="settings-integrations"
+      collapsible
+      bind:open={openSections['settings-integrations']}
       title="Integrations"
       description="Connect Cherry to the services you use."
-      collapsible
     >
       <span slot="action" class="flex items-center gap-1.5">
         <span
@@ -822,231 +1177,9 @@
       </div>
     </SettingsSection>
 
-    <!-- Appearance -->
-    <SettingsSection
-      title="Appearance"
-      description="Tweak the Zoom, Theme &amp; Layout of Cherry."
-      collapsible
-    >
-      <div class="flex flex-col gap-5">
-        <div>
-          <div class="mb-2 flex items-center justify-between">
-            <span class="text-[12px] font-semibold text-zinc-200">Zoom</span>
-            <span class="text-[11px] tabular-nums text-zinc-500">{Math.round(zoomValue * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={ZOOM_MIN}
-            max={ZOOM_MAX}
-            step={ZOOM_STEP}
-            value={zoomValue}
-            style="--fill: {zoomFillPercent(zoomValue)}%"
-            class="cherry-range cherry-range-always w-full"
-            aria-label="UI zoom"
-            oninput={(e) => {
-              zoomDraft = Number((e.currentTarget as HTMLInputElement).value);
-              applyZoom(zoomDraft);
-            }}
-            onchange={() => {
-              if (zoomDraft !== null) {
-                void updateSettings({ uiZoom: zoomDraft });
-                zoomDraft = null;
-              }
-            }}
-          />
-          <!-- Visible step markers, aligned to the handle's travel (half a thumb
-               in from each end). -->
-          <div class="pointer-events-none mt-1.5 flex justify-between px-[6px]">
-            {#each ZOOM_STEPS as step (step)}
-              <span
-                class="h-1.5 w-px rounded-full {Math.abs(step - zoomValue) < ZOOM_STEP / 2
-                  ? 'bg-[var(--color-accent2)]'
-                  : 'bg-white/15'}"
-              ></span>
-            {/each}
-          </div>
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Theme</div>
-          <div class="flex gap-1 rounded-xl bg-white/[0.03] p-1">
-            {#each THEME_OPTIONS as option (option.value)}
-              <button
-                class="flex flex-1 items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-[11px] font-medium transition-colors {$settingsStore.theme ===
-                option.value
-                  ? 'bg-[var(--color-accent)] text-white'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-white'}"
-                onclick={() => updateSettings({ theme: option.value })}
-              >
-                <i class={option.icon}></i>{option.label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Accent colour</div>
-          <div class="flex gap-1 rounded-xl bg-white/[0.03] p-1">
-            {#each ACCENT_SOURCE_OPTIONS as option (option.value)}
-              <button
-                class="flex flex-1 items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-[11px] font-medium transition-colors {$settingsStore.accentSource ===
-                option.value
-                  ? 'bg-[var(--color-accent)] text-white'
-                  : 'text-zinc-400 hover:bg-white/5 hover:text-white'}"
-                onclick={() => updateSettings({ accentSource: option.value })}
-              >
-                <i class={option.icon}></i>{option.label}
-              </button>
-            {/each}
-          </div>
-          {#if $settingsStore.accentSource === 'custom'}
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-              <input
-                type="color"
-                value={$settingsStore.accentColor}
-                oninput={(e) => previewAccent((e.currentTarget as HTMLInputElement).value)}
-                onchange={(e) => commitAccent((e.currentTarget as HTMLInputElement).value)}
-                class="h-8 w-10 cursor-pointer rounded-md border border-white/10 bg-transparent"
-                aria-label="Accent colour"
-              />
-              <div class="flex items-center gap-1.5">
-                {#each ACCENT_PRESETS as preset (preset)}
-                  <button
-                    class="h-6 w-6 rounded-full border border-white/15 transition-transform hover:scale-110"
-                    style="background: {preset}"
-                    title={preset}
-                    aria-label={`Accent ${preset}`}
-                    onclick={() => updateSettings({ accentColor: preset })}
-                  ></button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Window controls</div>
-          <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-browser shrink-0 text-sm text-zinc-500" aria-hidden="true"></i>Show window controls</span>
-            <Toggle
-              checked={$settingsStore.windowControls}
-              label="Show window controls"
-              onchange={(value) => updateSettings({ windowControls: value })}
-            />
-          </label>
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Background</div>
-          <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-drop shrink-0 text-sm text-zinc-500"></i>Accent gradients</span>
-            <Toggle
-              checked={$settingsStore.gradientsEnabled}
-              label="Background gradients"
-              onchange={(value) => updateSettings({ gradientsEnabled: value })}
-            />
-          </label>
-          <label class="mt-3 flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-paint-bucket shrink-0 text-sm text-zinc-500"></i>Tint surfaces with accent</span>
-            <Toggle
-              checked={$settingsStore.tintedBackground}
-              label="Tinted surfaces"
-              onchange={(value) => updateSettings({ tintedBackground: value })}
-            />
-          </label>
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Sidebar</div>
-          <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-layout shrink-0 text-sm text-zinc-500"></i>Compact (covers only)</span>
-            <Toggle
-              checked={$settingsStore.compactSidebar}
-              label="Compact sidebar"
-              onchange={(value) => updateSettings({ compactSidebar: value })}
-            />
-          </label>
-          <label class="mt-3 flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph ph-queue shrink-0 text-sm text-zinc-500"></i>Always show queue (when there’s room)</span>
-            <Toggle
-              checked={$settingsStore.queueSidebar}
-              label="Always show queue (when there’s room)"
-              onchange={(value) => updateSettings({ queueSidebar: value })}
-            />
-          </label>
-        </div>
-
-      </div>
-    </SettingsSection>
-
-    <SettingsSection
-      title="Player"
-      description="Lyrics, video and player controls."
-      collapsible
-    >
-      <div class="flex flex-col gap-5">
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Playback</div>
-          <label class="mb-3 flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-fill ph-microphone-stage shrink-0 text-sm text-zinc-500"></i>Show lyrics when available</span>
-            <Toggle checked={$settingsStore.lyricsEnabled} label="Show lyrics when available" onchange={(value) => updateSettings({ lyricsEnabled: value })} />
-          </label>
-          <label class="mb-3 flex items-center justify-between gap-4">
-            <span class="text-[12px] text-zinc-300" title="Tries LRCLIB first, then YouTube Music. Uses song details without sign-in data.">Use LRCLIB for lyrics</span>
-            <Toggle checked={$settingsStore.lyricsLookupEnabled} label="Prefer LRCLIB lyrics before YouTube Music" onchange={(value) => updateSettings({ lyricsLookupEnabled: value })} />
-          </label>
-          <label class="flex items-center justify-between gap-4">
-            <span class="flex items-center gap-2 text-[12px] text-zinc-300"><i class="ph-duotone ph-film-strip shrink-0 text-sm text-zinc-500"></i>Letterbox videos</span>
-            <Toggle checked={$settingsStore.videoLetterboxing} label="Show full videos with black letterboxing"
-              onchange={(value) => updateSettings({ videoLetterboxing: value })} />
-          </label>
-        </div>
-
-        <div>
-          <div class="mb-2 text-[12px] font-semibold text-zinc-200">Player buttons</div>
-          <div class="flex flex-wrap items-center gap-2">
-            {#each PLAYER_BUTTONS as button (button.key)}
-              <button
-                type="button"
-                class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors {$settingsStore[
-                  button.key
-                ]
-                  ? 'bg-[var(--color-accent)] text-white'
-                  : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1] hover:text-white'}"
-                title={`${$settingsStore[button.key] ? 'Hide' : 'Show'} ${button.label}`}
-                aria-label={`${$settingsStore[button.key] ? 'Hide' : 'Show'} ${button.label}`}
-                aria-pressed={$settingsStore[button.key]}
-                onclick={() =>
-                  updateSettings({ [button.key]: !$settingsStore[button.key] } as Partial<CherrySettings>)}
-              >
-                <i class="{$settingsStore[button.key] && button.key !== 'playerShowQueue' ? 'ph-fill' : 'ph'} {button.icon} text-xl leading-none"></i>
-              </button>
-            {/each}
-          </div>
-        </div>
-      </div>
-    </SettingsSection>
-
-    <!-- Keyboard shortcuts -->
-    <SettingsSection
-      title="Keyboard shortcuts"
-      description="Work anywhere in the window, except while typing."
-      collapsible
-    >
-      <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[12px]">
-        {#each SHORTCUT_HELP as shortcut (shortcut.action)}
-          <dt class="text-zinc-300">{shortcut.label}</dt>
-          <dd class="text-right">
-            <kbd class="rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
-              >{isMac ? shortcut.display.replace('Ctrl', '⌘') : shortcut.display}</kbd
-            >
-          </dd>
-        {/each}
-      </dl>
-    </SettingsSection>
-
     <!-- Data and cache -->
     <SettingsSection
+      id="settings-data"
       title="Data &amp; Cache"
       description="Everything Cherry keeps on this device."
     >
@@ -1073,6 +1206,26 @@
         </button>
       </div>
       {#if clearNotice}<p class="mt-2 text-[11px] text-emerald-300">{clearNotice}</p>{/if}
+    </SettingsSection>
+
+    <!-- Keyboard shortcuts -->
+    <SettingsSection
+      id="settings-shortcuts"
+      collapsible
+      bind:open={openSections['settings-shortcuts']}
+      title="Keyboard shortcuts"
+      description="Work anywhere in the window, except while typing."
+    >
+      <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[12px]">
+        {#each SHORTCUT_HELP as shortcut (shortcut.action)}
+          <dt class="text-zinc-300">{shortcut.label}</dt>
+          <dd class="text-right">
+            <kbd class="rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
+              >{isMac ? shortcut.display.replace('Ctrl', '⌘') : shortcut.display}</kbd
+            >
+          </dd>
+        {/each}
+      </dl>
     </SettingsSection>
 
     {#if $settingsStore.developerUnlocked}
@@ -1117,6 +1270,7 @@
 
     <!-- Licenses, credits and third-party software -->
     <SettingsSection
+      id="settings-about"
       title="Open Source &amp; Contributors"
       description="The projects Cherry is built on, and the people who helped."
       collapsible

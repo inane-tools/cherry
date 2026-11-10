@@ -71,6 +71,10 @@ export interface CherrySettings {
   videoQuality: string;
   videoPreferred: boolean;
   videoLetterboxing: boolean;
+  /** Experimental: music-reactive colour fields behind the window. */
+  visualizerEnabled: boolean;
+  /** Experimental: in video mode, play the video behind the window while the player is collapsed. */
+  videoBackground: boolean;
   /** Player buttons that can be hidden. */
   playerShowPrev: boolean;
   playerShowShuffle: boolean;
@@ -131,6 +135,8 @@ export const DEFAULT_SETTINGS: CherrySettings = {
   videoQuality: 'highest',
   videoPreferred: false,
   videoLetterboxing: false,
+  visualizerEnabled: false,
+  videoBackground: false,
   playerShowPrev: true,
   playerShowShuffle: true,
   playerShowRepeat: true,

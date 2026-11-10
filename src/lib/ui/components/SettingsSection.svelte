@@ -14,13 +14,14 @@
   export let hoverDescription = false;
   /** Turn the header into a toggle that shows/hides the body. */
   export let collapsible = false;
-  /** Whether a collapsible section starts open (defaults to collapsed). */
+  /** Whether a collapsible section is open (defaults to collapsed); bindable
+   *  so Settings can open a section it jumps to. */
   export let open = false;
-
-  let expanded = open;
+  /** Anchor for the section chips at the top of Settings. */
+  export let id: string | undefined = undefined;
 
   function toggle(): void {
-    if (collapsible) expanded = !expanded;
+    if (collapsible) open = !open;
   }
 
   function onHeaderKey(event: KeyboardEvent): void {
@@ -44,13 +45,13 @@
     : 'text-[18px] font-extrabold tracking-tight sm:text-[20px]';
 </script>
 
-<section class="rounded-xl px-5 py-4 {shell}">
+<section {id} data-settings-section={id ? '' : undefined} class="rounded-xl px-5 py-4 {shell}">
   <!-- svelte-ignore a11y_no_noninteractive_tabindex : role is `button` whenever the tabindex is set -->
   <div
     class="group flex items-center gap-3 {collapsible ? 'cursor-pointer select-none' : ''}"
     role={collapsible ? 'button' : undefined}
     tabindex={collapsible ? 0 : undefined}
-    aria-expanded={collapsible ? expanded : undefined}
+    aria-expanded={collapsible ? open : undefined}
     onclick={toggle}
     onkeydown={onHeaderKey}
   >
@@ -67,7 +68,7 @@
     <slot name="action" />
     {#if collapsible}
       <i
-        class="{expanded ? 'ph ph-caret-up' : 'ph ph-caret-down'} shrink-0 text-xl text-zinc-500"
+        class="{open ? 'ph ph-caret-up' : 'ph ph-caret-down'} shrink-0 text-xl text-zinc-500"
         aria-hidden="true"
       ></i>
     {/if}
@@ -77,10 +78,10 @@
          close without setting an explicit pixel height, which kept the overlay's
          scroll geometry sane. -->
     <div
-      class="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none {expanded
+      class="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none {open
         ? 'grid-rows-[1fr]'
         : 'grid-rows-[0fr]'}"
-      inert={!expanded}
+      inert={!open}
     >
       <div class="min-h-0 overflow-hidden">
         <div class="mt-4"><slot /></div>

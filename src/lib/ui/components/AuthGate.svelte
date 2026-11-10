@@ -33,7 +33,7 @@
 </script>
 
 <div class="relative flex h-full w-full items-center justify-center px-6 py-16">
-  <div class="w-full max-w-md rounded-2xl bg-[var(--color-popover)] p-8 text-left">
+  <div class="w-full max-w-md rounded-2xl cherry-glass p-8 text-left">
     <img src={logoUrl} alt="Cherry" class="h-16 w-16 rounded-2xl shadow-lg" />
     <h2 class="mt-4 text-lg font-bold text-white">{title}</h2>
     <p class="mt-2 max-w-sm text-[13px] leading-relaxed text-zinc-500">

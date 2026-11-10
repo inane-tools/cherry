@@ -833,3 +833,35 @@ describe('previous track', () => {
     await player.stopPlayback();
   });
 });
+
+describe('video surfaces', () => {
+  it('lends the same video element to a newer surface and returns it when that surface goes away', async () => {
+    const { getMusicVideo } = await import('$lib/infra/ytmusic/InnertubeClient');
+    const frame = document.createElement('div');
+    const backdrop = document.createElement('div');
+    document.body.append(frame, backdrop);
+    const frameSurface = player.videoSurface(frame);
+    try {
+      const start = player.playTracks([track('audio-only'), track('has-video')]);
+      await flush(); pending[0].resolve('https://media/song'); await start;
+      vi.mocked(getMusicVideo).mockResolvedValueOnce(null);
+      const enable = player.setVideoMode(true);
+      await flush(); pending[1].resolve('https://media/song'); await enable;
+      const advance = player.next();
+      await flush(); pending[2].resolve('https://media/video'); await advance;
+      const video = frame.querySelector('video');
+      expect(video).not.toBeNull();
+      // The window backdrop borrows the element (no second clock) ...
+      const backdropSurface = player.videoSurface(backdrop);
+      expect(backdrop.querySelector('video')).toBe(video);
+      expect(frame.querySelector('video')).toBeNull();
+      // ... and expanding the player (backdrop unmounts) hands it back.
+      backdropSurface.destroy();
+      expect(frame.querySelector('video')).toBe(video);
+    } finally {
+      frameSurface.destroy();
+      frame.remove(); backdrop.remove();
+      await player.stopPlayback(); await player.setVideoMode(false);
+    }
+  });
+});
