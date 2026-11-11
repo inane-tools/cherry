@@ -130,6 +130,10 @@
   let message = '';
   let error = '';
   let polling = false;
+  // Bumped by every start, cancel and sign-out. A poll that resolves after its
+  // attempt ended (e.g. Cancel while it was awaiting) must not write status or
+  // finish a sign-in the user abandoned.
+  let loginAttempt = 0;
   let statusTimer: ReturnType<typeof setInterval> | null = null;
 
   // Manual fallback
@@ -402,8 +406,10 @@
     // window teardown) is in flight is what tripped the wry panic.
     if (polling) return;
     polling = true;
+    const attempt = loginAttempt;
     try {
       const status = await pollYtmStatus();
+      if (attempt !== loginAttempt) return;
       if (!status.open && !status.loggedIn) {
         // The user closed the window. Stop polling instead of hammering the
         // browser cookie store after its login window has closed.
@@ -442,6 +448,7 @@
   }
 
   async function loginWithYouTube() {
+    loginAttempt++;
     phase = 'starting';
     message = '';
     error = '';
@@ -456,6 +463,7 @@
   }
 
   function cancelLogin() {
+    loginAttempt++;
     stopPolling();
     cancelYtmLogin();
     phase = 'idle';
@@ -463,6 +471,7 @@
   }
 
   async function disconnect() {
+    loginAttempt++;
     stopPolling();
     message = '';
     error = '';

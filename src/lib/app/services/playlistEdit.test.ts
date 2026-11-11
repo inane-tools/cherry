@@ -135,7 +135,14 @@ it('removes the chosen duplicate and ignores overlapping requests for that entry
   expect(api.remove).toHaveBeenCalledTimes(1);
   expect(api.remove.mock.calls[0][3]).toEqual({ playlistEntryId: 'second', occurrence: 1 });
   finish(); await removal;
-  expect(api.record).toHaveBeenCalledExactlyOnceWith(playlist, second);
+  expect(api.record).toHaveBeenCalledExactlyOnceWith(playlist, second, 'second');
+});
+
+it('records the entry id the server resolved when the track had none', async () => {
+  openPlaylistStore.set(playlist); openPlaylistTracks.set([track]);
+  api.remove.mockResolvedValueOnce('resolved-entry');
+  await removeTrackFrom(playlist, track);
+  expect(api.record).toHaveBeenCalledExactlyOnceWith(playlist, track, 'resolved-entry');
 });
 
 it('does not modify local tracks when removal fails, ownership is absent, or the account changed', async () => {

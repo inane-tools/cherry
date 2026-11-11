@@ -4,6 +4,23 @@ All notable changes to Cherry are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] — 2026-11-11
+
+Nayoro.
+
+### Fixed
+
+- Last.fm scrobbles are counted from real listening time, so long tracks played
+  in a hidden or muted window reach the scrobble point.
+- Clicking the tray icon (or Show Cherry in its menu) restores a minimized
+  window instead of leaving it minimized.
+- A damaged saved queue order is rebuilt on launch instead of skipping or
+  repeating songs.
+- Cancelling YouTube sign-in while a status check was running no longer
+  finishes the sign-in or leaves a stale status message.
+- A song removed from a playlist no longer reappears after a reload when the
+  playlist was loaded from an older cache.
+
 ## [2.3.0] — 2026-11-10
 
 Nayoro.

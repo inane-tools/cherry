@@ -1,11 +1,28 @@
 # Status
 
-Last updated 2026-11-11. Current release: **2.3.0 Nayoro** (tag `v2.3.0` at
-c76558d). Test baseline (checked 2026-11-11): typecheck clean; 566 unit +
-65 UI + 102 node tests passing.
+Last updated 2026-11-11. Current release: **2.3.1 Nayoro** (tag `v2.3.1`).
+Test baseline (2026-11-11): typecheck clean; 577 unit + 66 UI + 105 node tests
+passing, with 1 platform-only node test skipped (the Windows-only test on
+Linux, the KDE MPRIS test on Windows).
 
 ## Done
 
+- 2.3.1 Nayoro (2026-11-11): released the fixes for known bugs 1–5 (notes in
+  `docs/releases/2.3.1.md`). Typecheck and the full suite were re-run on
+  Windows before tagging. The fixes:
+  - Scrobble time is accrued from wall-clock deltas on each tick and each
+    player state change (gaps over 90 s are ignored as sleep/clock jumps), and
+    the previous track is checked before a track change. The offline-queue
+    flush is time-based (every 60 s) instead of every 60th tick.
+  - Tray click, tray "Show Cherry" and MPRIS raise use
+    `electron/raise-window.mjs` (`restore()` before `show()`).
+  - `setQueueState` keeps a saved `order` only if it is a permutation of the
+    item indices.
+  - `SettingsView` login polls carry a `loginAttempt` token; a poll that
+    resolves after Cancel, a new attempt or sign-out is dropped.
+  - `removeTrackFromPlaylist` returns the `setVideoId` it removed and
+    `recordPlaylistRemoval(playlist, track, entryId)` records it in
+    `confirmedRemovals`.
 - 2.3.0 Nayoro (2026-11-10): one-page Settings with section chips (Account,
   Appearance, Player, Integrations, Data, Shortcuts, About;
   Integrations/Shortcuts collapsed), glass surfaces, account panel in the
@@ -30,32 +47,21 @@ c76558d). Test baseline (checked 2026-11-11): typecheck clean; 566 unit +
 
 ## In progress
 
-- Nothing active. The working tree has no uncommitted code changes.
+- Nothing active. To confirm 2.3.1 published, check the `v2.3.1` Desktop
+  builds run and the GitHub release assets.
 
 ## Known bugs
 
-1. Scrobble listening time counts 1 s `setInterval` ticks. Hidden, inaudible
-   pages (e.g. muted) get intensive timer throttling, so long tracks may never
-   reach the scrobble threshold. Fix: wall-clock deltas.
-2. A tray icon click shows the window but does not restore it when minimized.
-3. `setQueueState` trusts the contents of the persisted `order` (it checks only
-   the length).
-4. A login poll that is in flight during Cancel can overwrite `popupStatus`.
-5. Possible, from reading the code; not reproduced. Removing a song whose
-   `Track` has no `playlistEntryId` works (InnertubeClient looks up the
-   `setVideoId` itself), but `recordPlaylistRemoval` can only record it in
-   `removedOpenTracks`. That set matches by object identity and is cleared on
-   the next load, so if YouTube's read lags, the song can reappear after a
-   reload. Only affects entries the mapper found no entry id for, which should
-   be rare. Fix: have the remove call return the `setVideoId` it resolved and
-   record that in `confirmedRemovals`.
+- None open. Bug 5's fix (removal without an entry id) assumes the reload's
+  rows carry entry ids, which is true for fresh reads; it was never reproduced.
+- Not verified on a real desktop yet: the tray restore (Windows/Linux) and
+  scrobbling with the window hidden and muted.
 
 ## Next
 
 - Move the ~350 lines of smoke-test code from `electron/main.mjs` (where it
   ships in production) to `electron/smoke.mjs`.
 - Stop rebuilding the tray context menu on every `update_tray`.
-- Fix known bugs 1–5.
 - Split large files. Largest non-test sources (lines, 2026-11-11):
   `InnertubeClient.ts` 1707, `SettingsView.svelte` 1390, `player.ts` 1126,
   `PlayerBar.svelte` 826, `electron/main.mjs` 747 (the smoke-test move shrinks

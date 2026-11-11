@@ -482,18 +482,25 @@ function patchPlaylist(browseId: string, patch: Partial<Playlist>): void {
   homeSectionsStore.update(sections => sections.map(section => ({ ...section, cards: section.cards.map(card => card.browseId === browseId ? { ...card, ...patch } : card) })));
 }
 
-/** Remove one confirmed entry without interrupting the playing queue. */
-export function recordPlaylistRemoval(playlist: Playlist, track: Track): void {
+/**
+ * Remove one confirmed entry without interrupting the playing queue.
+ *
+ * `entryId` is the entry id the server removed. It defaults to the track's own,
+ * but a track mapped without one still gets the id the remove call resolved, so
+ * the removal survives reloads (`removedOpenTracks` matches by object identity
+ * and is cleared on the next load).
+ */
+export function recordPlaylistRemoval(playlist: Playlist, track: Track, entryId = track.playlistEntryId): void {
   const key = additionKey(playlist.browseId);
   confirmedAdditions.remove(key, track.videoId);
-  if (track.playlistEntryId) {
+  if (entryId) {
     const removed = confirmedRemovals.get(key) ?? new Set<string>();
-    removed.add(track.playlistEntryId);
+    removed.add(entryId);
     confirmedRemovals.set(key, removed);
   }
   if (get(openPlaylistStore)?.browseId === playlist.browseId) {
     removedOpenTracks.add(track);
-    if (track.playlistEntryId) removedOpenEntries.add(track.playlistEntryId);
+    if (entryId) removedOpenEntries.add(entryId);
     openPlaylistTracks.update(tracks => {
       const at = track.playlistEntryId ? tracks.findIndex(item => item.playlistEntryId === track.playlistEntryId) : tracks.indexOf(track);
       return at < 0 ? tracks : [...tracks.slice(0, at), ...tracks.slice(at + 1)];

@@ -15,6 +15,7 @@ import { captureYouTubeSession, createAuthPersistence } from './login.mjs';
 import { createDiscordPresence } from './discord.mjs';
 import { createLastfm } from './lastfm.mjs';
 import { createTaskbarControls } from './taskbar.mjs';
+import { raiseWindow } from './raise-window.mjs';
 import { createPlaylistImageUpload } from './playlist-image.mjs';
 import { createJumpLists, createPlaylistLaunch, playlistArgument } from './jump-list.mjs';
 import { createUpdates, updateEnvironment } from './updates.mjs';
@@ -210,7 +211,7 @@ function updateTray(state) {
   const action = id => () => send('tray://action', id);
   if (!tray) {
     tray = new Tray(nativeImage.createFromPath(join(assets, 'icon.png')).resize({ width: 20, height: 20 }));
-    tray.setToolTip('Cherry'); tray.on('click', () => { window?.show(); window?.focus(); });
+    tray.setToolTip('Cherry'); tray.on('click', () => raiseWindow(window));
   }
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: state.playing ? 'Pause' : 'Play', enabled: !!state.hasTrack, click: action('toggle') },
@@ -219,7 +220,7 @@ function updateTray(state) {
     { label: 'Shuffle', type: 'checkbox', checked: !!state.shuffle, click: action('shuffle') },
     { label: 'Repeat', submenu: ['off', 'all', 'one'].map(mode => ({ label: mode, type: 'radio', checked: state.repeat === mode, click: action('repeat:' + mode) })) },
     ...((state.pinned ?? []).length ? [{ type: 'separator' }, ...(state.pinned ?? []).slice(0, 30).map(p => ({ label: String(p.title).replaceAll('&', '&&'), click: action('playlist:' + p.browseId) }))] : []),
-    { type: 'separator' }, { label: 'Show Cherry', click: () => window?.show() }, { label: 'Quit', click: () => app.quit() },
+    { type: 'separator' }, { label: 'Show Cherry', click: () => raiseWindow(window) }, { label: 'Quit', click: () => app.quit() },
   ]));
 }
 const commands = {
@@ -372,7 +373,7 @@ async function main() {
     const { default: Player } = await import('@jellybrick/mpris-service');
     mpris = createMpris({ Player, name: smoke ? 'cherry.smoke.instance' + process.pid : 'cherry',
       dispatch: send,
-      raise: () => { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); },
+      raise: () => raiseWindow(window),
       quit: () => app.quit(), onError: error => console.warn('[mpris]', error.message),
     });
   }

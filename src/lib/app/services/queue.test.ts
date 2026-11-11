@@ -202,6 +202,26 @@ describe('restore', () => {
     setQueueState({ items, index: 7, order: [], shuffle: true, repeat: 'all' });
     expect(current()).toBe('b');
   });
+
+  it.each([
+    ['duplicates', [0, 0, 1]],
+    ['out of range', [0, 1, 5]],
+    ['negative', [-1, 0, 1]],
+    ['non-integers', [0, 1.5, 2]],
+    ['non-numbers', [0, '1', 2]],
+  ])('rebuilds an order with %s instead of trusting its length', (_label, savedOrder) => {
+    const items = tracks('a', 'b', 'c').map((t, i) => ({ track: t, queueId: `q${i}` }));
+    setQueueState({ items, index: 1, order: savedOrder as number[], shuffle: true, repeat: 'off' });
+    expect(current()).toBe('b');
+    expect(upcoming()).toEqual(['c']);
+  });
+
+  it('keeps a valid saved shuffle order', () => {
+    const items = tracks('a', 'b', 'c').map((t, i) => ({ track: t, queueId: `q${i}` }));
+    setQueueState({ items, index: 0, order: [2, 0, 1], shuffle: true, repeat: 'off' });
+    expect(current()).toBe('c');
+    expect(upcoming()).toEqual(['a', 'b']);
+  });
 });
 
 it('retains source through automatic continuation but clears it on manual additions', () => {

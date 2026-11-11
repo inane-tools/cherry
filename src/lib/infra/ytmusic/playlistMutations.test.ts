@@ -65,7 +65,7 @@ it('deletes using playlistId without the browse prefix', async () => {
 });
 
 it('removes exactly one server-issued playlist entry without browsing or matching every duplicate', async () => {
-  await removeTrackFromPlaylist('VLPLtest', 'same', session, { playlistEntryId: 'entry-b' });
+  await expect(removeTrackFromPlaylist('VLPLtest', 'same', session, { playlistEntryId: 'entry-b' })).resolves.toBe('entry-b');
   expect(execute).toHaveBeenCalledExactlyOnceWith('browse/edit_playlist', {
     playlistId: 'PLtest', actions: [{ action: 'ACTION_REMOVE_VIDEO', setVideoId: 'entry-b' }], client: 'YTMUSIC',
   });
@@ -76,7 +76,8 @@ it('resolves a duplicate occurrence across continuations when old cached tracks 
   execute.mockResolvedValueOnce({ data: { contents: { musicPlaylistShelfRenderer: {
     contents: [row('entry-a')], continuations: [{ nextContinuationData: { continuation: 'next-page' } }],
   } } } }).mockResolvedValueOnce({ data: { continuationContents: { musicPlaylistShelfContinuation: { contents: [row('entry-b')] } } } });
-  await removeTrackFromPlaylist('VLPLtest', 'same', session, { occurrence: 1 });
+  // The resolved id is returned so the caller can record the removal.
+  await expect(removeTrackFromPlaylist('VLPLtest', 'same', session, { occurrence: 1 })).resolves.toBe('entry-b');
   expect(execute).toHaveBeenNthCalledWith(2, '/browse', { continuation: 'next-page', client: 'YTMUSIC' });
   expect(execute).toHaveBeenLastCalledWith('browse/edit_playlist', {
     playlistId: 'PLtest', actions: [{ action: 'ACTION_REMOVE_VIDEO', setVideoId: 'entry-b' }], client: 'YTMUSIC',

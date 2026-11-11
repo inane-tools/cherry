@@ -1220,17 +1220,23 @@ export async function addTracksToPlaylist(
   await client.playlist.addVideos(editPlaylistId(playlistId), videoIds);
 }
 
+/**
+ * Remove one entry from a playlist. Resolves to the playlist entry id
+ * (`setVideoId`) that was removed, so callers can track the removal even when
+ * the track they hold had no entry id; liked songs have none and resolve to
+ * `undefined`.
+ */
 export async function removeTrackFromPlaylist(
   playlistId: string,
   videoId: string,
   session?: AuthSession | null,
   entry: { playlistEntryId?: string; occurrence?: number } = {},
-): Promise<void> {
+): Promise<string | undefined> {
   const client = await getInnertube(session, { retrievePlayer: false });
   if (isLikedPlaylist(playlistId)) {
     const result = await client.actions.execute('like/removelike', { target: { videoId }, client: 'YTMUSIC' });
     assertPlaylistMutation(result, 'remove the song from liked songs');
-    return;
+    return undefined;
   }
   let setVideoId = entry.playlistEntryId;
   if (!setVideoId) {
@@ -1268,6 +1274,7 @@ export async function removeTrackFromPlaylist(
     actions: [{ action: 'ACTION_REMOVE_VIDEO', setVideoId }], client: 'YTMUSIC',
   });
   assertPlaylistMutation(result, 'remove the song from the playlist');
+  return setVideoId;
 }
 
 export async function renamePlaylist(

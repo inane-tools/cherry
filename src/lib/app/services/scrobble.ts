@@ -22,6 +22,16 @@ const THRESHOLD_CAP_SECONDS = 240;
 const DEFAULT_MIN_DURATION_SECONDS = 30;
 const DEFAULT_SCROBBLE_PERCENT = 50;
 
+/**
+ * Longest gap between two accounting points that still counts as listening.
+ * A hidden, inaudible page gets Chromium's intensive timer throttling, which
+ * wakes timers about once a minute, so ticks can be ~60 s apart. A much longer
+ * gap means the machine slept or the clock jumped, and is not counted.
+ */
+const MAX_GAP_MS = 90_000;
+/** How often the offline queue is retried. */
+const FLUSH_INTERVAL_MS = 60_000;
+
 const QUEUE_KEY = 'cherry.scrobble.queue.v1';
 const MAX_QUEUE = 100;
 
@@ -93,30 +103,58 @@ export function flushScrobbleQueue(): Promise<void> {
 }
 
 let currentVideoId: string | null = null;
+let currentTrack: Track | null = null;
+let currentDuration = 0;
 let startedAt = 0;
-let listenedSeconds = 0;
+let listenedMs = 0;
 let scrobbled = false;
 let wasPlaying = false;
 let lastPosition = 0;
+/** Wall-clock time listening was last accounted up to; null while not playing. */
+let countingSince: number | null = null;
+let lastFlushAt = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
-let tickCount = 0;
+
+/**
+ * Add the wall time since the last accounting point to the current track.
+ *
+ * Listening time is measured from wall-clock deltas, not by counting 1 s
+ * interval ticks: a throttled background page fires far fewer ticks than
+ * seconds pass, so counting ticks let long tracks never reach the threshold.
+ */
+function accrue(now: number): void {
+  if (countingSince !== null) {
+    const gap = now - countingSince;
+    if (gap > 0 && gap <= MAX_GAP_MS) listenedMs += gap;
+  }
+  countingSince = wasPlaying ? now : null;
+}
 
 function beginTrack(track: Track, state: PlaybackState): void {
   currentVideoId = track.videoId;
+  currentTrack = track;
   // The timestamp is when the track started, not when the app noticed it; a
   // restored/resumed track has already been playing for `positionSeconds`.
   const position = Math.max(0, Math.round(state.positionSeconds || 0));
   startedAt = Math.floor(Date.now() / 1000) - position;
-  listenedSeconds = 0;
+  listenedMs = 0;
   scrobbled = false;
 }
 
 function onState(state: PlaybackState): void {
+  // Credit the time since the last tick to the track that was playing, and
+  // check it before switching: with throttled ticks a track can cross its
+  // threshold and end before the next tick runs.
+  accrue(Date.now());
+  if (currentTrack) maybeScrobble(currentTrack, currentDuration);
   const track = state.track;
   if (!track) {
     currentVideoId = null;
+    currentTrack = null;
+    currentDuration = 0;
     lastPosition = 0;
     wasPlaying = false;
+    countingSince = null;
     return;
   }
   // A new track — or the same track starting over after it was already
@@ -129,10 +167,12 @@ function onState(state: PlaybackState): void {
     beginTrack(track, state);
   }
   lastPosition = position;
+  currentTrack = track;
+  currentDuration = state.durationSeconds || track.durationSeconds || 0;
   const playing = state.status === 'playing';
   // A restored queue begins the track paused at launch; date the play from
   // when listening actually starts, not from when the app opened.
-  if (playing && !wasPlaying && listenedSeconds === 0 && !scrobbled) {
+  if (playing && !wasPlaying && listenedMs === 0 && !scrobbled) {
     startedAt = Math.floor(Date.now() / 1000) - Math.max(0, Math.round(position));
   }
   // Send "now playing" on the transition into playing (and on a fresh track).
@@ -140,16 +180,17 @@ function onState(state: PlaybackState): void {
     void nowPlaying(track);
   }
   wasPlaying = playing;
+  countingSince = playing ? Date.now() : null;
 }
 
 function tick(): void {
-  const state = get(playerStore);
-  if (state.status === 'playing' && state.track) {
-    listenedSeconds += 1;
-    maybeScrobble(state.track, state.durationSeconds || state.track.durationSeconds || 0);
+  const now = Date.now();
+  accrue(now);
+  if (currentTrack) maybeScrobble(currentTrack, currentDuration);
+  if (now - lastFlushAt >= FLUSH_INTERVAL_MS) {
+    lastFlushAt = now;
+    void flushScrobbleQueue();
   }
-  tickCount += 1;
-  if (tickCount % 60 === 0) void flushScrobbleQueue();
 }
 
 function maybeScrobble(track: Track, duration: number): void {
@@ -159,7 +200,7 @@ function maybeScrobble(track: Track, duration: number): void {
   if (!duration || duration < minDuration) return;
   const percent = Math.min(100, Math.max(1, s.lastfmScrobblePercent ?? DEFAULT_SCROBBLE_PERCENT));
   const threshold = Math.min((duration * percent) / 100, THRESHOLD_CAP_SECONDS);
-  if (listenedSeconds < threshold) return;
+  if (listenedMs < threshold * 1000) return;
   scrobbled = true;
   const fields = fieldsFromTrack(track);
   const timestamp = startedAt;
@@ -171,14 +212,18 @@ function maybeScrobble(track: Track, duration: number): void {
 /** Test hook: reset the per-track accounting. */
 export function resetScrobbleState(): void {
   currentVideoId = null;
+  currentTrack = null;
+  currentDuration = 0;
   startedAt = 0;
-  listenedSeconds = 0;
+  listenedMs = 0;
   scrobbled = false;
   wasPlaying = false;
   lastPosition = 0;
+  countingSince = null;
+  lastFlushAt = 0;
 }
 
-/** Exposed for tests: feed one player state / one second of wall time. */
+/** Exposed for tests: feed one player state / run one accounting tick. */
 export const __test = { onState, tick };
 
 /** Start accounting. Safe to call once at startup. */
@@ -186,5 +231,6 @@ export function startScrobbling(): void {
   if (timer) return;
   playerStore.subscribe(onState);
   timer = setInterval(tick, 1000);
+  lastFlushAt = Date.now();
   void flushScrobbleQueue();
 }

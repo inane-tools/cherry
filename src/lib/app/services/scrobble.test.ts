@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlaybackState, Track } from '$lib/core/models';
 import { get } from 'svelte/store';
 import { settingsStore } from './settings';
@@ -28,12 +28,18 @@ function state(position: number, status: PlaybackState['status'] = 'playing'): P
   return { status, track: song, positionSeconds: position, durationSeconds: 100, volume: 1, muted: false };
 }
 
+/** Move the wall clock forward. */
+function advance(ms: number): void {
+  vi.setSystemTime(Date.now() + ms);
+}
+
 /** Play `seconds` of wall time with the player reporting `playing`. */
 function listen(seconds: number, from = 0): void {
   for (let s = 0; s < seconds; s++) {
     const st = state(from + s + 1);
     playerStore.set(st);
     __test.onState(st);
+    advance(1000);
     __test.tick();
   }
 }
@@ -43,11 +49,17 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(1_800_000_000_000);
   vi.mocked(nowPlaying).mockClear();
   sent.length = 0;
   accept = () => true;
   localStorage.clear();
   resetScrobbleState();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('scrobble threshold', () => {
@@ -80,6 +92,7 @@ describe('scrobble threshold', () => {
       const st = { ...state(s), track: short, durationSeconds: 20 };
       playerStore.set(st);
       __test.onState(st);
+      advance(1000);
       __test.tick();
     }
     await settle();
@@ -112,13 +125,12 @@ describe('scrobble threshold', () => {
 
 describe('offline queue', () => {
   it('keeps the original timestamp when a failed request finishes during another song', async () => {
-    const originalTime = 1_800_000_000_000;
-    vi.spyOn(Date, 'now').mockReturnValue(originalTime);
+    const originalTime = Date.now();
     let rejectScrobble!: () => void;
     accept = () => new Promise<boolean>((resolve) => (rejectScrobble = () => resolve(false)));
     __test.onState(state(0));
     listen(50);
-    vi.mocked(Date.now).mockReturnValue(originalTime + 100_000);
+    vi.setSystemTime(originalTime + 100_000);
     __test.onState({ ...state(0), track: { ...song, videoId: 'v2', title: 'Next song' } });
     rejectScrobble();
     await settle();
@@ -170,7 +182,7 @@ describe('pause and now-playing lifecycle', () => {
   it('does not count paused time or scrobble a paused track', async () => {
     __test.onState(state(0)); listen(25);
     const paused = state(25, 'paused'); playerStore.set(paused); __test.onState(paused);
-    for (let i = 0; i < 120; i++) __test.tick();
+    for (let i = 0; i < 120; i++) { advance(1000); __test.tick(); }
     await settle(); expect(sent).toHaveLength(0); expect(nowPlaying).toHaveBeenCalledTimes(1);
     listen(24, 25); await settle(); expect(sent).toHaveLength(0);
     listen(1, 49); await settle(); expect(sent).toHaveLength(1);
@@ -178,7 +190,7 @@ describe('pause and now-playing lifecycle', () => {
   it('keeps one scrobble after pausing and resuming the rest of the track', async () => {
     __test.onState(state(0)); listen(60); await settle();
     const paused = state(60, 'paused'); playerStore.set(paused); __test.onState(paused);
-    for (let i = 0; i < 120; i++) __test.tick();
+    for (let i = 0; i < 120; i++) { advance(1000); __test.tick(); }
     listen(35, 60); await settle(); expect(sent).toHaveLength(1);
   });
   it('announces a new track even if playback stayed in playing state', () => {
@@ -190,8 +202,7 @@ describe('pause and now-playing lifecycle', () => {
 
 describe('scrobble timestamp', () => {
   it('dates a restored track from when playback starts, not from app launch', async () => {
-    vi.useFakeTimers();
-    try {
+    {
       vi.setSystemTime(1_000_000_000);
       // Restored at launch: paused at 40s.
       __test.onState(state(40, 'paused'));
@@ -201,6 +212,39 @@ describe('scrobble timestamp', () => {
       listen(50, 40); await settle();
       expect(sent).toHaveLength(1);
       expect(sent[0].timestamp).toBe(1_000_000 + 3600 - 40);
-    } finally { vi.useRealTimers(); }
+    }
+  });
+});
+
+describe('throttled background timers', () => {
+  // Regression: listening time counted 1 s interval ticks. A hidden, muted
+  // window gets intensive throttling (about one tick a minute), so a long track
+  // could play to the end without ever reaching the scrobble point.
+  it('counts wall time between sparse ticks', async () => {
+    const long = { ...song, durationSeconds: 600 };
+    const st = { ...state(0), track: long, durationSeconds: 600 };
+    playerStore.set(st);
+    __test.onState(st);
+    for (let minute = 0; minute < 3; minute++) { advance(60_000); __test.tick(); }
+    await settle(); expect(sent).toHaveLength(0);
+    advance(60_000); __test.tick();
+    await settle(); expect(sent).toHaveLength(1);
+  });
+
+  it('credits the time since the last tick when the track changes', async () => {
+    __test.onState(state(0));
+    advance(45_000); __test.tick();
+    await settle(); expect(sent).toHaveLength(0);
+    // The track ends and the next one starts before the next throttled tick.
+    advance(10_000);
+    __test.onState({ ...state(0), track: { ...song, videoId: 'v2', title: 'Next song' } });
+    await settle();
+    expect(sent.map((s) => s.track)).toEqual(['Song']);
+  });
+
+  it('does not count a gap long enough to mean the machine slept', async () => {
+    __test.onState(state(0));
+    advance(60 * 60_000); __test.tick();
+    await settle(); expect(sent).toHaveLength(0);
   });
 });

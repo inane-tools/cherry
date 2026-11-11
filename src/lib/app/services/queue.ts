@@ -279,13 +279,22 @@ export function setQueueState(state: {
   items.set(state.items);
   repeat.set(state.repeat);
   shuffleOn.set(count > 0 && state.shuffle);
-  // Rebuild a valid order when the saved one is missing/short (older payloads).
-  const restoredOrder =
-    Array.isArray(state.order) && state.order.length === count
-      ? state.order
-      : state.items.map((_, i) => i);
+  // The saved order comes from localStorage, so it is untrusted: keep it only
+  // when it is a permutation of the item indices. A missing/short order (older
+  // payloads) or one with duplicates, gaps or junk is rebuilt as the identity.
+  const restoredOrder = isPermutation(state.order, count) ? [...state.order] : state.items.map((_, i) => i);
   order.set(restoredOrder);
   index.set(count > 0 ? Math.max(0, Math.min(state.index, count - 1)) : -1);
+}
+
+function isPermutation(value: unknown, count: number): value is number[] {
+  if (!Array.isArray(value) || value.length !== count) return false;
+  const seen = new Set<number>();
+  for (const entry of value) {
+    if (!Number.isInteger(entry) || entry < 0 || entry >= count || seen.has(entry)) return false;
+    seen.add(entry);
+  }
+  return true;
 }
 
 export function validQueueSource(source: QueueSource | null | undefined): QueueSource | null {

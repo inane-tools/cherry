@@ -150,11 +150,11 @@ export async function removeTrackFrom(playlist: Playlist, track: Track, index?: 
   if (pendingRemovals.has(key)) return;
   pendingRemovals.add(key);
   try {
-    await removeTrackFromPlaylist(playlist.browseId, track.videoId, session, { playlistEntryId: track.playlistEntryId, occurrence });
+    const removedEntryId = await removeTrackFromPlaylist(playlist.browseId, track.videoId, session, { playlistEntryId: track.playlistEntryId, occurrence });
     for (const prefix of ['collection', 'meta']) cacheClear(`${prefix}:${channel}:${playlist.browseId}`);
     cacheClear(`library:${channel}:`);
     if (!current()) return;
-    recordPlaylistRemoval(playlist, track);
+    recordPlaylistRemoval(playlist, track, removedEntryId ?? track.playlistEntryId);
     notify(`Removed “${track.title}”`);
   } catch (e) {
     if (!current()) return;

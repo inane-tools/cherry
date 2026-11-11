@@ -349,6 +349,18 @@ describe('confirmed removals while reads lag', () => {
     expect(get(service.openPlaylistStore)?.trackCount).toBe(1);
   });
 
+  // Regression: a track mapped without an entry id could only be hidden by
+  // object identity for the current load, so a lagging reload brought it back.
+  it('keeps hiding an entry removed via a resolved entry id when the track had none', async () => {
+    const target = playlist('NOID');
+    const noId: Track = { videoId: 'gone', title: 'gone', artists: [], thumbnails: [] };
+    await openWith(target, [keep, noId]);
+    service.recordPlaylistRemoval(target, noId, 'gone');
+    expect(get(service.openPlaylistTracks).map(t => t.videoId)).toEqual(['keep']);
+    await openWith(target, [{ ...keep }, { ...gone }]);
+    expect(get(service.openPlaylistTracks).map(t => t.playlistEntryId)).toEqual(['keep']);
+  });
+
   it('stops filtering once a complete read no longer has the entry', async () => {
     const target = playlist('CAUGHTUP');
     await openWith(target, [keep, gone]);
