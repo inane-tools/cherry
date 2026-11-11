@@ -12,3 +12,6 @@ coverage/
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+
+# Local command output for Claude sessions
+logs/*.txt
