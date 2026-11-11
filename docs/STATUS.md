@@ -9,7 +9,9 @@ Linux, the KDE MPRIS test on Windows).
 
 - 2.3.1 Nayoro (2026-11-11): released the fixes for known bugs 1–5 (notes in
   `docs/releases/2.3.1.md`). Typecheck and the full suite were re-run on
-  Windows before tagging. The fixes:
+  Windows before tagging. The tag build (Actions run 42958530843) passed all
+  jobs and published the release with NSIS, AppImage, Flatpak, both DMGs and
+  the updater YAMLs. The fixes:
   - Scrobble time is accrued from wall-clock deltas on each tick and each
     player state change (gaps over 90 s are ignored as sleep/clock jumps), and
     the previous track is checked before a track change. The offline-queue
@@ -47,8 +49,7 @@ Linux, the KDE MPRIS test on Windows).
 
 ## In progress
 
-- Nothing active. To confirm 2.3.1 published, check the `v2.3.1` Desktop
-  builds run and the GitHub release assets.
+- Nothing active.
 
 ## Known bugs
 
